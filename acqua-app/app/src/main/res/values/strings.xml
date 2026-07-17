@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Acqua</string>
+    <string name="resolving_media">Resolving media</string>
+    <string name="cancel">Cancel</string>
+</resources>

@@ -1,0 +1,59 @@
+# Built application files
+*.apk
+*.aar
+*.ap_
+*.aab
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated files
+bin/
+gen/
+out/
+
+# Gradle
+.gradle/
+build/
+**/build/
+.kotlin/
+
+# Local properties and signing credentials
+local.properties
+signing.properties
+keystore.properties
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# IDE
+.vscode
+
+# Captures (Android Studio memory snapshots)
+captures/
+*.perfetto
+
+# Android signing material (security)
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+
+# External native build
+.externalNativeBuild/
+.cxx/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Log files
+*.log

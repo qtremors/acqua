@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#081118">
+  <meta name="description" content="Acqua is a simple Android media downloader for photos and videos.">
+  <meta property="og:title" content="Acqua — Android media downloader">
+  <meta property="og:description" content="Paste a link and save photos or videos to your Android device.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://qtremors.github.io/acqua/">
+  <title>Acqua — Android media downloader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="scripts.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header" data-header>
+    <nav class="shell nav" aria-label="Main navigation">
+      <a class="brand" href="#top" aria-label="Acqua home">
+        <img src="assets/Acqua.png" alt="">
+        <span>Acqua</span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links" data-nav-toggle>
+        <span class="sr-only">Open navigation</span>
+        <span></span><span></span><span></span>
+      </button>
+
+      <div class="nav-links" id="nav-links" data-nav-links>
+        <a href="#features">Features</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#faq">FAQ</a>
+        <a class="nav-button" href="https://github.com/qtremors/acqua">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="shell hero-content reveal">
+        <div class="logo-wrap">
+          <img src="assets/Acqua.png" alt="Acqua">
+        </div>
+        <div class="version">Version 0.0.1 · Android 7.0+</div>
+        <h1>Download media.<br><span>Simply.</span></h1>
+        <p>Paste a link, preview it, and save photos or videos to your device.</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/qtremors/acqua/releases">Download APK</a>
+          <a class="button secondary" href="https://github.com/qtremors/acqua">View source</a>
+        </div>
+        <div class="hero-notes">
+          <span>No ads</span>
+          <i></i>
+          <span>No telemetry</span>
+          <i></i>
+          <span>Source available</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="features">
+      <div class="shell">
+        <div class="section-title reveal">
+          <span>Features</span>
+          <h2>Everything you need.</h2>
+        </div>
+
+        <div class="card-grid">
+          <article class="card reveal">
+            <div class="icon">⌁</div>
+            <h3>Paste a link</h3>
+            <p>Paste from your clipboard or share a link directly to Acqua.</p>
+          </article>
+          <article class="card reveal">
+            <div class="icon">◫</div>
+            <h3>Photos and videos</h3>
+            <p>Preview available media and choose what you want to save.</p>
+          </article>
+          <article class="card reveal">
+            <div class="icon">↓</div>
+            <h3>Save your way</h3>
+            <p>Choose a folder and customize filenames from the app.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section privacy" id="privacy">
+      <div class="shell privacy-layout">
+        <div class="privacy-copy reveal">
+          <span class="kicker">Privacy</span>
+          <h2>Login stays private.</h2>
+          <p>Sign in on the provider's website inside the app. Acqua never stores your password.</p>
+        </div>
+        <div class="privacy-list reveal">
+          <div><span>01</span><p><strong>Encrypted sessions</strong><small>Protected with Android Keystore.</small></p></div>
+          <div><span>02</span><p><strong>Local downloads</strong><small>Files stay on your device.</small></p></div>
+          <div><span>03</span><p><strong>Simple logout</strong><small>Clear the saved session at any time.</small></p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section built-with">
+      <div class="shell reveal">
+        <div class="section-title">
+          <span>Built for Android</span>
+          <h2>Native and lightweight.</h2>
+        </div>
+        <div class="tech-row">
+          <span>Kotlin</span>
+          <span>Jetpack Compose</span>
+          <span>Material 3</span>
+          <span>Android Keystore</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="faq">
+      <div class="shell faq-layout">
+        <div class="section-title left reveal">
+          <span>FAQ</span>
+          <h2>Common questions.</h2>
+        </div>
+        <div class="faq-list reveal">
+          <article>
+            <button type="button" aria-expanded="true"><span>What can I download?</span><i></i></button>
+            <div class="answer"><p>Acqua supports photos, videos, stories, and multi-item posts from its current supported source.</p></div>
+          </article>
+          <article>
+            <button type="button" aria-expanded="false"><span>Does Acqua store my password?</span><i></i></button>
+            <div class="answer" hidden><p>No. Login happens on the provider's website. Only the encrypted browser session is saved.</p></div>
+          </article>
+          <article>
+            <button type="button" aria-expanded="false"><span>Is Acqua free?</span><i></i></button>
+            <div class="answer" hidden><p>Yes. Acqua has no ads, paid features, or telemetry.</p></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="download-section">
+      <div class="shell download-card reveal">
+        <img src="assets/Acqua.png" alt="">
+        <div>
+          <h2>Get Acqua.</h2>
+          <p>Version 0.0.1 for Android 7.0 and newer.</p>
+        </div>
+        <a class="button primary" href="https://github.com/qtremors/acqua/releases">Download APK</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell footer-content">
+      <a class="brand" href="#top">
+        <img src="assets/Acqua.png" alt="">
+        <span>Acqua</span>
+      </a>
+      <div class="footer-links">
+        <a href="https://github.com/qtremors/acqua">Source</a>
+        <a href="https://github.com/qtremors/acqua/releases">Releases</a>
+        <a href="https://github.com/qtremors/acqua/blob/main/CHANGELOG.md">Changelog</a>
+        <a href="https://github.com/qtremors/acqua/blob/main/LICENSE.md">License</a>
+      </div>
+      <p>Built by <a href="https://github.com/qtremors">Tremors</a>.</p>
+    </div>
+  </footer>
+</body>
+</html>
