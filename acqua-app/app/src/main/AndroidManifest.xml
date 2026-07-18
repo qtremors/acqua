@@ -16,10 +16,19 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Acqua">
 
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="${appLabel}"
             android:launchMode="singleTask"
             android:theme="@style/Theme.Acqua">
             <intent-filter>
@@ -41,7 +50,7 @@
             android:theme="@style/Theme.Acqua" />
 
         <activity
-            android:name=".auth.AuthenticatedMediaResolverActivity"
+            android:name=".resolver.web.RenderedPageResolverActivity"
             android:configChanges="orientation|screenSize"
             android:exported="false"
             android:theme="@style/Theme.Acqua" />

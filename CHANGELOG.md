@@ -2,6 +2,20 @@
 
 All notable user-visible changes are documented here.
 
+## [0.0.3] - 2026-07-18
+
+### Fixed
+
+- Preserve JPEG, PNG, GIF, WebP, and MP4 file types and reject partial or truncated downloads.
+- Resume downloads after storage permission is granted and restore opening and sharing on Android 7 through 9.
+
+### Changed
+
+- Clarified browser extraction, saved-website, and Downloads-subfolder wording.
+- Hardened custom filenames and download-folder names against invalid path characters.
+- Isolated downloader, browser, history, settings, session, network, and storage responsibilities for more reliable lifecycle handling and maintenance.
+- Moved interface copy into Android resources and expanded regression coverage across resolution, persistence, sessions, and storage.
+
 ## [0.0.2] - 2026-07-18
 
 ### Added

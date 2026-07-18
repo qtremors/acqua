@@ -2,7 +2,7 @@
 
 | Metadata | Value |
 | :--- | :--- |
-| Current version | 0.0.2 |
+| Current version | 0.0.3 |
 | Minimum Android version | Android 7.0 (API 24) |
 | Target/compile SDK | 37 |
 
@@ -48,31 +48,34 @@ Acqua uses separate identities for local development and production:
 
 | Variant | Label | Application ID | Version name |
 | :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.2-debug` |
-| Release | Acqua | `dev.qtremors.acqua` | `0.0.2` |
+| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.3-debug` |
+| Release | Acqua | `dev.qtremors.acqua` | `0.0.3` |
 
 Both use version code `2`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
 
 APK output names are generated from the variant version:
 
-- `Acqua-0.0.2-debug.apk`
-- `Acqua-0.0.2.apk`
+- `Acqua-0.0.3-debug.apk`
+- `Acqua-0.0.3.apk`
 
 Variant configuration lives in `acqua-app/app/build.gradle.kts`. The manifest reads `${appLabel}`, so do not hard-code the display name in `AndroidManifest.xml`.
 
 ## Architecture
 
-Acqua is a single-activity Compose application with a shared browser activity and a temporary rendered-page media resolver.
+Acqua is a Compose-based Android application with a main dashboard activity, a shared browser activity, and a temporary rendered-page resolver activity.
 
 ```text
 Shared link / pasted URL
           |
           v
-   MainActivity (Compose)
+   MainActivity (Android boundary)
           |
-          +---- known source -------> InstagramDownloader
+          v
+   Feature ViewModels + Compose screens
           |
-          +---- any web link -------> AuthenticatedMediaResolverActivity
+          +---- known source -------> InstagramResolver
+          |
+          +---- browser extraction -> RenderedPageResolverActivity
                                              |
                                              v
                                       shared WebView profile
@@ -88,16 +91,27 @@ Shared link / pasted URL
 
 | File | Responsibility |
 | :--- | :--- |
-| `MainActivity.kt` | Compose UI, input handling, extraction orchestration, previews, settings, history, and download actions. |
-| `InstagramDownloader.kt` | Network extraction fallbacks, authenticated requests, media model creation, and download streaming. |
+| `MainActivity.kt` | Permission and activity-result launchers at the Android boundary. |
+| `DashboardScreen.kt` | Top-level feature navigation. |
+| `feature/*/*ViewModel.kt` | Lifecycle-aware state and feature orchestration. |
+| `feature/*/*Screen.kt` | Downloader, browser, history, and settings UI. |
+| `InstagramResolver.kt` | Instagram network extraction fallbacks and authenticated requests. |
+| `MediaDownloader.kt` | Source-neutral media validation, preview fetching, and complete-file streaming. |
+| `ResolvedMedia.kt` | Resolved-media model with kind, MIME type, and file extension. |
+| `MediaResolver.kt` | Resolver contract shared by source adapters. |
+| `MediaResolutionService.kt` | Source selection, browser fallback, validation, and result selection. |
+| `MediaStorage.kt` | MediaStore and legacy FileProvider-backed download storage. |
+| `HistoryRepository.kt` | History schema, migration, and persistence. |
+| `AppSettingsRepository.kt` | Typed download and browser-extraction preferences. |
 | `MediaContentDetector.kt` | Content sniffing and structural validation for supported image and MP4 responses. |
 | `BrowserActivity.kt` | Shared browser UI, login persistence, and full-screen floating page controls. |
-| `BrowserSessionRegistry.kt` | User-saved website logins, favicon caching, and browser-data clearing. |
+| `SavedWebsiteRepository.kt` | Saved website and favicon persistence. |
+| `BrowserDataManager.kt` | Selected-origin and full browser-data clearing. |
 | `WebLink.kt` | Generic HTTP(S) normalization, shared-text extraction, and known-source detection. |
-| `AuthenticatedMediaResolverActivity.kt` | Temporary WebView that observes any submitted page and returns media candidates. |
-| `SecureSessionStore.kt` | Android Keystore protection for known platform cookies used by network adapters. |
+| `RenderedPageResolverActivity.kt` | Temporary WebView that observes a submitted page and returns media candidates. |
+| `InstagramSessionStore.kt` | Android Keystore protection for Instagram cookies used by its resolver. |
 
-The UI remains platform-neutral. Source-specific network logic is isolated behind the downloader and authentication components so that future resolvers can be added without changing the main interaction model.
+The UI remains source-agnostic. Source-specific extraction stays in resolver components, while validation, storage, history, settings, and session persistence use source-neutral models and repositories. Stateful services are constructed per application boundary rather than exposed as global Kotlin objects. Keep each Kotlin source file below 700 lines; split by responsibility before it reaches that limit.
 
 ## Media resolution
 
@@ -105,7 +119,7 @@ Resolution is layered because known sources and generic websites expose media di
 
 1. Normalize any valid HTTP or HTTPS URL.
 2. Use a specialized network adapter when the domain and route are recognized.
-3. Otherwise load the page in the rendered-page resolver using the shared WebView profile.
+3. When browser session extraction is enabled, otherwise load the page in the rendered-page resolver using the shared WebView profile.
 4. Observe document markup, media elements, metadata, performance entries, and network requests.
 5. Strip byte-range fragments and other partial-response parameters from candidates.
 6. Carry the page referrer and relevant domain cookies into validation and download requests.
@@ -120,15 +134,15 @@ The resolver must never assume that a URL ending in `.jpg` or `.mp4` contains th
 
 `BrowserActivity` provides one address bar and one shared WebView profile for all websites. Credentials are submitted directly to the loaded website; Acqua does not receive or store passwords.
 
-WebView keeps cookies and site storage in the application sandbox. The user can add a named website bookmark before opening the browser; `BrowserSessionRegistry` stores its display name, origin, and cached favicon for the Browser tab. Known platform adapters may copy the cookies they need into `SecureSessionStore`, where AES-GCM and Android Keystore protect them.
+WebView keeps cookies and site storage in the application sandbox. The user can add a named website bookmark before opening the browser; `SavedWebsiteRepository` stores its display name, origin, and cached favicon for the Browser tab. `BrowserDataManager` only coordinates data clearing. Instagram cookies used by its network resolver are copied into `InstagramSessionStore`, where AES-GCM and Android Keystore protect them.
 
-The **Use sessions for downloads** preference is opt-in. When disabled, network adapters receive no saved session cookies and authenticated WebView fallback is not launched. The browser retains its own website logins so the preference can be enabled later without signing in again.
+The **Use browser sessions for extraction** preference is opt-in. When disabled, network adapters receive no saved session cookies and rendered-page extraction is not launched. The browser retains its website data so the preference can be enabled later without signing in again.
 
 Backup rules exclude both the encrypted session payload and WebView data from cloud backup and device transfer.
 
 ### Resolver flow
 
-`AuthenticatedMediaResolverActivity` creates a temporary WebView using the same cookie profile, visits the submitted URL, and returns media candidates to `MainActivity`. Existing encrypted cookies for the current known adapter are migrated into WebView when required.
+`RenderedPageResolverActivity` creates a temporary WebView using the same cookie profile, visits the submitted URL, and returns media candidates to `MainActivity`. Existing encrypted Instagram cookies are migrated into WebView when required.
 
 **Manage Website Data** can clear selected origins or all browser data. Selected clearing expires addressable cookies, deletes origin storage, removes the bookmark and favicon, and clears matching encrypted adapter sessions. Full clearing additionally removes all WebView cookies and storage, shared cache, form data, HTTP authentication, registry metadata, and encrypted adapter sessions. Debug and release builds maintain independent browser data because their application IDs and storage sandboxes differ.
 
@@ -168,7 +182,7 @@ Use test accounts and content you control. Repeated automated requests can trigg
 
 ## Storage and history
 
-Acqua writes downloads through Android's supported storage APIs and lets the user select a destination. Filename settings are applied before the file is created. The Settings page exposes the supported placeholders as toggleable chips and can restore `acqua_{username}_{resolution}_{date}_{time}_{index}` as the default pattern.
+Acqua writes downloads through Android's supported storage APIs into a configurable subfolder under Downloads. Filename settings are applied before the file is created. The Settings page exposes the supported placeholders as toggleable chips and can restore `acqua_{username}_{resolution}_{date}_{time}_{index}` as the default pattern.
 
 History stores local download records used by the Compose dashboard. Authentication state is separate from history and must not be mixed into user-visible records or exports.
 
@@ -199,6 +213,8 @@ Useful verification points:
 
 - `MediaContentDetectorTest` covers format detection and corrupt/partial payload rejection.
 - `WebLinkTest` covers generic URL normalization, shared-text extraction, and known-source routing.
+- `MediaResolutionServiceTest` covers source routing, browser fallback, validation, and Reel selection.
+- Feature-state tests cover history filtering, while Android tests cover history, settings, saved websites, encrypted sessions, and MediaStore-backed storage.
 - Install debug and release together and verify their names and independent data.
 - Confirm browsing, login persistence, app restart restoration, authenticated resolution, and **Clear Data**.
 - Try a direct media URL, a generic HTML page with media metadata, and an unsupported page.

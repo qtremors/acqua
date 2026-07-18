@@ -36,11 +36,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.content.edit
 import dev.qtremors.acqua.R
+import dev.qtremors.acqua.domain.WebLink
+import dev.qtremors.acqua.data.session.InstagramSessionStore
+import dev.qtremors.acqua.data.session.SavedInstagramSession
+import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import org.json.JSONTokener
 import kotlin.math.hypot
 
 class BrowserActivity : ComponentActivity() {
+    private val savedWebsites by lazy { SavedWebsiteRepository(applicationContext) }
+    private val instagramSessions by lazy { InstagramSessionStore(applicationContext) }
     private lateinit var webView: WebView
     private lateinit var addressBar: EditText
     private lateinit var progressBar: ProgressBar
@@ -56,9 +63,9 @@ class BrowserActivity : ComponentActivity() {
         isAddingLogin = intent.getBooleanExtra(EXTRA_ADD_LOGIN, false)
         loginName = intent.getStringExtra(EXTRA_LOGIN_NAME).orEmpty()
         val requested = intent.getStringExtra(EXTRA_INITIAL_URL)?.let(WebLink::normalize)
-            ?: if (isAddingLogin) null else BrowserSessionRegistry.lastOrigin(this)
+            ?: if (isAddingLogin) null else savedWebsites.lastOrigin()
         requested?.takeIf { isAddingLogin }
-            ?.let { BrowserSessionRegistry.saveWebsiteLogin(this, loginName, it, null) }
+            ?.let { savedWebsites.save(loginName, it, null) }
 
         val root = FrameLayout(this).apply {
             setBackgroundColor(BACKGROUND)
@@ -107,7 +114,7 @@ class BrowserActivity : ComponentActivity() {
                 override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
                     super.onReceivedIcon(view, icon)
                     if (icon != null) view?.url?.let {
-                        BrowserSessionRegistry.updateWebsiteIcon(this@BrowserActivity, it, icon)
+                        savedWebsites.updateIcon(it, icon)
                     }
                 }
             }
@@ -147,12 +154,12 @@ class BrowserActivity : ComponentActivity() {
         setPadding(6.dp, 0, 8.dp, 0)
         setBackgroundColor(SURFACE)
 
-        addView(iconButton(android.R.drawable.ic_menu_close_clear_cancel, "Close") {
+        addView(iconButton(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.close)) {
             closeBrowser()
         }, LinearLayout.LayoutParams(52.dp, 52.dp))
 
         addressBar = EditText(context).apply {
-            hint = "Enter a website"
+            hint = getString(R.string.enter_website)
             setTextColor(Color.WHITE)
             setHintTextColor(Color.rgb(160, 174, 184))
             setSingleLine(true)
@@ -170,7 +177,7 @@ class BrowserActivity : ComponentActivity() {
         addView(addressBar, LinearLayout.LayoutParams(0, 52.dp, 1f))
 
         addView(TextView(context).apply {
-            text = "Go"
+            text = getString(R.string.go)
             setTextColor(PRIMARY)
             textSize = 14f
             gravity = Gravity.CENTER
@@ -209,10 +216,10 @@ class BrowserActivity : ComponentActivity() {
             if (parent.width <= 0 || parent.height <= 0 || ball.width <= 0) return
             val centerX = wrapper.x + ball.left + ball.width / 2f
             val centerY = wrapper.y + ball.top + ball.height / 2f
-            getSharedPreferences(BROWSER_UI_PREFS, MODE_PRIVATE).edit()
-                .putFloat(KEY_BUBBLE_X, centerX / parent.width)
-                .putFloat(KEY_BUBBLE_Y, centerY / parent.height)
-                .apply()
+            getSharedPreferences(BROWSER_UI_PREFS, MODE_PRIVATE).edit {
+                putFloat(KEY_BUBBLE_X, centerX / parent.width)
+                putFloat(KEY_BUBBLE_Y, centerY / parent.height)
+            }
         }
 
         fun setMenuVisible(visible: Boolean) {
@@ -254,13 +261,13 @@ class BrowserActivity : ComponentActivity() {
                 }
             }
 
-        menu.addView(menuAction(android.R.drawable.ic_popup_sync, "Refresh") {
+        menu.addView(menuAction(android.R.drawable.ic_popup_sync, getString(R.string.refresh)) {
             if (currentUrl == null) showStartPage() else webView.reload()
         }, LinearLayout.LayoutParams(156.dp, 48.dp))
-        menu.addView(menuAction(android.R.drawable.stat_sys_download_done, "Download") {
+        menu.addView(menuAction(android.R.drawable.stat_sys_download_done, getString(R.string.download)) {
             downloadCurrentPage()
         }, LinearLayout.LayoutParams(156.dp, 48.dp))
-        menu.addView(menuAction(android.R.drawable.ic_menu_revert, "Go to Acqua") {
+        menu.addView(menuAction(android.R.drawable.ic_menu_revert, getString(R.string.go_to_acqua)) {
             finishBrowser()
         }, LinearLayout.LayoutParams(156.dp, 48.dp))
         wrapper.addView(menu, LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -269,7 +276,7 @@ class BrowserActivity : ComponentActivity() {
             setImageResource(R.mipmap.ic_launcher_round)
             scaleType = ImageView.ScaleType.CENTER_CROP
             background = roundedBackground(PRIMARY, 30.dp.toFloat(), GradientDrawable.OVAL)
-            contentDescription = "Acqua browser controls"
+            contentDescription = getString(R.string.browser_controls)
             elevation = 12.dp.toFloat()
             setPadding(3.dp, 3.dp, 3.dp, 3.dp)
             val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -351,7 +358,7 @@ class BrowserActivity : ComponentActivity() {
     private fun navigateToInput() {
         val normalized = WebLink.normalize(addressBar.text.toString())
         if (normalized == null) {
-            Toast.makeText(this, "Enter a valid HTTP or HTTPS website.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, R.string.enter_valid_website, Toast.LENGTH_SHORT).show()
             return
         }
         loadInitialPage(normalized)
@@ -359,7 +366,7 @@ class BrowserActivity : ComponentActivity() {
 
     private fun loadInitialPage(url: String) {
         val cookieManager = CookieManager.getInstance()
-        val saved = SecureSessionStore.load(this)
+        val saved = instagramSessions.load()
             ?.takeIf {
                 WebLink.isInstagramHost(url) &&
                     !cookieManager.getCookie(INSTAGRAM_ORIGIN).orEmpty().contains("sessionid=")
@@ -400,7 +407,7 @@ class BrowserActivity : ComponentActivity() {
             val scheme = request.url.scheme?.lowercase()
             if (scheme == "http" || scheme == "https") return false
             if (request.isForMainFrame) {
-                Toast.makeText(this@BrowserActivity, "This link cannot be opened in Acqua.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@BrowserActivity, R.string.cannot_open_link, Toast.LENGTH_SHORT).show()
             }
             return true
         }
@@ -408,7 +415,7 @@ class BrowserActivity : ComponentActivity() {
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
             super.onPageStarted(view, url, favicon)
             if (favicon != null) url?.let {
-                BrowserSessionRegistry.updateWebsiteIcon(this@BrowserActivity, it, favicon)
+                savedWebsites.updateIcon(it, favicon)
             }
             url?.takeIf { isBrowsablePage(it) }?.let {
                 currentUrl = it
@@ -424,7 +431,7 @@ class BrowserActivity : ComponentActivity() {
                 if (isBrowsablePage(finishedUrl)) {
                     currentUrl = finishedUrl
                     if (::addressBar.isInitialized) addressBar.setText(finishedUrl)
-                    BrowserSessionRegistry.record(this@BrowserActivity, finishedUrl)
+                    savedWebsites.record(finishedUrl)
                     saveKnownPlatformSession(finishedUrl, view.settings.userAgentString.orEmpty())
                     CookieManager.getInstance().flush()
                 }
@@ -435,13 +442,17 @@ class BrowserActivity : ComponentActivity() {
             super.onReceivedError(view, request, error)
             if (request.isForMainFrame) {
                 progressBar.visibility = View.GONE
-                Toast.makeText(this@BrowserActivity, "Page failed to load: ${error.description}", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    this@BrowserActivity,
+                    getString(R.string.page_failed_to_load, error.description),
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
 
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
             handler.cancel()
-            Toast.makeText(this@BrowserActivity, "The website could not be verified securely.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this@BrowserActivity, R.string.website_not_secure, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -449,9 +460,9 @@ class BrowserActivity : ComponentActivity() {
         if (!WebLink.isInstagramHost(url)) return
         val cookies = CookieManager.getInstance().getCookie(INSTAGRAM_ORIGIN).orEmpty()
         if (cookies.contains("sessionid=")) {
-            runCatching { SecureSessionStore.save(this, SavedLoginSession(cookies, userAgent)) }
+            runCatching { instagramSessions.save(SavedInstagramSession(cookies, userAgent)) }
         } else {
-            SecureSessionStore.clear(this)
+            instagramSessions.clear()
         }
     }
 
@@ -466,7 +477,7 @@ class BrowserActivity : ComponentActivity() {
             """
             <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
             <body style="margin:0;background:#0c1014;color:#dce8ef;font-family:sans-serif;display:grid;place-items:center;height:100vh;text-align:center">
-              <main><h2 style="margin:0 0 8px">Acqua Browser</h2><p style="margin:0;color:#9fb2bd">Enter a website above to browse or sign in.</p></main>
+              <main><h2 style="margin:0 0 8px">${getString(R.string.browser_home_title)}</h2><p style="margin:0;color:#9fb2bd">${getString(R.string.browser_home_guidance)}</p></main>
             </body>
             """.trimIndent(),
             "text/html",
@@ -487,7 +498,7 @@ class BrowserActivity : ComponentActivity() {
             ).mapNotNull { it?.let(WebLink::normalize) }
                 .firstOrNull { isBrowsablePage(it) }
             if (activeUrl == null) {
-                Toast.makeText(this, "Open a website before downloading.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, R.string.open_website_before_download, Toast.LENGTH_SHORT).show()
                 return@evaluateJavascript
             }
             currentUrl = activeUrl

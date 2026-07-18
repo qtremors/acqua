@@ -1,0 +1,167 @@
+package dev.qtremors.acqua.data.network
+
+import android.graphics.BitmapFactory
+import dev.qtremors.acqua.domain.MediaKind
+import dev.qtremors.acqua.domain.ResolvedMedia
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.concurrent.TimeUnit
+
+class MediaDownloader(
+    private val client: OkHttpClient = defaultClient()
+) {
+    private data class ScopedRequestCookies(val host: String, val value: String)
+
+    private val userAgent = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36"
+    private val signatureByteCount = 65_536
+
+    private fun buildRequest(
+        url: String,
+        referer: String? = null,
+        requestCookies: String? = null
+    ) = Request.Builder()
+        .url(url)
+        .header("User-Agent", userAgent)
+        .apply {
+            referer?.takeIf { it.startsWith("http") }?.let { header("Referer", it) }
+            requestCookies?.takeIf { it.isNotBlank() }?.let { cookies ->
+                url.toHttpUrlOrNull()?.host?.let { host ->
+                    tag(ScopedRequestCookies::class.java, ScopedRequestCookies(host, cookies))
+                }
+            }
+        }
+        .get()
+        .build()
+
+    fun downloadToStream(
+        item: ResolvedMedia,
+        output: OutputStream,
+        requestCookies: String? = item.requestCookies
+    ): Long {
+        if (hasEmbeddedByteRange(item.url)) {
+            error("A partial browser media segment cannot be saved as a complete file.")
+        }
+
+        return client.newCall(buildRequest(item.url, item.referer, requestCookies)).execute().use { response ->
+            if (response.code == 206) {
+                error("The media server returned only part of the file (HTTP 206).")
+            }
+            if (!response.isSuccessful) error("Media download request failed (HTTP ${response.code}).")
+
+            val body = response.body ?: error("The media server returned an empty response body.")
+            val expectedLength = body.contentLength()
+            val stream = body.byteStream()
+            val prefix = stream.readPrefix(signatureByteCount)
+            val format = MediaContentDetector.detect(response.header("Content-Type"), prefix, item.isVideo)
+                ?: error("The media server returned an unsupported or incomplete file.")
+
+            if ((format.kind == MediaKind.VIDEO) != item.isVideo) {
+                error(
+                    if (item.isVideo) "The video URL returned an image instead of a complete video."
+                    else "The image URL returned video data instead of an image."
+                )
+            }
+
+            output.write(prefix)
+            val bytesWritten = prefix.size.toLong() + stream.copyTo(output)
+            if (expectedLength >= 0L && bytesWritten != expectedLength) {
+                error("The media download ended before the complete file was received.")
+            }
+            bytesWritten
+        }
+    }
+
+    fun validateAndResolveMetadata(item: ResolvedMedia): ResolvedMedia? {
+        if (hasEmbeddedByteRange(item.url)) return null
+        return runCatching {
+            val request = buildRequest(item.url, item.referer, item.requestCookies).newBuilder()
+                .header("Range", "bytes=0-65535")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (response.code != 206 && !response.isSuccessful) return@use null
+                val totalSize = response.header("Content-Range")
+                    ?.substringAfterLast('/')
+                    ?.trim()
+                    ?.toLongOrNull()
+                    ?: response.header("Content-Length")?.toLongOrNull()
+                    ?: 0L
+                val bytes = response.body?.byteStream()?.readPrefix(signatureByteCount)
+                    ?: return@use null
+                val format = MediaContentDetector.detect(
+                    response.header("Content-Type"),
+                    bytes,
+                    item.isVideo
+                ) ?: return@use null
+
+                if (format.kind == MediaKind.VIDEO) {
+                    return@use item.copy(
+                        kind = MediaKind.VIDEO,
+                        thumbnailUrl = item.thumbnailUrl?.takeIf { it != item.url },
+                        fileSize = totalSize.takeIf { it > 0L } ?: item.fileSize,
+                        mimeType = format.mimeType,
+                        fileExtension = format.fileExtension
+                    )
+                }
+
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                item.copy(
+                    kind = MediaKind.IMAGE,
+                    thumbnailUrl = item.url,
+                    width = options.outWidth.takeIf { it > 0 } ?: item.width,
+                    height = options.outHeight.takeIf { it > 0 } ?: item.height,
+                    fileSize = totalSize.takeIf { it > 0L } ?: item.fileSize,
+                    mimeType = format.mimeType,
+                    fileExtension = format.fileExtension
+                )
+            }
+        }.getOrNull()
+    }
+
+    fun fetchBytes(item: ResolvedMedia): ByteArray =
+        client.newCall(buildRequest(item.url, item.referer, item.requestCookies)).execute().use { response ->
+            if (!response.isSuccessful) error("Failed to fetch media preview (HTTP ${response.code}).")
+            response.body?.bytes() ?: error("The media preview response was empty.")
+        }
+
+    private fun hasEmbeddedByteRange(url: String): Boolean =
+        url.contains("bytestart=", ignoreCase = true) ||
+            url.contains("byteend=", ignoreCase = true)
+
+    private fun InputStream.readPrefix(maxBytes: Int): ByteArray {
+        val buffer = ByteArray(maxBytes)
+        var total = 0
+        while (total < maxBytes) {
+            val read = read(buffer, total, maxBytes - total)
+            if (read <= 0) break
+            total += read
+        }
+        return buffer.copyOf(total)
+    }
+
+    private companion object {
+        fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .followRedirects(true)
+            .addNetworkInterceptor { chain ->
+                val request = chain.request()
+                val scoped = request.tag(ScopedRequestCookies::class.java)
+                    ?: return@addNetworkInterceptor chain.proceed(request)
+                val safeRequest = request.newBuilder().apply {
+                    if (request.url.host.equals(scoped.host, ignoreCase = true)) {
+                        header("Cookie", scoped.value)
+                    } else {
+                        removeHeader("Cookie")
+                    }
+                }.build()
+                chain.proceed(safeRequest)
+            }
+            .build()
+    }
+}
