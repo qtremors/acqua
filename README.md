@@ -9,25 +9,27 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/qtremors/acqua/releases"><img alt="Version 0.0.1" src="https://img.shields.io/badge/version-0.0.1-8dcfff"></a>
+  <a href="https://github.com/qtremors/acqua/releases"><img alt="Version 0.0.2" src="https://img.shields.io/badge/version-0.0.2-8dcfff"></a>
   <img alt="Android 7.0+" src="https://img.shields.io/badge/Android-7.0%2B-3ddc84">
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.2.10-7f52ff">
   <a href="LICENSE.md"><img alt="TSL 1.0" src="https://img.shields.io/badge/license-TSL%201.0-f4c95d"></a>
 </p>
 
-Acqua lets you paste a link, preview available photos or videos, and save them to your device. Public links work without a session; content available only after sign-in can use Acqua's encrypted browser session.
+Acqua lets you paste a web link, preview available photos or videos, and save them to your device. It tries any valid HTTP or HTTPS link and can use the shared in-app browser for websites that require sign-in.
 
 > **Responsible use:** Only download content you own, have permission to save, or are otherwise legally authorized to access through your account. Do not attempt to access private or restricted content, bypass access controls, or infringe copyright or privacy rights. You are responsible for following applicable laws and the service provider's terms.
 
 ## Highlights
 
 - Platform-neutral link and download experience.
-- Photo, video, Reel, Story, and carousel extraction for the currently supported source.
-- Optional authenticated browser flow for media available to your account.
-- Encrypted session storage backed by Android Keystore.
+- Best-effort extraction from any valid web link, with a specialized resolver for the currently supported source.
+- Shared in-app browser for browsing and signing in to websites.
+- Named website-login bookmarks with saved icons, one-tap reopening, and a dedicated add button.
+- Website sessions kept in app-private WebView storage, with known platform cookies additionally protected by Android Keystore.
+- Optional session usage, so browsing can stay signed in while downloads use public-only extraction.
 - Media validation that rejects partial, audio-only, or mislabeled responses.
 - Image dimensions, video metadata, thumbnails, and download sizes when available.
-- Download history, custom folders, configurable filenames, and Android share-sheet support.
+- Download history, custom folders, filename-variable chips with an Acqua-default reset, and Android share-sheet support.
 - Material 3 interface with adaptive light and dark themes.
 - No ads, analytics, or telemetry.
 
@@ -35,7 +37,7 @@ Acqua lets you paste a link, preview available photos or videos, and save them t
 
 Download the latest APK from [GitHub Releases](https://github.com/qtremors/acqua/releases). Android may ask you to allow installation from your browser or file manager.
 
-For authenticated content, open **Settings → Login**, sign in inside the embedded browser, then return to the downloader. Acqua restores that encrypted browser session only when resolving a link that needs it.
+For authenticated content, open the **Browser** tab, tap **+**, and enter a name and website URL. The bookmark opens full-screen so you can sign in. Tap its saved icon later to reopen the same session, enable **Use sessions for downloads** when needed, then tap or drag the floating Acqua control to refresh the page, download the current page, or return to Acqua.
 
 ## Build from source
 
@@ -55,8 +57,8 @@ On Windows, use `gradlew.bat`. Generated APK names follow the same convention as
 
 | Variant | App name | Application ID | Version | APK |
 | :--- | :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.1-debug` | `Acqua-0.0.1-debug.apk` |
-| Release | Acqua | `dev.qtremors.acqua` | `0.0.1` | `Acqua-0.0.1.apk` |
+| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.2-debug` | `Acqua-0.0.2-debug.apk` |
+| Release | Acqua | `dev.qtremors.acqua` | `0.0.2` | `Acqua-0.0.2.apk` |
 
 Debug and release builds can be installed side by side.
 
@@ -76,10 +78,10 @@ The Android app uses Kotlin, Jetpack Compose, Material 3, OkHttp, Coil, Android 
 
 ## Security and privacy
 
-- Login happens on the service's own website inside Android WebView; Acqua does not ask for or store your password.
-- Session cookies are encrypted at rest with a device-bound Android Keystore key.
-- Authentication data is excluded from Android backup and device transfer.
-- Logging out removes the stored browser session.
+- Login happens on the website inside Android WebView; Acqua does not ask for or store your password.
+- Browser data stays in app-private storage and is excluded from Android backup and device transfer.
+- Known platform session cookies copied for network extraction are encrypted with Android Keystore.
+- **Manage Website Data** can clear selected website sessions or wipe all cookies, storage, shared WebView cache, form data, HTTP authentication, and saved session data.
 - Downloads remain on your device in the folder you choose.
 
 ## Documentation

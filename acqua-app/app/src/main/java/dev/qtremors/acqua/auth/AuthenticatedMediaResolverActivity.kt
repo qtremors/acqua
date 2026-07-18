@@ -4,10 +4,8 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -21,11 +19,10 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.net.http.SslError
 import android.widget.FrameLayout
-import android.widget.ImageButton
-import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.downloader.MediaResult
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
@@ -53,60 +50,31 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val targetUrl = intent.getStringExtra(EXTRA_URL)
-        if (!isAllowedInstagramUrl(targetUrl)) {
+        val targetUrl = intent.getStringExtra(EXTRA_URL)?.let(WebLink::normalize)
+        if (targetUrl == null) {
             finishWithError("The requested media link is invalid.")
             return
         }
 
-        val session = SecureSessionStore.load(this)
-        if (session == null || !session.cookies.contains("sessionid")) {
-            finishWithExpiredSession("No saved login session is available.")
-            return
-        }
-
-        buildContentView(session.userAgent)
-        restoreSessionAndLoad(session, targetUrl!!)
+        buildContentView()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                finishWithError("Media resolution was cancelled.")
+            }
+        })
+        loadWithAvailableSession(targetUrl)
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun buildContentView(userAgent: String) {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+    private fun buildContentView() {
+        val root = FrameLayout(this).apply {
             setBackgroundColor(Color.rgb(18, 18, 18))
         }
-
-        val toolbar = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(16.dp, 0, 8.dp, 0)
-            setBackgroundColor(Color.rgb(42, 42, 42))
-        }
-        toolbar.addView(
-            TextView(this).apply {
-                text = getString(R.string.resolving_media)
-                setTextColor(Color.WHITE)
-                textSize = 18f
-            },
-            LinearLayout.LayoutParams(0, 56.dp, 1f)
-        )
-        toolbar.addView(
-            ImageButton(this).apply {
-                setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-                contentDescription = getString(R.string.cancel)
-                setColorFilter(Color.WHITE)
-                setBackgroundColor(Color.TRANSPARENT)
-                setOnClickListener { finishWithError("Media resolution was cancelled.") }
-            },
-            LinearLayout.LayoutParams(56.dp, 56.dp)
-        )
-        root.addView(toolbar, LinearLayout.LayoutParams.MATCH_PARENT, 56.dp)
 
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             isIndeterminate = false
             max = 100
         }
-        root.addView(progressBar, LinearLayout.LayoutParams.MATCH_PARENT, 3.dp)
 
         webView = WebView(this).apply {
             setBackgroundColor(Color.WHITE)
@@ -119,7 +87,6 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
                 setSupportMultipleWindows(false)
                 mediaPlaybackRequiresUserGesture = true
                 mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                if (userAgent.isNotBlank()) userAgentString = userAgent
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
             }
             webChromeClient = object : WebChromeClient() {
@@ -130,39 +97,55 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
             }
             webViewClient = resolverWebViewClient()
         }
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
-        root.addView(webView, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false)
+        root.addView(
+            webView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+        root.addView(
+            progressBar,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 3.dp)
+        )
         setContentView(root)
+        Toast.makeText(this, getString(R.string.resolving_media), Toast.LENGTH_SHORT).show()
     }
 
-    private fun restoreSessionAndLoad(session: SavedLoginSession, targetUrl: String) {
+    private fun loadWithAvailableSession(targetUrl: String) {
         val cookieManager = CookieManager.getInstance().apply { setAcceptCookie(true) }
-        val cookies = session.cookies.split(';')
+        val existingCookies = cookieManager.getCookie(targetUrl).orEmpty()
+        val savedSession = SecureSessionStore.load(this)
+            ?.takeIf { WebLink.isInstagramHost(targetUrl) && !existingCookies.contains("sessionid=") }
+
+        if (savedSession == null) {
+            webView.loadUrl(targetUrl)
+            return
+        }
+
+        val cookies = savedSession.cookies.split(';')
             .mapNotNull { raw ->
                 val parts = raw.trim().split('=', limit = 2)
                 if (parts.size != 2 || parts[0].isBlank() || parts[1].isBlank()) null
                 else parts[0] to parts[1]
             }
 
-        if (cookies.none { it.first == "sessionid" }) {
-            finishWithExpiredSession("The saved login session is incomplete.")
+        if (cookies.isEmpty()) {
+            webView.loadUrl(targetUrl)
             return
         }
 
-        cookieManager.removeAllCookies {
-            runOnUiThread {
-                var remaining = cookies.size
-                cookies.forEach { (name, value) ->
-                    val httpOnly = if (name == "sessionid") "; HttpOnly" else ""
-                    val cookie = "$name=$value; Domain=.instagram.com; Path=/; Secure; SameSite=None$httpOnly"
-                    cookieManager.setCookie(INSTAGRAM_ORIGIN, cookie) {
-                        runOnUiThread {
-                            remaining--
-                            if (remaining == 0 && !isFinishing) {
-                                cookieManager.flush()
-                                webView.loadUrl(targetUrl)
-                            }
-                        }
+        var remaining = cookies.size
+        cookies.forEach { (name, value) ->
+            val httpOnly = if (name == "sessionid") "; HttpOnly" else ""
+            val cookie = "$name=$value; Domain=.instagram.com; Path=/; Secure; SameSite=None$httpOnly"
+            cookieManager.setCookie(INSTAGRAM_ORIGIN, cookie) {
+                runOnUiThread {
+                    remaining--
+                    if (remaining == 0 && !isFinishing) {
+                        cookieManager.flush()
+                        webView.loadUrl(targetUrl)
                     }
                 }
             }
@@ -172,7 +155,8 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
     private fun resolverWebViewClient() = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             if (!request.isForMainFrame) return false
-            return !isAllowedInstagramUri(request.url)
+            val scheme = request.url.scheme?.lowercase(Locale.ROOT)
+            return scheme != "http" && scheme != "https"
         }
 
         override fun shouldInterceptRequest(
@@ -185,7 +169,8 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
 
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
-            if (url?.contains("/accounts/login") == true) {
+            url?.let { BrowserSessionRegistry.record(this@AuthenticatedMediaResolverActivity, it) }
+            if (url != null && WebLink.isInstagramHost(url) && url.contains("/accounts/login")) {
                 finishWithExpiredSession("The saved login session has expired. Please sign in again.")
                 return
             }
@@ -232,7 +217,7 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
         val looksLikeMp4 = lowerUrl.contains(".mp4") ||
             lowerUrl.contains("mime_type=video") ||
             lowerUrl.contains("video%2fmp4")
-        if (!looksLikeMp4 || !lowerUrl.startsWith("https://")) return
+        if (!looksLikeMp4 || (!lowerUrl.startsWith("https://") && !lowerUrl.startsWith("http://"))) return
 
         val parsed = rawUrl.toHttpUrlOrNull() ?: return
         val normalized = parsed.newBuilder()
@@ -273,7 +258,7 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
             pageExpectsVideo = pageExpectsVideo || payload.optBoolean("expectsVideo") ||
                 payload.optInt("videoElementCount") > 0
             latestVideoPoster = payload.optString("videoPoster")
-                .takeIf { it.startsWith("https://") }
+                .takeIf { it.startsWith("https://") || it.startsWith("http://") }
                 ?: latestVideoPoster
             latestVideoWidth = payload.optInt("videoWidth").takeIf { it > 0 } ?: latestVideoWidth
             latestVideoHeight = payload.optInt("videoHeight").takeIf { it > 0 } ?: latestVideoHeight
@@ -287,14 +272,17 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
             for (index in 0 until items.length()) {
                 val item = items.optJSONObject(index) ?: continue
                 val url = item.optString("url")
-                if (!url.startsWith("https://")) continue
+                if (!url.startsWith("https://") && !url.startsWith("http://")) continue
                 collectedMedia[url] = MediaResult(
                     url = url,
                     isVideo = item.optBoolean("isVideo"),
-                    thumbnailUrl = item.optString("thumbnail").takeIf { it.startsWith("https://") },
+                    thumbnailUrl = item.optString("thumbnail").takeIf {
+                        it.startsWith("https://") || it.startsWith("http://")
+                    },
                     width = item.optInt("width").coerceAtLeast(0),
                     height = item.optInt("height").coerceAtLeast(0),
-                    username = username
+                    username = username,
+                    referer = webView.url
                 )
             }
 
@@ -306,7 +294,8 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
                         thumbnailUrl = latestVideoPoster,
                         width = latestVideoWidth,
                         height = latestVideoHeight,
-                        username = username
+                        username = username,
+                        referer = webView.url
                     )
                 }
             }
@@ -323,7 +312,7 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
                     finishWithMedia(normalizeCollectedMedia(collectedMedia.values.toList()))
                 }
                 payload.optBoolean("errorPage") && collectedMedia.isEmpty() -> {
-                    finishWithError("This content is unavailable to the signed-in account.")
+                    finishWithError("This content is unavailable on the loaded page.")
                 }
                 extractionAttempts >= MAX_EXTRACTION_ATTEMPTS -> {
                     if (collectedMedia.isNotEmpty() && (!pageExpectsVideo || hasVideo)) {
@@ -379,6 +368,7 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
                         .put("width", item.width)
                         .put("height", item.height)
                         .put("username", item.username)
+                        .put("referer", item.referer)
                 )
             }
         }
@@ -386,6 +376,8 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
     }
 
     private fun refreshStoredSession() {
+        val currentPage = webView.url.orEmpty()
+        if (!WebLink.isInstagramHost(currentPage)) return
         val cookies = CookieManager.getInstance().getCookie(INSTAGRAM_ORIGIN).orEmpty()
         if (cookies.contains("sessionid")) {
             runCatching {
@@ -421,9 +413,7 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
             webView.removeAllViews()
             webView.destroy()
         }
-        CookieManager.getInstance().removeAllCookies {
-            CookieManager.getInstance().flush()
-        }
+        CookieManager.getInstance().flush()
         super.onDestroy()
     }
 
@@ -451,30 +441,22 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
                 for (index in 0 until array.length()) {
                     val item = array.optJSONObject(index) ?: continue
                     val url = item.optString("url")
-                    if (!url.startsWith("https://")) continue
+                    if (!url.startsWith("https://") && !url.startsWith("http://")) continue
                     add(
                         MediaResult(
                             url = url,
                             isVideo = item.optBoolean("isVideo"),
-                            thumbnailUrl = item.optString("thumbnailUrl").takeIf { it.startsWith("https://") },
+                            thumbnailUrl = item.optString("thumbnailUrl").takeIf {
+                                it.startsWith("https://") || it.startsWith("http://")
+                            },
                             width = item.optInt("width"),
                             height = item.optInt("height"),
-                            username = item.optString("username").takeIf { it.isNotBlank() && it != "null" }
+                            username = item.optString("username").takeIf { it.isNotBlank() && it != "null" },
+                            referer = item.optString("referer").takeIf { it.startsWith("http") }
                         )
                     )
                 }
             }
-        }
-
-        private fun isAllowedInstagramUrl(url: String?): Boolean = runCatching {
-            val uri = Uri.parse(url)
-            uri.scheme == "https" && isAllowedInstagramUri(uri)
-        }.getOrDefault(false)
-
-        private fun isAllowedInstagramUri(uri: Uri): Boolean {
-            val host = uri.host?.lowercase().orEmpty()
-            return host == "instagram.com" || host.endsWith(".instagram.com") ||
-                host == "instagr.am" || host.endsWith(".instagr.am")
         }
 
         private fun decodeJavascriptResult(value: String?): JSONObject? = runCatching {
@@ -485,7 +467,9 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
         private val EXTRACTION_SCRIPT = """
             (function() {
               const path = location.pathname || '';
-              const singleVideoRoute = path.indexOf('/reel/') === 0 || path.indexOf('/tv/') === 0;
+              const host = (location.hostname || '').toLowerCase();
+              const isInstagram = host === 'instagram.com' || host.endsWith('.instagram.com') || host === 'instagr.am' || host.endsWith('.instagr.am');
+              const singleVideoRoute = isInstagram && (path.indexOf('/reel/') === 0 || path.indexOf('/tv/') === 0);
               const result = {
                 items: [],
                 clickedNext: false,
@@ -499,7 +483,7 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
                 videoHeight: 0,
                 networkVideoUrls: []
               };
-              result.loginPage = location.pathname.indexOf('/accounts/login') === 0;
+              result.loginPage = isInstagram && location.pathname.indexOf('/accounts/login') === 0;
               const html = document.documentElement ? document.documentElement.innerHTML : '';
               result.errorPage = html.indexOf('PolarisErrorRoot') >= 0 || html.indexOf('httpErrorPage') >= 0;
 
@@ -507,7 +491,7 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
               const scope = article || document.querySelector('main') || document.body;
               if (!scope) return JSON.stringify(result);
 
-              const profileLink = scope.querySelector('header a[href^="/"]');
+              const profileLink = isInstagram ? scope.querySelector('header a[href^="/"]') : null;
               if (profileLink) {
                 const segment = profileLink.getAttribute('href').split('/').filter(Boolean)[0] || '';
                 if (segment && !['p', 'reel', 'tv', 'stories', 'explore'].includes(segment)) result.username = segment;
@@ -515,7 +499,8 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
 
               const seen = new Set();
               const add = function(url, isVideo, thumbnail, width, height) {
-                if (!url || url.indexOf('https://') !== 0 || url.indexOf('blob:') === 0 || seen.has(url)) return;
+                try { url = new URL(url, location.href).href; } catch (_) { return; }
+                if (!url || !/^https?:\/\//i.test(url) || seen.has(url)) return;
                 seen.add(url);
                 result.items.push({
                   url: url,
@@ -525,6 +510,10 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
                   height: Number(height) || 0
                 });
               };
+
+              const directPath = (location.pathname || '').toLowerCase();
+              if (/\.(jpe?g|png|gif|webp)$/.test(directPath)) add(location.href, false, '', 0, 0);
+              if (/\.(mp4|m4v|webm)$/.test(directPath)) add(location.href, true, '', 0, 0);
 
               const videos = Array.from(scope.querySelectorAll('video'));
               result.videoElementCount = videos.length;
@@ -539,14 +528,14 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
               }
               const hasDirectVideo = videos.some(function(video) {
                 const source = video.currentSrc || video.src || (video.querySelector('source') || {}).src || '';
-                return source.indexOf('https://') === 0;
+                return /^https?:\/\//i.test(source);
               });
               if (videos.length > 0 && !hasDirectVideo && window.performance) {
                 result.networkVideoUrls = Array.from(performance.getEntriesByType('resource') || [])
                   .map(function(entry) { return entry.name || ''; })
                   .filter(function(url) {
                     const lower = url.toLowerCase();
-                    return lower.indexOf('https://') === 0 &&
+                    return /^https?:\/\//.test(lower) &&
                       (lower.indexOf('.mp4') >= 0 || lower.indexOf('mime_type=video') >= 0 || lower.indexOf('video%2fmp4') >= 0);
                   })
                   .slice(-12);
@@ -589,8 +578,8 @@ class AuthenticatedMediaResolverActivity : ComponentActivity() {
                 else if (metaImage) add(metaImage.content, false, '', 0, 0);
               }
 
-              const isStory = path.indexOf('/stories/') === 0;
-              if (!isStory && !singleVideoRoute && article) {
+              const isStory = isInstagram && path.indexOf('/stories/') === 0;
+              if (isInstagram && !isStory && !singleVideoRoute && article) {
                 const nextButton = Array.from(article.querySelectorAll('button')).find(function(button) {
                   const labelled = button.matches('[aria-label]') ? button : button.querySelector('[aria-label]');
                   const label = ((labelled && labelled.getAttribute('aria-label')) || '').toLowerCase();

@@ -2,7 +2,7 @@
 
 | Metadata | Value |
 | :--- | :--- |
-| Current version | 0.0.1 |
+| Current version | 0.0.2 |
 | Minimum Android version | Android 7.0 (API 24) |
 | Target/compile SDK | 37 |
 
@@ -48,21 +48,21 @@ Acqua uses separate identities for local development and production:
 
 | Variant | Label | Application ID | Version name |
 | :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.1-debug` |
-| Release | Acqua | `dev.qtremors.acqua` | `0.0.1` |
+| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.2-debug` |
+| Release | Acqua | `dev.qtremors.acqua` | `0.0.2` |
 
-Both use version code `1`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
+Both use version code `2`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
 
 APK output names are generated from the variant version:
 
-- `Acqua-0.0.1-debug.apk`
-- `Acqua-0.0.1.apk`
+- `Acqua-0.0.2-debug.apk`
+- `Acqua-0.0.2.apk`
 
 Variant configuration lives in `acqua-app/app/build.gradle.kts`. The manifest reads `${appLabel}`, so do not hard-code the display name in `AndroidManifest.xml`.
 
 ## Architecture
 
-Acqua is a single-activity Compose application with two focused WebView activities for authentication and authenticated media resolution.
+Acqua is a single-activity Compose application with a shared browser activity and a temporary rendered-page media resolver.
 
 ```text
 Shared link / pasted URL
@@ -70,15 +70,12 @@ Shared link / pasted URL
           v
    MainActivity (Compose)
           |
-          +---- public resolution ----> InstagramDownloader
-          |                                  |
-          |                                  v
-          |                         MediaContentDetector
+          +---- known source -------> InstagramDownloader
           |
-          +---- session required ---> AuthenticatedMediaResolverActivity
+          +---- any web link -------> AuthenticatedMediaResolverActivity
                                              |
                                              v
-                                    restored WebView session
+                                      shared WebView profile
                                              |
                                              v
                                       candidate media URLs
@@ -94,53 +91,54 @@ Shared link / pasted URL
 | `MainActivity.kt` | Compose UI, input handling, extraction orchestration, previews, settings, history, and download actions. |
 | `InstagramDownloader.kt` | Network extraction fallbacks, authenticated requests, media model creation, and download streaming. |
 | `MediaContentDetector.kt` | Content sniffing and structural validation for supported image and MP4 responses. |
-| `InstagramLoginActivity.kt` | Full-screen login WebView and session capture. |
-| `AuthenticatedMediaResolverActivity.kt` | Temporary authenticated WebView that observes a media page and returns resolved candidates. |
-| `SecureSessionStore.kt` | Android Keystore encryption, session persistence, restoration, and clearing. |
+| `BrowserActivity.kt` | Shared browser UI, login persistence, and full-screen floating page controls. |
+| `BrowserSessionRegistry.kt` | User-saved website logins, favicon caching, and browser-data clearing. |
+| `WebLink.kt` | Generic HTTP(S) normalization, shared-text extraction, and known-source detection. |
+| `AuthenticatedMediaResolverActivity.kt` | Temporary WebView that observes any submitted page and returns media candidates. |
+| `SecureSessionStore.kt` | Android Keystore protection for known platform cookies used by network adapters. |
 
 The UI remains platform-neutral. Source-specific network logic is isolated behind the downloader and authentication components so that future resolvers can be added without changing the main interaction model.
 
 ## Media resolution
 
-Resolution is intentionally layered because public and signed-in pages expose different data.
+Resolution is layered because known sources and generic websites expose media differently.
 
-1. Normalize and validate the submitted URL.
-2. Try public network extraction where possible.
-3. If an encrypted session exists or public extraction cannot resolve the item, open the authenticated resolver.
-4. Let WebView restore the signed-in session and load the requested page.
-5. Observe document markup, media elements, performance entries, and network requests for candidate URLs.
-6. Strip byte-range fragments and other partial-response parameters from candidates.
+1. Normalize any valid HTTP or HTTPS URL.
+2. Use a specialized network adapter when the domain and route are recognized.
+3. Otherwise load the page in the rendered-page resolver using the shared WebView profile.
+4. Observe document markup, media elements, metadata, performance entries, and network requests.
+5. Strip byte-range fragments and other partial-response parameters from candidates.
+6. Carry the page referrer and relevant domain cookies into validation and download requests.
 7. Validate candidate responses before presenting or downloading them.
-8. Select the strongest complete video candidate while preserving the best available cover image.
+8. Report a clean unsupported-media error when no complete file is exposed.
 
 The resolver must never assume that a URL ending in `.jpg` or `.mp4` contains that format. Services frequently return HTML error pages, partial byte ranges, or audio streams under misleading URLs.
 
 ## Authenticated sessions
 
-### Login flow
+### Browser flow
 
-`InstagramLoginActivity` opens the service's normal web login page in Android WebView. Credentials are submitted directly to that page; Acqua does not receive or store the password.
+`BrowserActivity` provides one address bar and one shared WebView profile for all websites. Credentials are submitted directly to the loaded website; Acqua does not receive or store passwords.
 
-After a successful login:
+WebView keeps cookies and site storage in the application sandbox. The user can add a named website bookmark before opening the browser; `BrowserSessionRegistry` stores its display name, origin, and cached favicon for the Browser tab. Known platform adapters may copy the cookies they need into `SecureSessionStore`, where AES-GCM and Android Keystore protect them.
 
-1. WebView cookies and relevant browser state are collected.
-2. `SecureSessionStore` encrypts the serialized session with AES-GCM.
-3. The encryption key is generated and held by Android Keystore.
-4. The encrypted payload is stored in app-private preferences.
+The **Use sessions for downloads** preference is opt-in. When disabled, network adapters receive no saved session cookies and authenticated WebView fallback is not launched. The browser retains its own website logins so the preference can be enabled later without signing in again.
 
-Backup rules exclude the session payload so it is not copied to cloud backup or transferred to another device.
+Backup rules exclude both the encrypted session payload and WebView data from cloud backup and device transfer.
 
 ### Resolver flow
 
-`AuthenticatedMediaResolverActivity` creates a temporary WebView, restores the saved cookies, visits the submitted URL, and returns media candidates to `MainActivity`. The activity is a resolver, not a second permanent browser UI.
+`AuthenticatedMediaResolverActivity` creates a temporary WebView using the same cookie profile, visits the submitted URL, and returns media candidates to `MainActivity`. Existing encrypted cookies for the current known adapter are migrated into WebView when required.
 
-Logout clears both the persisted encrypted session and active WebView cookies. Debug and release builds maintain independent sessions because their application IDs and storage sandboxes differ.
+**Manage Website Data** can clear selected origins or all browser data. Selected clearing expires addressable cookies, deletes origin storage, removes the bookmark and favicon, and clears matching encrypted adapter sessions. Full clearing additionally removes all WebView cookies and storage, shared cache, form data, HTTP authentication, registry metadata, and encrypted adapter sessions. Debug and release builds maintain independent browser data because their application IDs and storage sandboxes differ.
 
 ### Security boundaries
 
 - Never log cookies, authorization headers, session payloads, or full authenticated responses.
 - Never persist passwords.
 - Keep session preferences excluded from backup and device transfer.
+- Accept only HTTP(S) top-level navigation and keep file/content access disabled.
+- Do not override SSL errors or disguise WebView as another client.
 - Do not weaken certificate validation or WebView safe-browsing behavior.
 - Do not add automation intended to bypass access controls, challenges, rate limits, or account protections.
 
@@ -170,7 +168,7 @@ Use test accounts and content you control. Repeated automated requests can trigg
 
 ## Storage and history
 
-Acqua writes downloads through Android's supported storage APIs and lets the user select a destination. Filename settings are applied before the file is created.
+Acqua writes downloads through Android's supported storage APIs and lets the user select a destination. Filename settings are applied before the file is created. The Settings page exposes the supported placeholders as toggleable chips and can restore `acqua_{username}_{resolution}_{date}_{time}_{index}` as the default pattern.
 
 History stores local download records used by the Compose dashboard. Authentication state is separate from history and must not be mixed into user-visible records or exports.
 
@@ -200,8 +198,10 @@ Create both APK variants:
 Useful verification points:
 
 - `MediaContentDetectorTest` covers format detection and corrupt/partial payload rejection.
+- `WebLinkTest` covers generic URL normalization, shared-text extraction, and known-source routing.
 - Install debug and release together and verify their names and independent data.
-- Confirm session login, app restart restoration, authenticated resolution, and logout.
+- Confirm browsing, login persistence, app restart restoration, authenticated resolution, and **Clear Data**.
+- Try a direct media URL, a generic HTML page with media metadata, and an unsupported page.
 - Confirm image and video previews match the files that are downloaded.
 - Check light/dark themes and compact/expanded layouts.
 
@@ -213,13 +213,13 @@ Useful verification points:
 4. Run unit tests and a release build.
 5. Verify APK output names.
 6. Test a clean install and an upgrade from the previous release.
-7. Verify login, authenticated extraction, preview, download, history, and logout.
+7. Verify browser navigation, login persistence, generic and specialized extraction, preview, download, history, and data clearing.
 8. Confirm no secrets, cookies, local paths, or test credentials are committed.
 9. Validate the website in `docs/` and update version references if necessary.
 
 ## Troubleshooting
 
-### The login page is blank
+### A website is blank
 
 - Confirm Android System WebView and the browser engine are up to date.
 - Check that the device has working network access and correct date/time.
@@ -227,9 +227,16 @@ Useful verification points:
 
 ### Login succeeds but extraction is unauthenticated
 
-- Confirm the session was saved before closing the login activity.
-- Confirm cookies are restored before the resolver loads the media URL.
+- Confirm the login was completed in Acqua Browser rather than an external browser.
+- Confirm the website remains signed in after closing and reopening Acqua Browser.
+- Check that the media host receives only cookies valid for its domain and the correct page referrer.
 - Remember that debug and release builds do not share sessions.
+
+### A valid link returns no media
+
+- Confirm the page exposes a direct image or video URL in markup, metadata, a media element, or observable requests.
+- Generic resolution does not assemble segmented streams or bypass DRM/access controls.
+- Add a source adapter when a website needs structured extraction beyond the generic resolver.
 
 ### A video opens in WebView but no preview appears
 

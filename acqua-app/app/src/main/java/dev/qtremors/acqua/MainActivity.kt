@@ -46,12 +46,14 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Check
@@ -73,6 +75,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -81,33 +84,53 @@ import dev.qtremors.acqua.downloader.ExpiredSessionException
 import dev.qtremors.acqua.downloader.InstagramDownloader
 import dev.qtremors.acqua.downloader.MediaResult
 import dev.qtremors.acqua.auth.AuthenticatedMediaResolverActivity
+import dev.qtremors.acqua.auth.BrowserActivity
+import dev.qtremors.acqua.auth.BrowserSessionRegistry
 import dev.qtremors.acqua.auth.SecureSessionStore
-import dev.qtremors.acqua.auth.InstagramLoginActivity
+import dev.qtremors.acqua.auth.WebLink
 import dev.qtremors.acqua.ui.theme.AcquaTheme
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
-import java.util.regex.Pattern
 
 enum class LinkSupportState {
     EMPTY, SUPPORTED, UNSUPPORTED
 }
 
+private const val DEFAULT_FILENAME_FORMAT = "acqua_{username}_{resolution}_{date}_{time}_{index}"
+
+private val FILENAME_VARIABLES = listOf(
+    "{username}",
+    "{resolution}",
+    "{date}",
+    "{time}",
+    "{index}"
+)
+
 class MainActivity : ComponentActivity() {
 
-    private val loginSessionRevision = mutableIntStateOf(0)
+    private val browserSessionRevision = mutableIntStateOf(0)
+    private val browserDownloadRequestRevision = mutableIntStateOf(0)
+    private val pendingBrowserDownloadUrl = mutableStateOf<String?>(null)
+    private val useWebsiteSessionsState = mutableStateOf(false)
     private var pendingMediaResolution: CompletableDeferred<List<MediaResult>>? = null
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { _ -> /* Result checked inline before writing */ }
 
-    private val loginLauncher = registerForActivityResult(
+    private val browserLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            loginSessionRevision.intValue++
+            if (result.data?.getBooleanExtra(BrowserActivity.EXTRA_DOWNLOAD_CURRENT_PAGE, false) == true) {
+                result.data?.getStringExtra(BrowserActivity.EXTRA_CURRENT_URL)
+                    ?.let(WebLink::normalize)
+                    ?.let { pendingBrowserDownloadUrl.value = it }
+            } else {
+                browserSessionRevision.intValue++
+            }
         }
     }
 
@@ -117,17 +140,30 @@ class MainActivity : ComponentActivity() {
         val pending = pendingMediaResolution ?: return@registerForActivityResult
         pendingMediaResolution = null
 
-        SecureSessionStore.load(this)?.let { refreshedSession ->
-            InstagramDownloader.setSessionCookies(
-                refreshedSession.cookies,
-                refreshedSession.userAgent
-            )
+        if (useWebsiteSessionsState.value) {
+            SecureSessionStore.load(this)?.let { refreshedSession ->
+                InstagramDownloader.setSessionCookies(
+                    refreshedSession.cookies,
+                    refreshedSession.userAgent
+                )
+            }
+        } else {
+            InstagramDownloader.clearSessionCookies()
         }
 
         when (result.resultCode) {
             Activity.RESULT_OK -> {
                 val media = runCatching {
-                    AuthenticatedMediaResolverActivity.parseMediaResults(result.data)
+                    AuthenticatedMediaResolverActivity.parseMediaResults(result.data).map { item ->
+                        item.copy(
+                            requestCookies = if (useWebsiteSessionsState.value) {
+                                CookieManager.getInstance().getCookie(item.url)
+                                    ?.takeIf { it.isNotBlank() }
+                            } else {
+                                null
+                            }
+                        )
+                    }
                 }.getOrElse {
                     pending.completeExceptionally(
                         Exception("The browser returned invalid media information.", it)
@@ -177,40 +213,46 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIncomingIntent(intent: Intent): String {
         if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
-            if (isValidInstagramUrl(sharedText)) {
-                return sharedText
-            }
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+            return WebLink.extractFirst(sharedText).orEmpty()
         }
         return ""
     }
 
     private suspend fun resolveMediaItems(
         url: String,
-        useAuthenticatedWebView: Boolean
+        useWebsiteSessions: Boolean = useWebsiteSessionsState.value
     ): List<MediaResult> {
-        if (!useAuthenticatedWebView) {
-            return withContext(Dispatchers.IO) { InstagramDownloader.getMediaItems(url) }
+        val normalizedUrl = WebLink.normalize(url)
+            ?: throw IllegalArgumentException("Enter a valid HTTP or HTTPS link.")
+
+        if (!WebLink.isInstagramMediaUrl(normalizedUrl)) {
+            if (!useWebsiteSessions) {
+                throw Exception("Enable website sessions to resolve this page in the browser.")
+            }
+            return resolveMediaItemsInWebView(normalizedUrl)
         }
 
-        val browserError = try {
-            return resolveMediaItemsInWebView(url)
-        } catch (e: ExpiredSessionException) {
-            throw e
+        val networkError = try {
+            return withContext(Dispatchers.IO) { InstagramDownloader.getMediaItems(normalizedUrl) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             e
         }
 
+        if (!useWebsiteSessions) throw networkError
+
         return try {
-            withContext(Dispatchers.IO) { InstagramDownloader.getMediaItems(url) }
+            resolveMediaItemsInWebView(normalizedUrl)
         } catch (e: ExpiredSessionException) {
             throw e
-        } catch (fallbackError: Exception) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (browserError: Exception) {
             throw Exception(
-                "Browser extraction failed: ${browserError.message}\n" +
-                    "Network fallback failed: ${fallbackError.message}"
+                "Network extraction failed: ${networkError.message}\n" +
+                    "Browser extraction failed: ${browserError.message}"
             )
         }
     }
@@ -237,7 +279,8 @@ class MainActivity : ComponentActivity() {
         sourceUrl: String,
         items: List<MediaResult>
     ): List<MediaResult> {
-        val isSingleVideo = Regex("/(?:reel|tv)/", RegexOption.IGNORE_CASE).containsMatchIn(sourceUrl)
+        val isSingleVideo = WebLink.isInstagramMediaUrl(sourceUrl) &&
+            Regex("/(?:reel|tv)/", RegexOption.IGNORE_CASE).containsMatchIn(sourceUrl)
         if (!isSingleVideo) return items.distinctBy { it.url }
 
         val bestVideo = items.asSequence()
@@ -260,9 +303,11 @@ class MainActivity : ComponentActivity() {
         var isDownloadSuccess by remember { mutableStateOf(false) }
         var currentTab by remember { mutableStateOf(0) }
         var savingProgressIndex by remember { mutableStateOf(0) }
+        var useWebsiteSessions by useWebsiteSessionsState
 
-        var useSessionCookies by remember { mutableStateOf(false) }
-        var hasSavedSession by remember { mutableStateOf(false) }
+        var websiteLogins by remember {
+            mutableStateOf<List<BrowserSessionRegistry.WebsiteLogin>>(emptyList())
+        }
         var sessionInitialized by remember { mutableStateOf(false) }
 
         // Dynamic login promotion states
@@ -271,31 +316,57 @@ class MainActivity : ComponentActivity() {
         val context = LocalContext.current
         val coroutineScope = rememberCoroutineScope()
         val colorScheme = MaterialTheme.colorScheme
+        val openBrowser: (String?, Boolean, String?) -> Unit = { initialUrl, addLogin, loginName ->
+            browserLauncher.launch(
+                Intent(this@MainActivity, BrowserActivity::class.java).apply {
+                    putExtra(BrowserActivity.EXTRA_ADD_LOGIN, addLogin)
+                    loginName?.takeIf { it.isNotBlank() }?.let {
+                        putExtra(BrowserActivity.EXTRA_LOGIN_NAME, it)
+                    }
+                    WebLink.normalize(initialUrl.orEmpty())?.let {
+                        putExtra(BrowserActivity.EXTRA_INITIAL_URL, it)
+                    }
+                }
+            )
+        }
 
         val linkSupportState = remember(urlInput) {
             detectLinkSupport(urlInput)
         }
 
+        LaunchedEffect(pendingBrowserDownloadUrl.value) {
+            pendingBrowserDownloadUrl.value?.let { browserUrl ->
+                val savedSession = withContext(Dispatchers.IO) {
+                    SecureSessionStore.load(context)
+                }
+                if (useWebsiteSessions && savedSession != null) {
+                    InstagramDownloader.setSessionCookies(savedSession.cookies, savedSession.userAgent)
+                } else {
+                    InstagramDownloader.clearSessionCookies()
+                }
+                websiteLogins = BrowserSessionRegistry.websiteLogins(context)
+                urlInput = browserUrl
+                currentTab = 0
+                browserDownloadRequestRevision.intValue++
+                pendingBrowserDownloadUrl.value = null
+            }
+        }
+
         // Initialize session settings on startup
-        LaunchedEffect(loginSessionRevision.intValue) {
-            sessionInitialized = false
-            val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
-            val useCookies = sharedPrefs.getBoolean("acqua_use_session_cookies", false)
+        LaunchedEffect(browserSessionRevision.intValue) {
+            val preferences = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
+            val sessionsEnabled = preferences.getBoolean("acqua_use_session_cookies", false)
             val savedSession = withContext(Dispatchers.IO) {
                 SecureSessionStore.load(context)
             }
 
-            useSessionCookies = useCookies && savedSession != null
-            hasSavedSession = savedSession != null
-
-            if (useSessionCookies && savedSession != null) {
+            useWebsiteSessions = sessionsEnabled
+            if (sessionsEnabled && savedSession != null) {
                 InstagramDownloader.setSessionCookies(savedSession.cookies, savedSession.userAgent)
             } else {
                 InstagramDownloader.clearSessionCookies()
-                if (useCookies) {
-                    sharedPrefs.edit().putBoolean("acqua_use_session_cookies", false).apply()
-                }
             }
+            websiteLogins = BrowserSessionRegistry.websiteLogins(context)
             sessionInitialized = true
         }
 
@@ -303,13 +374,11 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(
             urlInput,
             sessionInitialized,
-            useSessionCookies,
-            loginSessionRevision.intValue
+            useWebsiteSessions,
+            browserDownloadRequestRevision.intValue
         ) {
-            val sanitizedUrl = urlInput.trim()
-            if (!sessionInitialized || sanitizedUrl.isBlank() ||
-                detectLinkSupport(sanitizedUrl) != LinkSupportState.SUPPORTED
-            ) {
+            val sanitizedUrl = WebLink.normalize(urlInput)
+            if (!sessionInitialized || sanitizedUrl == null) {
                 parsedMediaItems = null
                 return@LaunchedEffect
             }
@@ -340,7 +409,7 @@ class MainActivity : ComponentActivity() {
             showLoginPromptInError = false
 
             val result = runCatching {
-                val items = resolveMediaItems(sanitizedUrl, useSessionCookies)
+                val items = resolveMediaItems(sanitizedUrl)
                 val validated = withContext(Dispatchers.IO) {
                     items.map { item ->
                         async {
@@ -366,7 +435,7 @@ class MainActivity : ComponentActivity() {
                     }
                     else -> {
                         extractionError = exception?.message ?: "An unexpected error occurred"
-                        showLoginPromptInError = false
+                        showLoginPromptInError = true
                     }
                 }
                 return@LaunchedEffect
@@ -413,14 +482,23 @@ class MainActivity : ComponentActivity() {
                             triggerHapticStart(context)
                             currentTab = 1
                         },
-                        icon = { Icon(imageVector = Icons.Filled.History, contentDescription = "History") },
-                        label = { Text("History") }
+                        icon = { Icon(imageVector = Icons.Filled.Public, contentDescription = "Browser") },
+                        label = { Text("Browser") }
                     )
                     NavigationBarItem(
                         selected = currentTab == 2,
                         onClick = {
                             triggerHapticStart(context)
                             currentTab = 2
+                        },
+                        icon = { Icon(imageVector = Icons.Filled.History, contentDescription = "History") },
+                        label = { Text("History") }
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == 3,
+                        onClick = {
+                            triggerHapticStart(context)
+                            currentTab = 3
                         },
                         icon = { Icon(imageVector = Icons.Filled.Settings, contentDescription = "Settings") },
                         label = { Text("Settings") }
@@ -545,7 +623,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Paste a supported media link to extract and save its content.",
+                                    text = "Paste any HTTP or HTTPS media link and Acqua will try to resolve it.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center
@@ -577,7 +655,7 @@ class MainActivity : ComponentActivity() {
 
                                 Button(
                                     onClick = {
-                                        val url = urlInput.trim()
+                                        val url = WebLink.normalize(urlInput).orEmpty()
                                         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && !hasWritePermission()) {
                                             requestPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                                         } else {
@@ -603,7 +681,7 @@ class MainActivity : ComponentActivity() {
                                                         )
                                                     }
                                                     val fetchResult = runCatching {
-                                                        val resolved = resolveMediaItems(url, useSessionCookies)
+                                                        val resolved = resolveMediaItems(url)
                                                         val validated = withContext(Dispatchers.IO) {
                                                             resolved.map { item ->
                                                                 async {
@@ -629,7 +707,7 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                             else -> {
                                                                 extractionError = exception?.message ?: "Extraction failed"
-                                                                showLoginPromptInError = false
+                                                                showLoginPromptInError = true
                                                             }
                                                         }
                                                         return@launch
@@ -793,7 +871,7 @@ class MainActivity : ComponentActivity() {
                                         Button(
                                             onClick = {
                                                 triggerHapticStart(context)
-                                                currentTab = 2
+                                                openBrowser(urlInput, false, null)
                                             },
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = colorScheme.onErrorContainer,
@@ -804,11 +882,11 @@ class MainActivity : ComponentActivity() {
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Filled.Lock,
-                                                contentDescription = "Configure Login"
+                                                contentDescription = "Open Browser"
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
                                             Text(
-                                                text = "Open Login Settings",
+                                                text = "Open in Browser",
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
@@ -840,14 +918,14 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Warning,
-                                        contentDescription = "Unsupported",
+                                        contentDescription = "Invalid",
                                         tint = colorScheme.onErrorContainer,
                                         modifier = Modifier.size(30.dp)
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Text(
-                                    text = "Unsupported Link Format",
+                                    text = "Invalid Link",
                                     style = MaterialTheme.typography.titleMedium.copy(
                                         fontWeight = FontWeight.Bold,
                                         color = colorScheme.error
@@ -856,7 +934,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "This link is not supported or has an invalid format. Please paste a supported media URL.",
+                                    text = "Enter a complete HTTP or HTTPS website link.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center
@@ -873,8 +951,8 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            alpha = if (currentTab == 1) 1f else 0f
-                            translationX = if (currentTab == 1) 0f else 2000f
+                            alpha = if (currentTab == 2) 1f else 0f
+                            translationX = if (currentTab == 2) 0f else 2000f
                         }
                 ) {
                     HistoryScreen(
@@ -891,20 +969,59 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {
-                            alpha = if (currentTab == 2) 1f else 0f
-                            translationX = if (currentTab == 2) 0f else 2000f
+                            alpha = if (currentTab == 1) 1f else 0f
+                            translationX = if (currentTab == 1) 0f else 2000f
                         }
                 ) {
-                    SettingsScreen(
+                    BrowserSessionsScreen(
                         paddingValues = PaddingValues(0.dp),
-                        useSessionCookies = useSessionCookies,
-                        onUseSessionCookiesChange = { useSessionCookies = it },
-                        hasSavedSession = hasSavedSession,
-                        onHasSavedSessionChange = { hasSavedSession = it },
-                        showLoginWebView = {
-                            loginLauncher.launch(Intent(this@MainActivity, InstagramLoginActivity::class.java))
+                        useWebsiteSessions = useWebsiteSessions,
+                        onUseWebsiteSessionsChange = { enabled ->
+                            useWebsiteSessions = enabled
+                            context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
+                                .edit()
+                                .putBoolean("acqua_use_session_cookies", enabled)
+                                .apply()
+                            if (enabled) {
+                                SecureSessionStore.load(context)?.let { session ->
+                                    InstagramDownloader.setSessionCookies(session.cookies, session.userAgent)
+                                }
+                            } else {
+                                InstagramDownloader.clearSessionCookies()
+                            }
+                        },
+                        websiteLogins = websiteLogins,
+                        addWebsiteLogin = { name, url -> openBrowser(url, true, name) },
+                        openWebsiteLogin = { origin -> openBrowser(origin, false, null) },
+                        clearSelectedWebsiteData = { origins ->
+                            BrowserSessionRegistry.clearWebsiteData(context, origins) {
+                                runOnUiThread {
+                                    websiteLogins = BrowserSessionRegistry.websiteLogins(context)
+                                    browserSessionRevision.intValue++
+                                }
+                            }
+                        },
+                        clearBrowserData = {
+                            BrowserSessionRegistry.clearAll(context) {
+                                runOnUiThread {
+                                    InstagramDownloader.clearSessionCookies()
+                                    websiteLogins = emptyList()
+                                    browserSessionRevision.intValue++
+                                }
+                            }
                         }
                     )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = if (currentTab == 3) 1f else 0f
+                            translationX = if (currentTab == 3) 0f else 2000f
+                        }
+                ) {
+                    SettingsScreen(paddingValues = PaddingValues(0.dp))
                 }
             }
         }
@@ -913,7 +1030,16 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MediaThumbnailItem(item: MediaResult, index: Int, sourceUrl: String) {
         val previewUrl = item.previewUrl
+        val useWebsiteSessions = useWebsiteSessionsState.value
         var hasFailedToLoad by remember(previewUrl) { mutableStateOf(false) }
+        val previewCookies = remember(previewUrl, item.url, item.requestCookies, useWebsiteSessions) {
+            when {
+                !useWebsiteSessions -> null
+                previewUrl == null -> null
+                WebLink.host(previewUrl) == WebLink.host(item.url) -> item.requestCookies
+                else -> CookieManager.getInstance().getCookie(previewUrl)?.takeIf { it.isNotBlank() }
+            }
+        }
 
         val imageBitmapState = produceState<ImageBitmap?>(initialValue = null, previewUrl) {
             if (previewUrl == null) {
@@ -922,7 +1048,11 @@ class MainActivity : ComponentActivity() {
             }
             val resultBmp = withContext(Dispatchers.IO) {
                 runCatching {
-                    val rawBytes = InstagramDownloader.fetchBytes(previewUrl)
+                    val rawBytes = InstagramDownloader.fetchBytes(
+                        previewUrl,
+                        item.referer,
+                        previewCookies
+                    )
                     BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size)?.asImageBitmap()
                 }.getOrNull()
             }
@@ -1122,7 +1252,11 @@ class MainActivity : ComponentActivity() {
         val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
         val baseFolder = sharedPrefs.getString("acqua_base_folder", "Acqua") ?: "Acqua"
         val categorize = sharedPrefs.getBoolean("acqua_categorize_media", false)
-        val formatPattern = sharedPrefs.getString("acqua_filename_format", "acqua_{username}_{resolution}_{date}_{time}_{index}") ?: "acqua_{username}_{resolution}_{date}_{time}_{index}"
+        val requestCookies = item.requestCookies.takeIf {
+            sharedPrefs.getBoolean("acqua_use_session_cookies", false)
+        }
+        val formatPattern = sharedPrefs.getString("acqua_filename_format", DEFAULT_FILENAME_FORMAT)
+            ?: DEFAULT_FILENAME_FORMAT
 
         val relativePath = if (categorize) {
             "Download/$baseFolder/" + (if (isVideo) "Videos" else "Images")
@@ -1146,7 +1280,13 @@ class MainActivity : ComponentActivity() {
 
             try {
                 val bytesDownloaded = resolver.openOutputStream(uri)?.use { outputStream ->
-                    InstagramDownloader.downloadToStream(mediaUrl, outputStream, isVideo)
+                    InstagramDownloader.downloadToStream(
+                        mediaUrl,
+                        outputStream,
+                        isVideo,
+                        item.referer,
+                        requestCookies
+                    )
                 } ?: throw Exception("Could not open the destination media file.")
 
                 contentValues.clear()
@@ -1179,7 +1319,13 @@ class MainActivity : ComponentActivity() {
             val file = File(targetDir, name)
             try {
                 val bytesDownloaded = file.outputStream().use { outputStream ->
-                    InstagramDownloader.downloadToStream(mediaUrl, outputStream, isVideo)
+                    InstagramDownloader.downloadToStream(
+                        mediaUrl,
+                        outputStream,
+                        isVideo,
+                        item.referer,
+                        requestCookies
+                    )
                 }
                 val uri = Uri.fromFile(file)
                 addToHistory(
@@ -1205,16 +1351,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun isValidInstagramUrl(url: String): Boolean {
-        return Pattern.compile(
-            "^https?://(www\\.)?(instagram\\.com|instagr\\.am)/(p|reel|tv|stories)/[A-Za-z0-9_.-]+"
-        ).matcher(url).find()
-    }
-
     private fun detectLinkSupport(url: String): LinkSupportState {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return LinkSupportState.EMPTY
-        return if (isValidInstagramUrl(trimmed)) LinkSupportState.SUPPORTED else LinkSupportState.UNSUPPORTED
+        return if (WebLink.normalize(trimmed) != null) LinkSupportState.SUPPORTED else LinkSupportState.UNSUPPORTED
     }
 
     private fun hasWritePermission(): Boolean {
@@ -1398,7 +1538,7 @@ class MainActivity : ComponentActivity() {
         }
 
         LaunchedEffect(currentTab) {
-            if (currentTab == 1) {
+            if (currentTab == 2) {
                 withContext(Dispatchers.IO) {
                     historyList = loadHistoryFromDb(context)
                 }
@@ -1761,26 +1901,309 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun SettingsScreen(
-        paddingValues: PaddingValues,
-        useSessionCookies: Boolean,
-        onUseSessionCookiesChange: (Boolean) -> Unit,
-        hasSavedSession: Boolean,
-        onHasSavedSessionChange: (Boolean) -> Unit,
-        showLoginWebView: () -> Unit
+    private fun WebsiteLoginTile(
+        login: BrowserSessionRegistry.WebsiteLogin,
+        onClick: () -> Unit
     ) {
-        val context = LocalContext.current
+        val iconKey = login.iconFile?.let { "${it.absolutePath}:${it.lastModified()}" }
+        val iconBitmap by produceState<ImageBitmap?>(initialValue = null, iconKey) {
+            value = withContext(Dispatchers.IO) {
+                login.iconFile
+                    ?.takeIf(File::isFile)
+                    ?.let { BitmapFactory.decodeFile(it.absolutePath) }
+                    ?.asImageBitmap()
+            }
+        }
         val colorScheme = MaterialTheme.colorScheme
 
-        var baseFolderInput by remember { mutableStateOf("") }
-        var categorizeMediaState by remember { mutableStateOf(false) }
-        var filenameFormatInput by remember { mutableStateOf("") }
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.width(96.dp).height(112.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = colorScheme.surfaceContainer
+        ) {
+            Column(
+                modifier = Modifier.padding(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(54.dp)
+                        .clip(CircleShape)
+                        .background(colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (iconBitmap != null) {
+                        Image(
+                            bitmap = iconBitmap!!,
+                            contentDescription = "${login.name} (${login.host}) icon",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Public,
+                            contentDescription = null,
+                            tint = colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = login.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
 
-        LaunchedEffect(Unit) {
-            val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
-            baseFolderInput = sharedPrefs.getString("acqua_base_folder", "Acqua") ?: "Acqua"
-            categorizeMediaState = sharedPrefs.getBoolean("acqua_categorize_media", false)
-            filenameFormatInput = sharedPrefs.getString("acqua_filename_format", "acqua_{username}_{resolution}_{date}_{time}_{index}") ?: "acqua_{username}_{resolution}_{date}_{time}_{index}"
+    @Composable
+    private fun AddWebsiteLoginTile(onClick: () -> Unit) {
+        val colorScheme = MaterialTheme.colorScheme
+        Surface(
+            onClick = onClick,
+            modifier = Modifier.width(96.dp).height(112.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = colorScheme.primaryContainer
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = "Add website login",
+                    tint = colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Add login",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colorScheme.onPrimaryContainer
+                )
+            }
+        }
+    }
+
+    @Composable
+    private fun BrowserSessionsScreen(
+        paddingValues: PaddingValues,
+        useWebsiteSessions: Boolean,
+        onUseWebsiteSessionsChange: (Boolean) -> Unit,
+        websiteLogins: List<BrowserSessionRegistry.WebsiteLogin>,
+        addWebsiteLogin: (String, String) -> Unit,
+        openWebsiteLogin: (String) -> Unit,
+        clearSelectedWebsiteData: (Collection<String>) -> Unit,
+        clearBrowserData: () -> Unit
+    ) {
+        val colorScheme = MaterialTheme.colorScheme
+
+        var showAddWebsiteDialog by remember { mutableStateOf(false) }
+        var websiteNameInput by remember { mutableStateOf("") }
+        var websiteUrlInput by remember { mutableStateOf("") }
+        var websiteDialogError by remember { mutableStateOf<String?>(null) }
+        var showManageWebsiteDataDialog by remember { mutableStateOf(false) }
+        var selectedWebsiteOrigins by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+        if (showAddWebsiteDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showAddWebsiteDialog = false
+                    websiteNameInput = ""
+                    websiteUrlInput = ""
+                    websiteDialogError = null
+                },
+                title = { Text("Add website") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = websiteNameInput,
+                            onValueChange = {
+                                websiteNameInput = it.take(40)
+                                websiteDialogError = null
+                            },
+                            label = { Text("Name") },
+                            placeholder = { Text("Instagram") },
+                            singleLine = true,
+                            isError = websiteDialogError == "Enter a name.",
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = websiteUrlInput,
+                            onValueChange = {
+                                websiteUrlInput = it
+                                websiteDialogError = null
+                            },
+                            label = { Text("Website URL") },
+                            placeholder = { Text("instagram.com") },
+                            singleLine = true,
+                            isError = websiteDialogError == "Enter a valid HTTP or HTTPS website.",
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        websiteDialogError?.let { error ->
+                            Text(
+                                text = error,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = colorScheme.error
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val name = websiteNameInput.trim()
+                        val normalizedUrl = WebLink.normalize(websiteUrlInput)
+                        when {
+                            name.isEmpty() -> websiteDialogError = "Enter a name."
+                            normalizedUrl == null -> websiteDialogError = "Enter a valid HTTP or HTTPS website."
+                            else -> {
+                                showAddWebsiteDialog = false
+                                websiteDialogError = null
+                                websiteNameInput = ""
+                                websiteUrlInput = ""
+                                addWebsiteLogin(name, normalizedUrl)
+                            }
+                        }
+                    }) {
+                        Text("Open website")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showAddWebsiteDialog = false
+                        websiteNameInput = ""
+                        websiteUrlInput = ""
+                        websiteDialogError = null
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showManageWebsiteDataDialog) {
+            val allOrigins = websiteLogins.map { it.origin }.toSet()
+            AlertDialog(
+                onDismissRequest = {
+                    showManageWebsiteDataDialog = false
+                    selectedWebsiteOrigins = emptySet()
+                },
+                title = { Text("Manage website data") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (websiteLogins.isEmpty()) {
+                            Text(
+                                text = "No saved website bookmarks. You can still clear all shared browser data.",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Select websites",
+                                    style = MaterialTheme.typography.labelLarge
+                                )
+                                TextButton(onClick = {
+                                    selectedWebsiteOrigins = if (selectedWebsiteOrigins == allOrigins) {
+                                        emptySet()
+                                    } else {
+                                        allOrigins
+                                    }
+                                }) {
+                                    Text(if (selectedWebsiteOrigins == allOrigins) "Deselect all" else "Select all")
+                                }
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 280.dp)
+                                    .verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                websiteLogins.forEach { login ->
+                                    val selected = login.origin in selectedWebsiteOrigins
+                                    Surface(
+                                        onClick = {
+                                            selectedWebsiteOrigins = if (selected) {
+                                                selectedWebsiteOrigins - login.origin
+                                            } else {
+                                                selectedWebsiteOrigins + login.origin
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = if (selected) {
+                                            colorScheme.primaryContainer
+                                        } else {
+                                            colorScheme.surfaceContainer
+                                        }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Checkbox(checked = selected, onCheckedChange = null)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(login.name, style = MaterialTheme.typography.bodyMedium)
+                                                Text(
+                                                    login.host,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            text = "Selected websites: clears their cookies, site storage, bookmark, and icon. Clear all also removes the shared WebView cache, form data, and HTTP authentication.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = {
+                                showManageWebsiteDataDialog = false
+                                selectedWebsiteOrigins = emptySet()
+                                clearBrowserData()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Clear all browser data", color = colorScheme.error)
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            val selected = selectedWebsiteOrigins
+                            showManageWebsiteDataDialog = false
+                            selectedWebsiteOrigins = emptySet()
+                            clearSelectedWebsiteData(selected)
+                        },
+                        enabled = selectedWebsiteOrigins.isNotEmpty()
+                    ) {
+                        Text("Clear selected")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showManageWebsiteDataDialog = false
+                        selectedWebsiteOrigins = emptySet()
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
 
         Column(
@@ -1791,15 +2214,14 @@ class MainActivity : ComponentActivity() {
                 .padding(horizontal = 20.dp)
         ) {
             Text(
-                text = "Settings",
+                text = "Browser & Sessions",
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = colorScheme.onSurface,
                 modifier = Modifier.padding(vertical = 16.dp)
             )
 
-            // Category 1: Authentication & Instagram Login
             Text(
-                text = "Instagram Authentication",
+                text = "Website Sessions",
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = colorScheme.primary),
                 modifier = Modifier.padding(vertical = 8.dp)
             )
@@ -1810,7 +2232,6 @@ class MainActivity : ComponentActivity() {
                 colors = CardDefaults.cardColors(containerColor = colorScheme.surfaceContainerHigh)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    // Security Warning Card inside the authentication section
                     Card(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -1830,13 +2251,13 @@ class MainActivity : ComponentActivity() {
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
                                 Text(
-                                    text = "Security Warning & Terms of Service",
+                                    text = "Browse responsibly",
                                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                     color = colorScheme.error
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "This application runs completely client-side. The login cookies retrieved are stored securely on your local device. We are not responsible for any actions taken on your account. Please respect creators' copyrights and Terms of Service.",
+                                    text = "Only sign in to websites you trust and download content you are allowed to access. Acqua never stores your password.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colorScheme.onErrorContainer
                                 )
@@ -1845,119 +2266,119 @@ class MainActivity : ComponentActivity() {
                     }
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Use Session Cookies",
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold)
+                                text = "Use sessions for downloads",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                             )
+                            Spacer(modifier = Modifier.height(3.dp))
                             Text(
-                                text = "Use your encrypted browser session for photos and videos that are visible to your signed-in account.",
+                                text = "Allow extraction and downloads to use saved website logins.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = colorScheme.onSurfaceVariant
                             )
                         }
+                        Spacer(modifier = Modifier.width(12.dp))
                         Switch(
-                            checked = useSessionCookies && hasSavedSession,
-                            enabled = hasSavedSession,
-                            onCheckedChange = { checked ->
-                                val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
-                                val savedSession = if (checked) SecureSessionStore.load(context) else null
-                                val shouldEnable = checked && savedSession != null
-                                onUseSessionCookiesChange(shouldEnable)
-                                sharedPrefs.edit().putBoolean("acqua_use_session_cookies", shouldEnable).apply()
-
-                                if (savedSession != null) {
-                                    InstagramDownloader.setSessionCookies(
-                                        savedSession.cookies,
-                                        savedSession.userAgent
-                                    )
-                                } else {
-                                    InstagramDownloader.clearSessionCookies()
-                                }
-                            }
+                            checked = useWebsiteSessions,
+                            onCheckedChange = onUseWebsiteSessionsChange
                         )
                     }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-                    HorizontalDivider()
-                    Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "Authentication Status",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(bottom = 8.dp)
+                        text = "Website Logins",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(if (hasSavedSession) Color(0xFF4CAF50) else Color(0xFF9E9E9E))
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (hasSavedSession) "Logged In (Session Active)" else "Logged Out",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                    Text(
+                        text = if (websiteLogins.isEmpty()) {
+                            "Tap + to name a website and enter its URL."
+                        } else {
+                            "Tap a bookmark to reopen its saved browser session."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                    )
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        if (hasSavedSession) {
-                            OutlinedButton(
-                                onClick = {
-                                    val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
-                                    sharedPrefs.edit()
-                                        .putBoolean("acqua_use_session_cookies", false)
-                                        .apply()
-                                    SecureSessionStore.clear(context)
-                                    CookieManager.getInstance().removeAllCookies {
-                                        CookieManager.getInstance().flush()
-                                    }
-                                    onUseSessionCookiesChange(false)
-                                    onHasSavedSessionChange(false)
-                                    InstagramDownloader.clearSessionCookies()
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Log Out")
+                        websiteLogins.forEach { login ->
+                            WebsiteLoginTile(login = login) {
+                                openWebsiteLogin(login.origin)
                             }
                         }
+                        AddWebsiteLoginTile(onClick = { showAddWebsiteDialog = true })
+                    }
 
-                        Button(
-                            onClick = {
-                                showLoginWebView()
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = colorScheme.primary,
-                                contentColor = colorScheme.onPrimary
-                            )
-                        ) {
-                            Text(if (hasSavedSession) "Refresh Session" else "Log In to Instagram")
-                        }
+                    OutlinedButton(
+                        onClick = {
+                            selectedWebsiteOrigins = emptySet()
+                            showManageWebsiteDataDialog = true
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+                    ) {
+                        Text("Manage Website Data")
                     }
                 }
             }
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
 
-            Spacer(modifier = Modifier.height(16.dp))
+    @Composable
+    private fun SettingsScreen(paddingValues: PaddingValues) {
+        val context = LocalContext.current
+        val colorScheme = MaterialTheme.colorScheme
+        var baseFolderInput by remember { mutableStateOf("") }
+        var categorizeMediaState by remember { mutableStateOf(false) }
+        var filenameFormatInput by remember { mutableStateOf("") }
 
-            // Category 2: Folder Location & Custom Formats
+        LaunchedEffect(Unit) {
+            val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
+            baseFolderInput = sharedPrefs.getString("acqua_base_folder", "Acqua") ?: "Acqua"
+            categorizeMediaState = sharedPrefs.getBoolean("acqua_categorize_media", false)
+            filenameFormatInput = sharedPrefs.getString(
+                "acqua_filename_format",
+                DEFAULT_FILENAME_FORMAT
+            ) ?: DEFAULT_FILENAME_FORMAT
+        }
+
+        fun saveFilenameFormat(value: String) {
+            filenameFormatInput = value
+            context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putString("acqua_filename_format", value)
+                .apply()
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+        ) {
             Text(
-                text = "Folder Location & Custom Formats",
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = colorScheme.primary),
+                text = "Settings",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = colorScheme.onSurface,
+                modifier = Modifier.padding(vertical = 16.dp)
+            )
+
+            Text(
+                text = "Downloads & Filenames",
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = colorScheme.primary
+                ),
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
@@ -1971,8 +2392,10 @@ class MainActivity : ComponentActivity() {
                         value = baseFolderInput,
                         onValueChange = {
                             baseFolderInput = it
-                            val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
-                            sharedPrefs.edit().putString("acqua_base_folder", it).apply()
+                            context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
+                                .edit()
+                                .putString("acqua_base_folder", it)
+                                .apply()
                         },
                         label = { Text("Base Download Folder") },
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -2001,8 +2424,10 @@ class MainActivity : ComponentActivity() {
                             checked = categorizeMediaState,
                             onCheckedChange = { checked ->
                                 categorizeMediaState = checked
-                                val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
-                                sharedPrefs.edit().putBoolean("acqua_categorize_media", checked).apply()
+                                context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putBoolean("acqua_categorize_media", checked)
+                                    .apply()
                             }
                         )
                     }
@@ -2011,24 +2436,87 @@ class MainActivity : ComponentActivity() {
 
                     OutlinedTextField(
                         value = filenameFormatInput,
-                        onValueChange = {
-                            filenameFormatInput = it
-                            val sharedPrefs = context.getSharedPreferences("acqua_prefs", Context.MODE_PRIVATE)
-                            sharedPrefs.edit().putString("acqua_filename_format", it).apply()
-                        },
+                        onValueChange = ::saveFilenameFormat,
                         label = { Text("Filename Format Pattern") },
-                        placeholder = { Text("acqua_{username}_{resolution}_{date}_{time}_{index}") },
+                        placeholder = { Text(DEFAULT_FILENAME_FORMAT) },
                         supportingText = {
-                            Text("Placeholders: {username}, {resolution}, {date}, {time}, {index}")
+                            Text("Tap a variable below to add or remove it.")
                         },
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                         shape = RoundedCornerShape(12.dp)
                     )
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FILENAME_VARIABLES.forEach { variable ->
+                            val selected = filenameFormatInput.contains(variable)
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    saveFilenameFormat(
+                                        toggleFilenameVariable(
+                                            pattern = filenameFormatInput,
+                                            variable = variable
+                                        )
+                                    )
+                                },
+                                label = { Text(variable) },
+                                leadingIcon = if (selected) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                } else {
+                                    null
+                                }
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { saveFilenameFormat(DEFAULT_FILENAME_FORMAT) },
+                        enabled = filenameFormatInput != DEFAULT_FILENAME_FORMAT,
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Reset to Acqua default")
+                    }
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    private fun toggleFilenameVariable(pattern: String, variable: String): String {
+        if (!pattern.contains(variable)) {
+            return when {
+                pattern.isBlank() -> variable
+                pattern.last() in listOf('_', '-', ' ', '.') -> "$pattern$variable"
+                else -> "${pattern}_$variable"
+            }
+        }
+
+        var updated = pattern.replace(variable, "")
+        while (updated.contains("__") || updated.contains("--") || updated.contains("  ")) {
+            updated = updated
+                .replace("__", "_")
+                .replace("--", "-")
+                .replace("  ", " ")
+        }
+        return updated.trim('_', '-', ' ')
     }
 }
 

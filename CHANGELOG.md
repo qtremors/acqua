@@ -2,6 +2,14 @@
 
 All notable user-visible changes are documented here.
 
+## [0.0.2] - 2026-07-18
+
+### Added
+
+- Dedicated Browser tab with named website bookmarks, persistent logins, optional session-backed downloads, and selected or complete website-data clearing.
+- Generic HTTP and HTTPS media-link handling with a full-screen browser and movable download controls.
+- Clickable filename variables with an Acqua-default reset, plus non-intrusive media-resolution status.
+
 ## [0.0.1] - 2026-07-17
 
 ### Added

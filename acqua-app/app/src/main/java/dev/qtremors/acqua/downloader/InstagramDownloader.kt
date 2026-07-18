@@ -4,6 +4,7 @@ import android.graphics.BitmapFactory
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.FormBody
@@ -25,12 +26,16 @@ data class MediaResult(
     val width: Int = 0,
     val height: Int = 0,
     val fileSize: Long? = null,
-    val username: String? = null
+    val username: String? = null,
+    val referer: String? = null,
+    val requestCookies: String? = null
 ) {
     val previewUrl: String? get() = thumbnailUrl ?: url.takeIf { !isVideo }
 }
 
 object InstagramDownloader {
+
+    private data class ScopedRequestCookies(val host: String, val value: String)
 
     private val SHORTCODE_REGEX = Pattern.compile(
         "(?:instagram\\.com|instagr\\.am)/(?:reel|p|tv)/([A-Za-z0-9_-]+)"
@@ -58,6 +63,19 @@ object InstagramDownloader {
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .cookieJar(cookieJar)
+        .addNetworkInterceptor { chain ->
+            val request = chain.request()
+            val scoped = request.tag(ScopedRequestCookies::class.java)
+                ?: return@addNetworkInterceptor chain.proceed(request)
+            val safeRequest = request.newBuilder().apply {
+                if (request.url.host.equals(scoped.host, ignoreCase = true)) {
+                    header("Cookie", scoped.value)
+                } else {
+                    removeHeader("Cookie")
+                }
+            }.build()
+            chain.proceed(safeRequest)
+        }
         .build()
 
     private const val DESKTOP_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
@@ -474,17 +492,34 @@ object InstagramDownloader {
         return parseShortcodeMedia(media)
     }
 
-    private fun buildMediaRequest(url: String) = Request.Builder()
+    private fun buildMediaRequest(
+        url: String,
+        referer: String? = null,
+        requestCookies: String? = null
+    ) = Request.Builder()
         .url(url)
         .header("User-Agent", getUserAgent(MOBILE_UA))
-        .header("Referer", "https://www.instagram.com/")
+        .apply {
+            header("Referer", referer?.takeIf { it.startsWith("http") } ?: "https://www.instagram.com/")
+            requestCookies?.takeIf { it.isNotBlank() }?.let { cookies ->
+                url.toHttpUrlOrNull()?.host?.let { host ->
+                    tag(ScopedRequestCookies::class.java, ScopedRequestCookies(host, cookies))
+                }
+            }
+        }
         .get().build()
 
-    fun downloadToStream(url: String, out: OutputStream, expectedVideo: Boolean): Long {
+    fun downloadToStream(
+        url: String,
+        out: OutputStream,
+        expectedVideo: Boolean,
+        referer: String? = null,
+        requestCookies: String? = null
+    ): Long {
         if (hasEmbeddedByteRange(url)) {
             throw Exception("A partial browser media segment cannot be saved as a complete file.")
         }
-        return client.newCall(buildMediaRequest(url)).execute().use { response ->
+        return client.newCall(buildMediaRequest(url, referer, requestCookies)).execute().use { response ->
             if (!response.isSuccessful) {
                 throw Exception("Media download request failed (HTTP ${response.code})")
             }
@@ -546,7 +581,14 @@ object InstagramDownloader {
             val request = Request.Builder()
                 .url(item.url)
                 .header("User-Agent", getUserAgent(MOBILE_UA))
-                .header("Referer", "https://www.instagram.com/")
+                .header("Referer", item.referer?.takeIf { it.startsWith("http") } ?: "https://www.instagram.com/")
+                .apply {
+                    item.requestCookies?.takeIf { it.isNotBlank() }?.let { cookies ->
+                        item.url.toHttpUrlOrNull()?.host?.let { host ->
+                            tag(ScopedRequestCookies::class.java, ScopedRequestCookies(host, cookies))
+                        }
+                    }
+                }
                 .header("Range", "bytes=0-65535")
                 .get()
                 .build()
@@ -608,8 +650,8 @@ object InstagramDownloader {
         return buffer.copyOf(total)
     }
 
-    fun fetchBytes(url: String): ByteArray {
-        val response = client.newCall(buildMediaRequest(url)).execute()
+    fun fetchBytes(url: String, referer: String? = null, requestCookies: String? = null): ByteArray {
+        val response = client.newCall(buildMediaRequest(url, referer, requestCookies)).execute()
         if (!response.isSuccessful) throw Exception("Failed to fetch bytes (HTTP ${response.code})")
         return response.body?.bytes() ?: throw Exception("Empty response body bytes")
     }
