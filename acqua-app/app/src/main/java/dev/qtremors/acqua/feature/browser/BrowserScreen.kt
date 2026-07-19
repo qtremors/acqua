@@ -2,8 +2,10 @@ package dev.qtremors.acqua.feature.browser
 
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,11 +75,27 @@ fun BrowserScreen(
     val colors = MaterialTheme.colorScheme
     var showAddDialog by remember { mutableStateOf(false) }
     var showManageDialog by remember { mutableStateOf(false) }
+    var editingWebsite by remember { mutableStateOf<SavedWebsite?>(null) }
 
-    if (showAddDialog) AddWebsiteDialog(
+    if (showAddDialog) WebsiteDialog(
+        title = R.string.save_website,
+        confirmLabel = R.string.save_and_open,
         onDismiss = { showAddDialog = false },
         onSave = { name, url -> showAddDialog = false; onAddWebsite(name, url) }
     )
+    editingWebsite?.let { website ->
+        WebsiteDialog(
+            title = R.string.edit_website,
+            confirmLabel = R.string.save_changes,
+            initialName = website.name,
+            initialUrl = website.origin,
+            onDismiss = { editingWebsite = null },
+            onSave = { name, url ->
+                viewModel.updateWebsite(website.origin, name, url)
+                editingWebsite = null
+            }
+        )
+    }
     if (showManageDialog) ManageWebsiteDataDialog(
         websites = state.websites,
         onDismiss = { showManageDialog = false },
@@ -152,7 +170,13 @@ fun BrowserScreen(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    state.websites.forEach { website -> WebsiteTile(website) { onOpenWebsite(website.origin) } }
+                    state.websites.forEach { website ->
+                        WebsiteTile(
+                            website,
+                            onOpen = { onOpenWebsite(website.origin) },
+                            onEdit = { editingWebsite = website }
+                        )
+                    }
                     AddWebsiteTile { showAddDialog = true }
                 }
                 OutlinedButton(
@@ -167,13 +191,20 @@ fun BrowserScreen(
 }
 
 @Composable
-private fun AddWebsiteDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
+private fun WebsiteDialog(
+    title: Int,
+    confirmLabel: Int,
+    initialName: String = "",
+    initialUrl: String = "",
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit
+) {
+    var name by remember(initialName) { mutableStateOf(initialName) }
+    var url by remember(initialUrl) { mutableStateOf(initialUrl) }
     var error by remember { mutableStateOf<Int?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.save_website)) },
+        title = { Text(stringResource(title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -203,7 +234,7 @@ private fun AddWebsiteDialog(onDismiss: () -> Unit, onSave: (String, String) -> 
                     normalized == null -> error = R.string.enter_valid_website
                     else -> onSave(name.trim(), normalized)
                 }
-            }) { Text(stringResource(R.string.save_and_open)) }
+            }) { Text(stringResource(confirmLabel)) }
         },
         dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
     )
@@ -269,8 +300,13 @@ private fun ManageWebsiteDataDialog(
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun WebsiteTile(website: SavedWebsite, onClick: () -> Unit) {
+private fun WebsiteTile(
+    website: SavedWebsite,
+    onOpen: () -> Unit,
+    onEdit: () -> Unit
+) {
     val iconKey = website.iconFile?.let { "${it.absolutePath}:${it.lastModified()}" }
     val icon by produceState<ImageBitmap?>(null, iconKey) {
         value = withContext(Dispatchers.IO) {
@@ -278,8 +314,10 @@ private fun WebsiteTile(website: SavedWebsite, onClick: () -> Unit) {
         }
     }
     Surface(
-        onClick = onClick,
-        modifier = Modifier.width(96.dp).height(112.dp),
+        modifier = Modifier.width(96.dp).height(112.dp).combinedClickable(
+            onClick = onOpen,
+            onLongClick = onEdit
+        ),
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceContainer
     ) {

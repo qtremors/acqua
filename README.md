@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/qtremors/acqua/releases"><img alt="Version 0.0.3" src="https://img.shields.io/badge/version-0.0.3-8dcfff"></a>
+  <a href="https://github.com/qtremors/acqua/releases"><img alt="Version 0.0.4" src="https://img.shields.io/badge/version-0.0.4-8dcfff"></a>
   <img alt="Android 7.0+" src="https://img.shields.io/badge/Android-7.0%2B-3ddc84">
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.2.10-7f52ff">
   <a href="LICENSE.md"><img alt="TSL 1.0" src="https://img.shields.io/badge/license-TSL%201.0-f4c95d"></a>
@@ -24,7 +24,8 @@ Acqua previews and saves photos or videos from supported media links. Instagram 
 - Source-agnostic link and download interface.
 - Dedicated Instagram resolution plus best-effort browser extraction for other HTTP or HTTPS pages.
 - Shared in-app browser for browsing and signing in to websites.
-- Named website bookmarks with saved icons, one-tap reopening, and a dedicated add button.
+- Download and preview screens that open above the live browser without resetting its page or navigation state.
+- Named website bookmarks with saved icons, editable names and links, one-tap reopening, and a dedicated add button.
 - Website sessions kept in app-private WebView storage, with known platform cookies additionally protected by Android Keystore.
 - Opt-in browser session extraction, with matching saved cookies attached only to their media host.
 - Media validation that rejects partial, audio-only, or mislabeled responses.
@@ -37,7 +38,7 @@ Acqua previews and saves photos or videos from supported media links. Instagram 
 
 Download the latest APK from [GitHub Releases](https://github.com/qtremors/acqua/releases). Android may ask you to allow installation from your browser or file manager.
 
-For browser-based or authenticated extraction, open the **Browser** tab, tap **+**, and enter a name and website URL. The bookmark opens full-screen so you can sign in. Tap its saved icon later to reopen the website, enable **Use browser sessions for extraction**, then tap or drag the floating Acqua control to refresh the page, resolve the current page, or return to Acqua.
+For browser-based or authenticated extraction, open the **Browser** tab, tap **+**, and enter a name and website URL. The bookmark opens full-screen so you can sign in. Use the floating Acqua control to refresh the page, download from the current page, or return to Acqua. The download screen opens above the live browser, so returning preserves the page, navigation history, and normal WebView state. **Use browser sessions for extraction** separately controls automatic session reuse outside an explicit browser download.
 
 ## Build from source
 
@@ -57,8 +58,8 @@ On Windows, use `gradlew.bat`. Generated APK names follow the same convention as
 
 | Variant | App name | Application ID | Version | APK |
 | :--- | :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.3-debug` | `Acqua-0.0.3-debug.apk` |
-| Release | Acqua | `dev.qtremors.acqua` | `0.0.3` | `Acqua-0.0.3.apk` |
+| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.4-debug` | `Acqua-0.0.4-debug.apk` |
+| Release | Acqua | `dev.qtremors.acqua` | `0.0.4` | `Acqua-0.0.4.apk` |
 
 Debug and release builds can be installed side by side.
 

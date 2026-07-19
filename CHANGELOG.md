@@ -2,6 +2,16 @@
 
 All notable user-visible changes are documented here.
 
+## [0.0.4] - 2026-07-19
+
+### Added
+
+- Touch and hold saved browser bookmarks to edit their names and links while retaining automatic website icons.
+
+### Fixed
+
+- Keep signed-in browser pages open and intact while media is previewed and saved in a dedicated download screen.
+
 ## [0.0.3] - 2026-07-18
 
 ### Fixed

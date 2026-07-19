@@ -59,6 +59,8 @@
     <string name="could_not_share_file">Could not share this file</string>
 
     <string name="save_website">Save website</string>
+    <string name="edit_website">Edit website</string>
+    <string name="save_changes">Save changes</string>
     <string name="name">Name</string>
     <string name="website_name_hint">Instagram</string>
     <string name="website_url">Website URL</string>
@@ -83,7 +85,7 @@
     <string name="browser_sessions_explanation">Allow browser-based page resolution and matching saved cookies for media requests.</string>
     <string name="saved_websites">Saved websites</string>
     <string name="save_website_guidance">Tap + to save a website name and URL.</string>
-    <string name="open_website_guidance">Tap a bookmark to reopen it in the shared browser.</string>
+    <string name="open_website_guidance">Tap a bookmark to open it. Touch and hold to edit its name or link.</string>
     <string name="website_icon_description">%1$s (%2$s) icon</string>
 
     <string name="downloads_and_filenames">Downloads &amp; filenames</string>
@@ -107,6 +109,7 @@
     <string name="browser_home_title">Acqua Browser</string>
     <string name="browser_home_guidance">Enter a website above to browse or sign in.</string>
     <string name="open_website_before_download">Open a website before downloading.</string>
+    <string name="return_to_browser">Return to browser</string>
     <string name="requested_link_invalid">The requested media link is invalid.</string>
     <string name="resolution_cancelled">Media resolution was cancelled.</string>
     <string name="session_expired">The saved login session has expired. Please sign in again.</string>

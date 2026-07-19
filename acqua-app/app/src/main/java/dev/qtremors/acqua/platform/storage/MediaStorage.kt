@@ -44,7 +44,9 @@ class MediaStorage(
             index,
             extension
         )
-        val requestCookies = item.requestCookies.takeIf { settingsRepository.useBrowserSessions() }
+        val requestCookies = item.requestCookies.takeIf {
+            item.explicitBrowserSessionAuthorized || settingsRepository.useBrowserSessions()
+        }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             saveWithMediaStore(item, sourceUrl, relativePath, fileName, mimeType, requestCookies)

@@ -9,6 +9,7 @@ import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.resolver.instagram.InstagramResolver
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -29,38 +30,59 @@ class BrowserViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(BrowserUiState())
     val state = mutableState.asStateFlow()
+    private var sessionJob: Job? = null
 
     init {
         refresh()
     }
 
-    fun refresh() = viewModelScope.launch {
-        val useSessions = settings.useBrowserSessions()
-        val session = withContext(Dispatchers.IO) { instagramSessions.load() }
-        if (useSessions && session != null) {
-            instagramResolver.setSessionCookies(session.cookies, session.userAgent)
-        } else {
-            instagramResolver.clearSessionCookies()
+    fun refresh() {
+        sessionJob?.cancel()
+        sessionJob = viewModelScope.launch {
+            val useSessions = settings.useBrowserSessions()
+            val session = if (useSessions) {
+                withContext(Dispatchers.IO) { instagramSessions.load() }
+            } else {
+                null
+            }
+            if (useSessions && session != null) {
+                instagramResolver.setSessionCookies(session.cookies, session.userAgent)
+            } else {
+                instagramResolver.clearSessionCookies()
+            }
+            mutableState.value = BrowserUiState(useSessions, savedWebsites.load(), initialized = true)
         }
-        mutableState.value = BrowserUiState(useSessions, savedWebsites.load(), initialized = true)
     }
 
-    fun setUseSessions(enabled: Boolean) = viewModelScope.launch {
-        settings.setUseBrowserSessions(enabled)
-        val session = if (enabled) withContext(Dispatchers.IO) { instagramSessions.load() } else null
-        if (enabled && session != null) {
-            instagramResolver.setSessionCookies(session.cookies, session.userAgent)
-        } else {
-            instagramResolver.clearSessionCookies()
+    fun setUseSessions(enabled: Boolean) {
+        sessionJob?.cancel()
+        sessionJob = viewModelScope.launch {
+            settings.setUseBrowserSessions(enabled)
+            val session = if (enabled) {
+                withContext(Dispatchers.IO) { instagramSessions.load() }
+            } else {
+                null
+            }
+            if (enabled && session != null) {
+                instagramResolver.setSessionCookies(session.cookies, session.userAgent)
+            } else {
+                instagramResolver.clearSessionCookies()
+            }
+            mutableState.value = mutableState.value.copy(useSessions = enabled)
         }
-        mutableState.value = mutableState.value.copy(useSessions = enabled)
     }
 
     fun clearSelected(origins: Collection<String>) {
         browserData.clearWebsites(origins) { refresh() }
     }
 
+    fun updateWebsite(originalOrigin: String, name: String, url: String) {
+        savedWebsites.update(originalOrigin, name, url)
+        mutableState.value = mutableState.value.copy(websites = savedWebsites.load())
+    }
+
     fun clearAll() {
+        sessionJob?.cancel()
         browserData.clearAll {
             instagramResolver.clearSessionCookies()
             mutableState.value = BrowserUiState(initialized = true)

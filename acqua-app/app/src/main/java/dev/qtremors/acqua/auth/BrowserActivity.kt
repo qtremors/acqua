@@ -42,6 +42,7 @@ import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.data.session.InstagramSessionStore
 import dev.qtremors.acqua.data.session.SavedInstagramSession
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
+import dev.qtremors.acqua.feature.downloader.DownloadActivity
 import org.json.JSONTokener
 import kotlin.math.hypot
 
@@ -80,7 +81,9 @@ class BrowserActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(BACKGROUND)
         }
-        if (requested == null) {
+        val showAddressHeader = savedInstanceState?.getBoolean(STATE_HAS_ADDRESS_HEADER)
+            ?: (requested == null)
+        if (showAddressHeader) {
             addressHeader = createHeader()
             content.addView(addressHeader, LinearLayout.LayoutParams.MATCH_PARENT, 64.dp)
         }
@@ -141,7 +144,12 @@ class BrowserActivity : ComponentActivity() {
             }
         })
 
-        if (requested != null) {
+        val restored = savedInstanceState?.let(webView::restoreState) != null
+        if (restored) {
+            currentUrl = savedInstanceState?.getString(STATE_CURRENT_URL)
+                ?: webView.url?.takeIf(::isBrowsablePage)
+            if (::addressBar.isInitialized) addressBar.setText(currentUrl.orEmpty())
+        } else if (requested != null) {
             if (::addressBar.isInitialized) addressBar.setText(requested)
             loadInitialPage(requested)
         } else {
@@ -502,26 +510,27 @@ class BrowserActivity : ComponentActivity() {
                 return@evaluateJavascript
             }
             currentUrl = activeUrl
-            finishBrowser(downloadCurrentPage = true, resultUrl = activeUrl)
+            startActivity(
+                Intent(this, DownloadActivity::class.java)
+                    .putExtra(DownloadActivity.EXTRA_URL, activeUrl)
+            )
         }
     }
 
-    private fun finishBrowser(
-        downloadCurrentPage: Boolean = false,
-        resultUrl: String? = currentUrl
-    ) {
-        setResult(
-            Activity.RESULT_OK,
-            Intent()
-                .putExtra(EXTRA_CURRENT_URL, resultUrl)
-                .putExtra(EXTRA_DOWNLOAD_CURRENT_PAGE, downloadCurrentPage)
-        )
+    private fun finishBrowser() {
+        setResult(Activity.RESULT_OK)
         finish()
     }
 
     private fun closeBrowser() {
-        setResult(Activity.RESULT_OK, Intent().putExtra(EXTRA_CURRENT_URL, currentUrl))
-        finish()
+        finishBrowser()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(STATE_CURRENT_URL, currentUrl)
+        outState.putBoolean(STATE_HAS_ADDRESS_HEADER, addressHeader != null)
+        if (::webView.isInitialized) webView.saveState(outState)
     }
 
     override fun onDestroy() {
@@ -545,13 +554,13 @@ class BrowserActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_INITIAL_URL = "browser_initial_url"
-        const val EXTRA_CURRENT_URL = "browser_current_url"
         const val EXTRA_ADD_LOGIN = "browser_add_login"
         const val EXTRA_LOGIN_NAME = "browser_login_name"
-        const val EXTRA_DOWNLOAD_CURRENT_PAGE = "browser_download_current_page"
         private const val BROWSER_UI_PREFS = "acqua_browser_ui"
         private const val KEY_BUBBLE_X = "bubble_x"
         private const val KEY_BUBBLE_Y = "bubble_y"
+        private const val STATE_CURRENT_URL = "browser_current_page_url"
+        private const val STATE_HAS_ADDRESS_HEADER = "browser_has_address_header"
         private const val INSTAGRAM_ORIGIN = "https://www.instagram.com"
         private val BACKGROUND = Color.rgb(12, 16, 20)
         private val SURFACE = Color.rgb(36, 43, 48)

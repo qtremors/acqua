@@ -2,7 +2,7 @@
 
 | Metadata | Value |
 | :--- | :--- |
-| Current version | 0.0.3 |
+| Current version | 0.0.4 |
 | Minimum Android version | Android 7.0 (API 24) |
 | Target/compile SDK | 37 |
 
@@ -48,21 +48,21 @@ Acqua uses separate identities for local development and production:
 
 | Variant | Label | Application ID | Version name |
 | :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.3-debug` |
-| Release | Acqua | `dev.qtremors.acqua` | `0.0.3` |
+| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.4-debug` |
+| Release | Acqua | `dev.qtremors.acqua` | `0.0.4` |
 
 Both use version code `2`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
 
 APK output names are generated from the variant version:
 
-- `Acqua-0.0.3-debug.apk`
-- `Acqua-0.0.3.apk`
+- `Acqua-0.0.4-debug.apk`
+- `Acqua-0.0.4.apk`
 
 Variant configuration lives in `acqua-app/app/build.gradle.kts`. The manifest reads `${appLabel}`, so do not hard-code the display name in `AndroidManifest.xml`.
 
 ## Architecture
 
-Acqua is a Compose-based Android application with a main dashboard activity, a shared browser activity, and a temporary rendered-page resolver activity.
+Acqua is a Compose-based Android application with a main dashboard activity, a persistent shared-browser activity, a dedicated download activity, and a temporary rendered-page resolver activity.
 
 ```text
 Shared link / pasted URL
@@ -85,6 +85,16 @@ Shared link / pasted URL
                                              |
                                              v
                                     validation and download
+
+BrowserActivity (kept alive)
+          |
+          +---- current URL -------> DownloadActivity
+                                             |
+                                             +---- extraction -> RenderedPageResolverActivity
+                                             +---- preview and storage
+                                             |
+                                             v
+                                  finish back to the same WebView
 ```
 
 ### Key files
@@ -105,6 +115,7 @@ Shared link / pasted URL
 | `AppSettingsRepository.kt` | Typed download and browser-extraction preferences. |
 | `MediaContentDetector.kt` | Content sniffing and structural validation for supported image and MP4 responses. |
 | `BrowserActivity.kt` | Shared browser UI, login persistence, and full-screen floating page controls. |
+| `DownloadActivity.kt` | Browser-launched extraction, preview, permission, and save flow that leaves the live browser underneath. |
 | `SavedWebsiteRepository.kt` | Saved website and favicon persistence. |
 | `BrowserDataManager.kt` | Selected-origin and full browser-data clearing. |
 | `WebLink.kt` | Generic HTTP(S) normalization, shared-text extraction, and known-source detection. |
@@ -119,7 +130,7 @@ Resolution is layered because known sources and generic websites expose media di
 
 1. Normalize any valid HTTP or HTTPS URL.
 2. Use a specialized network adapter when the domain and route are recognized.
-3. When browser session extraction is enabled, otherwise load the page in the rendered-page resolver using the shared WebView profile.
+3. Load the page in the rendered-page resolver when automatic browser sessions are enabled or the user explicitly downloads from the live browser.
 4. Observe document markup, media elements, metadata, performance entries, and network requests.
 5. Strip byte-range fragments and other partial-response parameters from candidates.
 6. Carry the page referrer and relevant domain cookies into validation and download requests.
@@ -132,17 +143,17 @@ The resolver must never assume that a URL ending in `.jpg` or `.mp4` contains th
 
 ### Browser flow
 
-`BrowserActivity` provides one address bar and one shared WebView profile for all websites. Credentials are submitted directly to the loaded website; Acqua does not receive or store passwords.
+`BrowserActivity` provides one address bar and one shared WebView profile for all websites. Credentials are submitted directly to the loaded website; Acqua does not receive or store passwords. Download launches `DownloadActivity` above the browser instead of finishing it, preserving the live page, scroll position, navigation history, forms, session storage, and transient JavaScript state during normal operation. `WebView.saveState()` and `restoreState()` provide best-effort URL and history restoration after activity or process recreation.
 
 WebView keeps cookies and site storage in the application sandbox. The user can add a named website bookmark before opening the browser; `SavedWebsiteRepository` stores its display name, origin, and cached favicon for the Browser tab. `BrowserDataManager` only coordinates data clearing. Instagram cookies used by its network resolver are copied into `InstagramSessionStore`, where AES-GCM and Android Keystore protect them.
 
-The **Use browser sessions for extraction** preference is opt-in. When disabled, network adapters receive no saved session cookies and rendered-page extraction is not launched. The browser retains its website data so the preference can be enabled later without signing in again.
+The **Use browser sessions for extraction** preference is opt-in. When disabled, network adapters do not proactively reuse saved session cookies. An explicit Download action in the browser authorizes the dedicated download flow to use the shared WebView session for that media while leaving the preference disabled.
 
 Backup rules exclude both the encrypted session payload and WebView data from cloud backup and device transfer.
 
 ### Resolver flow
 
-`RenderedPageResolverActivity` creates a temporary WebView using the same cookie profile, visits the submitted URL, and returns media candidates to `MainActivity`. Existing encrypted Instagram cookies are migrated into WebView when required.
+`RenderedPageResolverActivity` creates a temporary WebView using the same cookie profile, visits the submitted URL, and returns media candidates to the calling main or download activity. Existing encrypted Instagram cookies are migrated into WebView when required.
 
 **Manage Website Data** can clear selected origins or all browser data. Selected clearing expires addressable cookies, deletes origin storage, removes the bookmark and favicon, and clears matching encrypted adapter sessions. Full clearing additionally removes all WebView cookies and storage, shared cache, form data, HTTP authentication, registry metadata, and encrypted adapter sessions. Debug and release builds maintain independent browser data because their application IDs and storage sandboxes differ.
 

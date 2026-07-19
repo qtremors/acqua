@@ -42,6 +42,27 @@ class SavedWebsiteRepository(context: Context) {
         icon?.let { saveIcon(host, it) }
     }
 
+    fun update(originalOrigin: String, name: String, url: String) {
+        val originalHost = WebLink.host(originalOrigin)?.removePrefix("www.") ?: return
+        val updatedOrigin = WebLink.origin(url) ?: return
+        val updatedHost = WebLink.host(updatedOrigin)?.removePrefix("www.") ?: return
+        val displayName = name.trim().take(40).ifBlank { defaultName(updatedHost) }
+        val entries = load()
+            .filterNot { it.host == originalHost || it.host == updatedHost }
+            .map { encode(it.name, it.origin) }
+            .toMutableSet()
+            .apply { add(encode(displayName, updatedOrigin)) }
+        val updateLastOrigin = lastOrigin()?.let(WebLink::host)
+            ?.removePrefix("www.") == originalHost
+
+        preferences.edit {
+            putStringSet(KEY_ENTRIES, entries)
+            remove(LEGACY_KEY_ORIGINS)
+            if (updateLastOrigin) putString(KEY_LAST_ORIGIN, updatedOrigin)
+        }
+        if (originalHost != updatedHost) iconFile(originalHost).delete()
+    }
+
     fun updateIcon(url: String, icon: Bitmap) {
         val host = WebLink.host(url)?.removePrefix("www.") ?: return
         load().firstOrNull { it.host == host }?.let { save(it.name, it.origin, icon) }

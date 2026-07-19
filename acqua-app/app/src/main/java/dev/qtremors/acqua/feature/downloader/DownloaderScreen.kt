@@ -47,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,13 +70,16 @@ fun DownloaderScreen(
     useBrowserSessions: Boolean,
     sessionsInitialized: Boolean,
     browserRequestRevision: Int,
-    resolveInBrowser: suspend (String) -> List<ResolvedMedia>,
+    resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
     requestStorageAccess: (() -> Unit) -> Unit,
     onOpenBrowser: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onMediaSaved: () -> Unit = {},
+    showLinkEditor: Boolean = true
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
+    val currentOnMediaSaved by rememberUpdatedState(onMediaSaved)
     val colors = MaterialTheme.colorScheme
 
     LaunchedEffect(state.url, sessionsInitialized, useBrowserSessions, browserRequestRevision) {
@@ -87,10 +91,14 @@ fun DownloaderScreen(
         viewModel.events.collect { event ->
             when (event) {
                 DownloaderEvent.ResolutionComplete -> context.performHaptic(HapticSignal.CLICK)
-                DownloaderEvent.DownloadComplete -> context.performHaptic(HapticSignal.COMPLETE)
+                DownloaderEvent.DownloadComplete -> {
+                    context.performHaptic(HapticSignal.COMPLETE)
+                    currentOnMediaSaved()
+                }
                 DownloaderEvent.ItemSaved -> {
                     context.performHaptic(HapticSignal.COMPLETE)
                     Toast.makeText(context, R.string.saved_to_downloads, Toast.LENGTH_SHORT).show()
+                    currentOnMediaSaved()
                 }
                 is DownloaderEvent.ItemSaveFailed -> Toast.makeText(context, event.message, Toast.LENGTH_LONG).show()
             }
@@ -102,41 +110,43 @@ fun DownloaderScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(32.dp))
-        Card(
-            Modifier.fillMaxWidth(), RoundedCornerShape(24.dp),
-            CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
-        ) {
-            Column(Modifier.padding(24.dp)) {
-                Text(
-                    stringResource(R.string.paste_media_link),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-                OutlinedTextField(
-                    value = state.url,
-                    onValueChange = viewModel::updateUrl,
-                    label = { Text(stringResource(R.string.media_link)) },
-                    placeholder = { Text(stringResource(R.string.media_link_hint)) },
-                    trailingIcon = {
-                        IconButton(onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
-                                ?.takeIf(String::isNotEmpty)?.let(viewModel::updateUrl)
-                        }) { Icon(Icons.Filled.ContentPaste, stringResource(R.string.paste), tint = colors.primary) }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    maxLines = 3,
-                    enabled = !state.isSaving,
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.primary,
-                        focusedLabelColor = colors.primary,
-                        cursorColor = colors.primary
+        if (showLinkEditor) {
+            Card(
+                Modifier.fillMaxWidth(), RoundedCornerShape(24.dp),
+                CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
+            ) {
+                Column(Modifier.padding(24.dp)) {
+                    Text(
+                        stringResource(R.string.paste_media_link),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        modifier = Modifier.padding(bottom = 12.dp)
                     )
-                )
+                    OutlinedTextField(
+                        value = state.url,
+                        onValueChange = viewModel::updateUrl,
+                        label = { Text(stringResource(R.string.media_link)) },
+                        placeholder = { Text(stringResource(R.string.media_link_hint)) },
+                        trailingIcon = {
+                            IconButton(onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+                                    ?.takeIf(String::isNotEmpty)?.let(viewModel::updateUrl)
+                            }) { Icon(Icons.Filled.ContentPaste, stringResource(R.string.paste), tint = colors.primary) }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
+                        enabled = !state.isSaving,
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.primary,
+                            focusedLabelColor = colors.primary,
+                            cursorColor = colors.primary
+                        )
+                    )
+                }
             }
+            Spacer(Modifier.height(24.dp))
         }
-        Spacer(Modifier.height(24.dp))
         when (state.validity) {
             LinkValidity.EMPTY -> LinkMessageCard(
                 icon = { Icon(Icons.Filled.Download, stringResource(R.string.ready), Modifier.size(30.dp)) },
@@ -223,7 +233,7 @@ private fun ValidLinkContent(
         Button(
             onClick = onDownloadAll,
             modifier = Modifier.fillMaxWidth().padding(24.dp).height(52.dp),
-            enabled = !state.isSaving,
+            enabled = !state.isSaving && state.savingItemIndex == null,
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
         ) {
@@ -271,6 +281,7 @@ private fun ValidLinkContent(
                             item, index, useBrowserSessions, mediaDownloader,
                             isSaving = state.savingItemIndex == index,
                             isSaved = state.savedItemIndex == index,
+                            downloadsEnabled = !state.isSaving && state.savingItemIndex == null,
                             onDownload = { width, height -> onDownloadOne(item, index, width, height) }
                         )
                     }

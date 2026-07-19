@@ -14,49 +14,52 @@ class MediaResolutionService(
     suspend fun resolve(
         input: String,
         browserSessionsEnabled: Boolean,
-        browserResolver: suspend (String) -> List<ResolvedMedia>
+        forceBrowserResolution: Boolean = false,
+        browserResolver: suspend (url: String, explicitSessionAuthorization: Boolean) -> List<ResolvedMedia>
     ): List<ResolvedMedia> {
         val url = WebLink.normalize(input)
             ?: throw IllegalArgumentException("Enter a valid HTTP or HTTPS link.")
-        val candidates = if (WebLink.isInstagramMediaUrl(url)) {
-            resolveKnownSource(url, browserSessionsEnabled, browserResolver)
-        } else {
-            if (!browserSessionsEnabled) error("Enable browser session extraction to resolve this page.")
-            browserResolver(url)
-        }
-        val validated = coroutineScope {
-            candidates.map { item -> async(Dispatchers.IO) { inspectMedia(item) } }
-                .awaitAll().filterNotNull()
-        }
-        if (validated.isEmpty()) error("The resolved links did not contain complete downloadable media files.")
-        return selectBest(url, validated)
-    }
 
-    private suspend fun resolveKnownSource(
-        url: String,
-        browserSessionsEnabled: Boolean,
-        browserResolver: suspend (String) -> List<ResolvedMedia>
-    ): List<ResolvedMedia> {
-        val networkFailure = try {
-            return withContext(Dispatchers.IO) {
+        if (forceBrowserResolution) {
+            return validateAndSelect(url, browserResolver(url, true))
+        }
+        if (!WebLink.isInstagramMediaUrl(url)) {
+            if (!browserSessionsEnabled) error("Enable browser session extraction to resolve this page.")
+            return validateAndSelect(url, browserResolver(url, false))
+        }
+
+        val sourceFailure = try {
+            val candidates = withContext(Dispatchers.IO) {
                 sourceResolver.resolve(url).map { it.copy(referer = it.referer ?: url) }
             }
+            return validateAndSelect(url, candidates)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             error
         }
-        if (!browserSessionsEnabled) throw networkFailure
+
+        if (!browserSessionsEnabled) throw sourceFailure
         return try {
-            browserResolver(url)
+            validateAndSelect(url, browserResolver(url, false))
         } catch (error: CancellationException) {
             throw error
         } catch (browserFailure: Exception) {
-            throw Exception(
-                "Network extraction failed: ${networkFailure.message}\n" +
-                    "Browser extraction failed: ${browserFailure.message}"
-            )
+            browserFailure.addSuppressed(sourceFailure)
+            throw browserFailure
         }
+    }
+
+    private suspend fun validateAndSelect(
+        sourceUrl: String,
+        candidates: List<ResolvedMedia>
+    ): List<ResolvedMedia> {
+        val validated = coroutineScope {
+            candidates.map { item -> async(Dispatchers.IO) { inspectMedia(item) } }
+                .awaitAll().filterNotNull()
+        }
+        if (validated.isEmpty()) error("The resolved links did not contain complete downloadable media files.")
+        return selectBest(sourceUrl, validated)
     }
 
     private fun selectBest(sourceUrl: String, items: List<ResolvedMedia>): List<ResolvedMedia> {

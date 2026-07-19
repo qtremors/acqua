@@ -50,6 +50,12 @@
             android:theme="@style/Theme.Acqua" />
 
         <activity
+            android:name=".feature.downloader.DownloadActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:theme="@style/Theme.Acqua" />
+
+        <activity
             android:name=".resolver.web.RenderedPageResolverActivity"
             android:configChanges="orientation|screenSize"
             android:exported="false"

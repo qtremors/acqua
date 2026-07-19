@@ -23,4 +23,21 @@ class SavedWebsiteRepositoryTest {
         repository.remove(listOf("https://example.com"))
         assertEquals(emptyList<SavedWebsite>(), repository.load())
     }
+
+    @Test
+    fun bookmarkNameAndOriginCanBeEditedWithoutLeavingTheOldEntry() {
+        repository.save("Example", "https://www.example.com/path", null)
+
+        repository.update(
+            "https://www.example.com",
+            "Updated site",
+            "https://media.example.org/library"
+        )
+
+        val updated = repository.load().single()
+        assertEquals("Updated site", updated.name)
+        assertEquals("media.example.org", updated.host)
+        assertEquals("https://media.example.org", updated.origin)
+        assertEquals("https://media.example.org", repository.lastOrigin())
+    }
 }

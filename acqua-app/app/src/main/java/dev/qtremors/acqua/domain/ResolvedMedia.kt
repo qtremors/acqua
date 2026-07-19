@@ -15,6 +15,7 @@ data class ResolvedMedia(
     val username: String? = null,
     val referer: String? = null,
     val requestCookies: String? = null,
+    val explicitBrowserSessionAuthorized: Boolean = false,
     val mimeType: String? = null,
     val fileExtension: String? = null
 ) {

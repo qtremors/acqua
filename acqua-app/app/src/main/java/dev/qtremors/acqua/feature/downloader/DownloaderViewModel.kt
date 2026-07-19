@@ -13,11 +13,11 @@ import dev.qtremors.acqua.resolver.instagram.ExpiredSessionException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
@@ -35,7 +35,15 @@ data class DownloaderUiState(
     val savingIndex: Int = 0,
     val showBrowserAction: Boolean = false,
     val savingItemIndex: Int? = null,
-    val savedItemIndex: Int? = null
+    val savedItemIndex: Int? = null,
+    val forceBrowserResolution: Boolean = false
+)
+
+private data class AutomaticRequest(
+    val url: String,
+    val browserSessionsEnabled: Boolean,
+    val revision: Int,
+    val forceBrowserResolution: Boolean
 )
 
 sealed interface DownloaderEvent {
@@ -52,10 +60,12 @@ class DownloaderViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(DownloaderUiState())
     val state = mutableState.asStateFlow()
-    private val mutableEvents = MutableSharedFlow<DownloaderEvent>(extraBufferCapacity = 4)
-    val events = mutableEvents.asSharedFlow()
+    private val mutableEvents = Channel<DownloaderEvent>(Channel.BUFFERED)
+    val events = mutableEvents.receiveAsFlow()
     private var resolutionJob: Job? = null
-    private var lastAutomaticRequest: Triple<String, Boolean, Int>? = null
+    private var downloadJob: Job? = null
+    private var itemDownloadJob: Job? = null
+    private var lastAutomaticRequest: AutomaticRequest? = null
 
     fun setInitialUrl(url: String) {
         if (mutableState.value.url.isEmpty() && url.isNotBlank()) updateUrl(url)
@@ -63,6 +73,9 @@ class DownloaderViewModel(
 
     fun updateUrl(value: String) {
         resolutionJob?.cancel()
+        downloadJob?.cancel()
+        itemDownloadJob?.cancel()
+        lastAutomaticRequest = null
         mutableState.value = DownloaderUiState(
             url = value,
             validity = when {
@@ -73,6 +86,11 @@ class DownloaderViewModel(
         )
     }
 
+    fun requestBrowserResolution(url: String) {
+        updateUrl(url)
+        mutableState.value = mutableState.value.copy(forceBrowserResolution = true)
+    }
+
     fun dismissError() {
         mutableState.value = mutableState.value.copy(error = null, showBrowserAction = false)
     }
@@ -80,12 +98,17 @@ class DownloaderViewModel(
     fun resolve(
         browserSessionsEnabled: Boolean,
         requestRevision: Int,
-        browserResolver: suspend (String) -> List<ResolvedMedia>
+        browserResolver: suspend (String, Boolean) -> List<ResolvedMedia>
     ) {
         val snapshot = mutableState.value
         if (snapshot.validity != LinkValidity.VALID) return
         val normalizedUrl = WebLink.normalize(snapshot.url) ?: return
-        val requestKey = Triple(normalizedUrl, browserSessionsEnabled, requestRevision)
+        val requestKey = AutomaticRequest(
+            normalizedUrl,
+            browserSessionsEnabled,
+            requestRevision,
+            snapshot.forceBrowserResolution
+        )
         if (requestKey == lastAutomaticRequest) return
         lastAutomaticRequest = requestKey
         resolutionJob?.cancel()
@@ -101,44 +124,74 @@ class DownloaderViewModel(
                 showBrowserAction = false
             )
             try {
-                val media = resolution.resolve(url, browserSessionsEnabled, browserResolver)
-                mutableState.value = mutableState.value.copy(isResolving = false, media = media)
-                mutableEvents.emit(DownloaderEvent.ResolutionComplete)
+                val media = resolution.resolve(
+                    url,
+                    browserSessionsEnabled,
+                    snapshot.forceBrowserResolution,
+                    browserResolver
+                )
+                mutableState.value = mutableState.value.copy(
+                    isResolving = false,
+                    media = media,
+                    forceBrowserResolution = false
+                )
+                mutableEvents.send(DownloaderEvent.ResolutionComplete)
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
+                if (lastAutomaticRequest == requestKey) lastAutomaticRequest = null
                 showResolutionError(error)
+                mutableState.value = mutableState.value.copy(forceBrowserResolution = false)
             }
         }
     }
 
     fun downloadAll(
         browserSessionsEnabled: Boolean,
-        browserResolver: suspend (String) -> List<ResolvedMedia>
+        browserResolver: suspend (String, Boolean) -> List<ResolvedMedia>
     ) {
-        if (mutableState.value.isSaving) return
-        viewModelScope.launch {
+        if (mutableState.value.isSaving || mutableState.value.savingItemIndex != null) return
+        resolutionJob?.cancel()
+        downloadJob?.cancel()
+        downloadJob = viewModelScope.launch {
             val url = WebLink.normalize(mutableState.value.url) ?: return@launch
+            val forceBrowserResolution = mutableState.value.forceBrowserResolution
             mutableState.value = mutableState.value.copy(error = null, showBrowserAction = false)
             val items = mutableState.value.media ?: try {
                 mutableState.value = mutableState.value.copy(isResolving = true)
                 recordLink(url)
-                resolution.resolve(url, browserSessionsEnabled, browserResolver).also {
-                    mutableState.value = mutableState.value.copy(isResolving = false, media = it)
+                resolution.resolve(
+                    url,
+                    browserSessionsEnabled,
+                    forceBrowserResolution,
+                    browserResolver
+                ).also {
+                    mutableState.value = mutableState.value.copy(
+                        isResolving = false,
+                        media = it,
+                        forceBrowserResolution = false
+                    )
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 showResolutionError(error)
                 return@launch
             }
 
             mutableState.value = mutableState.value.copy(isSaving = true, savingIndex = 0)
-            val result = runCatching {
+            val result = try {
                 withContext(Dispatchers.IO) {
                     items.forEachIndexed { index, item ->
                         mutableState.value = mutableState.value.copy(savingIndex = index + 1)
                         storage.save(item, index, url)
                     }
                 }
+                Result.success(Unit)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Result.failure(error)
             }
             if (result.isFailure) {
                 mutableState.value = mutableState.value.copy(
@@ -148,31 +201,37 @@ class DownloaderViewModel(
                 return@launch
             }
             mutableState.value = mutableState.value.copy(isSaving = false, saved = true)
-            mutableEvents.emit(DownloaderEvent.DownloadComplete)
+            mutableEvents.send(DownloaderEvent.DownloadComplete)
             delay(2500)
             mutableState.value = mutableState.value.copy(saved = false, media = null)
         }
     }
 
     fun downloadOne(item: ResolvedMedia, index: Int, width: Int, height: Int) {
-        if (mutableState.value.savingItemIndex != null) return
-        viewModelScope.launch {
+        if (mutableState.value.isSaving || mutableState.value.savingItemIndex != null) return
+        itemDownloadJob?.cancel()
+        itemDownloadJob = viewModelScope.launch {
             mutableState.value = mutableState.value.copy(savingItemIndex = index, savedItemIndex = null)
             val sourceUrl = WebLink.normalize(mutableState.value.url).orEmpty()
-            val result = runCatching {
+            val result = try {
                 withContext(Dispatchers.IO) {
                     storage.save(item.copy(width = width, height = height), index, sourceUrl)
                 }
+                Result.success(Unit)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Result.failure(error)
             }
             result.onSuccess {
                 mutableState.value = mutableState.value.copy(savingItemIndex = null, savedItemIndex = index)
-                mutableEvents.emit(DownloaderEvent.ItemSaved)
+                mutableEvents.send(DownloaderEvent.ItemSaved)
                 delay(2000)
                 mutableState.value = mutableState.value.copy(savedItemIndex = null)
             }
                 .onFailure {
                     mutableState.value = mutableState.value.copy(savingItemIndex = null)
-                    mutableEvents.emit(
+                    mutableEvents.send(
                         DownloaderEvent.ItemSaveFailed(it.message ?: "Failed to save")
                     )
                 }

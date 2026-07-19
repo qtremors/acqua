@@ -13,7 +13,7 @@ class MediaResolutionServiceTest {
             it.copy(mimeType = "image/png", fileExtension = "png")
         }
 
-        val result = service.resolve("https://instagram.com/p/abc", false) { emptyList() }
+        val result = service.resolve("https://instagram.com/p/abc", false) { _, _ -> emptyList() }
 
         assertEquals(
             listOf(raw.copy(referer = "https://instagram.com/p/abc", mimeType = "image/png", fileExtension = "png")),
@@ -26,17 +26,22 @@ class MediaResolutionServiceTest {
         val service = MediaResolutionService(MediaResolver { emptyList() }) { it }
 
         assertThrows(IllegalStateException::class.java) {
-            runBlocking { service.resolve("https://example.com/page", false) { emptyList() } }
+            runBlocking { service.resolve("https://example.com/page", false) { _, _ -> emptyList() } }
         }
     }
 
     @Test
     fun `browser resolver is used after known source failure`() = runBlocking {
         val browserItem = ResolvedMedia("https://cdn.test/video.mp4", MediaKind.VIDEO)
+        var explicitlyAuthorized = true
         val service = MediaResolutionService(MediaResolver { error("network unavailable") }) { it }
 
-        val result = service.resolve("https://instagram.com/p/abc", true) { listOf(browserItem) }
+        val result = service.resolve("https://instagram.com/p/abc", true) { _, explicitAuthorization ->
+            explicitlyAuthorized = explicitAuthorization
+            listOf(browserItem)
+        }
 
+        assertEquals(false, explicitlyAuthorized)
         assertEquals(listOf(browserItem), result)
     }
 
@@ -46,8 +51,49 @@ class MediaResolutionServiceTest {
         val large = ResolvedMedia("https://cdn.test/large.mp4", MediaKind.VIDEO, width = 1080, height = 1920, fileSize = 2_000)
         val service = MediaResolutionService(MediaResolver { listOf(small, large) }) { it }
 
-        val result = service.resolve("https://instagram.com/reel/abc", false) { emptyList() }
+        val result = service.resolve("https://instagram.com/reel/abc", false) { _, _ -> emptyList() }
 
         assertEquals(listOf(large.copy(referer = "https://instagram.com/reel/abc")), result)
+    }
+
+    @Test
+    fun `explicit browser download bypasses source resolution when sessions are disabled`() = runBlocking {
+        var sourceCalled = false
+        var explicitlyAuthorized = false
+        val browserItem = ResolvedMedia("https://cdn.test/private.mp4", MediaKind.VIDEO)
+        val service = MediaResolutionService(
+            MediaResolver {
+                sourceCalled = true
+                emptyList()
+            }
+        ) { it }
+
+        val result = service.resolve(
+            "https://instagram.com/reel/private",
+            browserSessionsEnabled = false,
+            forceBrowserResolution = true
+        ) { _, explicitSessionAuthorization ->
+            explicitlyAuthorized = explicitSessionAuthorization
+            listOf(browserItem)
+        }
+
+        assertEquals(false, sourceCalled)
+        assertEquals(true, explicitlyAuthorized)
+        assertEquals(listOf(browserItem), result)
+    }
+
+    @Test
+    fun `invalid source candidates fall back to browser when sessions are enabled`() = runBlocking {
+        val sourceItem = ResolvedMedia("https://cdn.test/expired.mp4", MediaKind.VIDEO)
+        val browserItem = ResolvedMedia("https://cdn.test/current.mp4", MediaKind.VIDEO)
+        val service = MediaResolutionService(MediaResolver { listOf(sourceItem) }) {
+            it.takeIf { candidate -> candidate.url == browserItem.url }
+        }
+
+        val result = service.resolve("https://instagram.com/reel/private", true) { _, _ ->
+            listOf(browserItem)
+        }
+
+        assertEquals(listOf(browserItem), result)
     }
 }

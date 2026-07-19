@@ -59,13 +59,20 @@ fun MediaPreviewCard(
     mediaDownloader: MediaDownloader,
     isSaving: Boolean,
     isSaved: Boolean,
+    downloadsEnabled: Boolean,
     onDownload: (width: Int, height: Int) -> Unit
 ) {
     val previewUrl = item.previewUrl
     var failed by remember(previewUrl) { mutableStateOf(false) }
-    val cookies = remember(previewUrl, item.requestCookies, useBrowserSessions) {
+    val cookies = remember(
+        previewUrl,
+        item.requestCookies,
+        item.explicitBrowserSessionAuthorized,
+        useBrowserSessions
+    ) {
+        val sessionAccessAllowed = useBrowserSessions || item.explicitBrowserSessionAuthorized
         when {
-            !useBrowserSessions || previewUrl == null -> null
+            !sessionAccessAllowed || previewUrl == null -> null
             WebLink.host(previewUrl) == WebLink.host(item.url) -> item.requestCookies
             else -> CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
         }
@@ -124,7 +131,7 @@ fun MediaPreviewCard(
             )
             IconButton(
                 onClick = { onDownload(bitmap?.width ?: item.width, bitmap?.height ?: item.height) },
-                enabled = !isSaving && !isSaved,
+                enabled = downloadsEnabled && !isSaved,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(32.dp)
                     .clip(CircleShape).background(
                         if (isSaved) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)

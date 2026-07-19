@@ -53,24 +53,32 @@ fun DashboardScreen(
     mediaDownloader: MediaDownloader,
     fileActions: FileActions,
     initialUrl: String,
-    browserDownloadUrl: String?,
+    urlHandoff: String?,
     browserRevision: Int,
-    onBrowserDownloadConsumed: () -> Unit,
-    resolveInBrowser: suspend (String) -> List<ResolvedMedia>,
+    downloadRequestRevision: Int,
+    onUrlHandoffConsumed: () -> Unit,
+    resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
     requestStorageAccess: (() -> Unit) -> Unit,
-    openBrowser: (String?, Boolean, String?) -> Unit,
-    onSessionStateChanged: (Boolean) -> Unit
+    openBrowser: (String?, Boolean, String?) -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val browserState by browserViewModel.state.collectAsState()
     LaunchedEffect(initialUrl) { downloaderViewModel.setInitialUrl(initialUrl) }
-    LaunchedEffect(browserRevision) { browserViewModel.refresh() }
-    LaunchedEffect(browserState.useSessions) { onSessionStateChanged(browserState.useSessions) }
-    LaunchedEffect(browserDownloadUrl) {
-        browserDownloadUrl?.let {
-            downloaderViewModel.updateUrl(it)
+    LaunchedEffect(browserRevision) {
+        if (browserRevision > 0) browserViewModel.refresh()
+    }
+    LaunchedEffect(urlHandoff) {
+        urlHandoff?.let { url ->
+            downloaderViewModel.updateUrl(url)
+            if (browserState.initialized) {
+                downloaderViewModel.resolve(
+                    browserState.useSessions,
+                    downloadRequestRevision,
+                    resolveInBrowser
+                )
+            }
             tab = 0
-            onBrowserDownloadConsumed()
+            onUrlHandoffConsumed()
         }
     }
 
@@ -111,7 +119,7 @@ fun DashboardScreen(
                     mediaDownloader,
                     browserState.useSessions,
                     browserState.initialized,
-                    browserRevision,
+                    downloadRequestRevision,
                     resolveInBrowser,
                     requestStorageAccess,
                     onOpenBrowser = { openBrowser(it, false, null) },
