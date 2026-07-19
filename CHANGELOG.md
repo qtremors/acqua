@@ -2,6 +2,18 @@
 
 All notable user-visible changes are documented here.
 
+## [0.0.6] - 2026-07-19
+
+### Added
+
+- Add clean, scalable Acqua logo artwork with rounded expressive contours and artifact-free vector edges, used throughout the README and website.
+
+### Changed
+
+- Produce smaller APKs for ARM64, ARM32, x86, and x86_64 instead of one universal package.
+- Present Acqua consistently as a media downloader throughout the project documentation and website.
+- Redesign the project website with a responsive Material 3 Expressive visual system and clearer download flow.
+
 ## [0.0.5] - 2026-07-19
 
 ### Added

@@ -1,3 +1,5 @@
+import com.android.build.api.variant.FilterConfiguration
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -11,11 +13,19 @@ android {
         applicationId = "dev.qtremors.acqua"
         minSdk = 24
         targetSdk = 37
-        versionCode = 5
-        versionName = "0.0.5"
+        versionCode = 6
+        versionName = "0.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        splits {
+            abi {
+                isEnable = true
+                reset()
+                include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+                isUniversalApk = false
+            }
+        }
     }
 
     buildTypes {
@@ -25,9 +35,12 @@ android {
             manifestPlaceholders["appLabel"] = "Acqua Debug"
         }
         release {
-            optimization {
-                enable = false
-            }
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             manifestPlaceholders["appLabel"] = "Acqua"
         }
     }
@@ -47,7 +60,11 @@ androidComponents {
     onVariants { variant ->
         variant.outputs.forEach { output ->
             val version = output.versionName.get() ?: "0.0.0"
-            output.outputFileName.set("Acqua-$version.apk")
+            val abi = output.filters
+                .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
+                ?.identifier
+            val abiSuffix = abi?.let { "-$it" }.orEmpty()
+            output.outputFileName.set("Acqua-$version$abiSuffix.apk")
         }
     }
 }

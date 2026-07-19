@@ -2,7 +2,7 @@
 
 | Metadata | Value |
 | :--- | :--- |
-| Current version | 0.0.4 |
+| Current version | 0.0.6 |
 | Minimum Android version | Android 7.0 (API 24) |
 | Target/compile SDK | 37 |
 
@@ -48,15 +48,17 @@ Acqua uses separate identities for local development and production:
 
 | Variant | Label | Application ID | Version name |
 | :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.4-debug` |
-| Release | Acqua | `dev.qtremors.acqua` | `0.0.4` |
+| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.6-debug` |
+| Release | Acqua | `dev.qtremors.acqua` | `0.0.6` |
 
-Both use version code `2`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
+Both use version code `6`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
 
-APK output names are generated from the variant version:
+APK output names are generated from the variant version and ABI:
 
-- `Acqua-0.0.4-debug.apk`
-- `Acqua-0.0.4.apk`
+- `Acqua-0.0.6-debug-arm64-v8a.apk`
+- `Acqua-0.0.6-arm64-v8a.apk`
+
+Equivalent `armeabi-v7a`, `x86`, and `x86_64` outputs are produced. There is no universal APK; this avoids packaging four complete native processing runtimes into every download. Release builds enable R8 minification and resource shrinking.
 
 Variant configuration lives in `acqua-app/app/build.gradle.kts`. The manifest reads `${appLabel}`, so do not hard-code the display name in `AndroidManifest.xml`.
 
@@ -73,7 +75,7 @@ Shared link / pasted URL
           v
    Feature ViewModels + Compose screens
           |
-          +---- known source -------> InstagramResolver
+          +---- source adapters ----> direct or processed media
           |
           +---- browser extraction -> RenderedPageResolverActivity
                                              |
@@ -105,7 +107,11 @@ BrowserActivity (kept alive)
 | `DashboardScreen.kt` | Top-level feature navigation. |
 | `feature/*/*ViewModel.kt` | Lifecycle-aware state and feature orchestration. |
 | `feature/*/*Screen.kt` | Downloader, browser, history, and settings UI. |
-| `InstagramResolver.kt` | Instagram network extraction fallbacks and authenticated requests. |
+| `resolver/*` | Source adapters, network extraction fallbacks, and authenticated requests. |
+| `downloader/*Engine.kt` | Processed-media inspection and download requests, cookies, progress, cancellation, and temporary-file cleanup. |
+| `downloader/*DownloadWorker.kt` | Persisted foreground download, notification, media processing, storage import, and rescheduling. |
+| `downloader/*DownloadCoordinator.kt` | Enqueues, observes, and cancels foreground download work. |
+| `downloader/*Runtime.kt` | Serialized runtime initialization, execution, updates, and cancellation. |
 | `MediaDownloader.kt` | Source-neutral media validation, preview fetching, and complete-file streaming. |
 | `ResolvedMedia.kt` | Resolved-media model with kind, MIME type, and file extension. |
 | `MediaResolver.kt` | Resolver contract shared by source adapters. |
@@ -120,7 +126,7 @@ BrowserActivity (kept alive)
 | `BrowserDataManager.kt` | Selected-origin and full browser-data clearing. |
 | `WebLink.kt` | Generic HTTP(S) normalization, shared-text extraction, and known-source detection. |
 | `RenderedPageResolverActivity.kt` | Temporary WebView that observes a submitted page and returns media candidates. |
-| `InstagramSessionStore.kt` | Android Keystore protection for Instagram cookies used by its resolver. |
+| `session/*` | Session persistence and Android Keystore protection for reusable extraction cookies. |
 
 The UI remains source-agnostic. Source-specific extraction stays in resolver components, while validation, storage, history, settings, and session persistence use source-neutral models and repositories. Stateful services are constructed per application boundary rather than exposed as global Kotlin objects. Keep each Kotlin source file below 700 lines; split by responsibility before it reaches that limit.
 
@@ -129,13 +135,14 @@ The UI remains source-agnostic. Source-specific extraction stays in resolver com
 Resolution is layered because known sources and generic websites expose media differently.
 
 1. Normalize any valid HTTP or HTTPS URL.
-2. Use a specialized network adapter when the domain and route are recognized.
-3. Load the page in the rendered-page resolver when automatic browser sessions are enabled or the user explicitly downloads from the live browser.
-4. Observe document markup, media elements, metadata, performance entries, and network requests.
-5. Strip byte-range fragments and other partial-response parameters from candidates.
-6. Carry the page referrer and relevant domain cookies into validation and download requests.
-7. Validate candidate responses before presenting or downloading them.
-8. Report a clean unsupported-media error when no complete file is exposed.
+2. Ask matching source adapters for direct or selectable media formats.
+3. Prefer an already-resolved 1080p result; otherwise compare available candidates and choose the larger valid video.
+4. Load other pages in the rendered-page resolver when automatic browser sessions are enabled or the user explicitly downloads from the live browser.
+5. Observe document markup, media elements, metadata, performance entries, and network requests.
+6. Strip byte-range fragments and other partial-response parameters from candidates.
+7. Carry the page referrer and relevant domain cookies into validation and download requests.
+8. Validate direct-file candidates before presenting or downloading them.
+9. Report a clean unsupported-media error when no complete file is exposed.
 
 The resolver must never assume that a URL ending in `.jpg` or `.mp4` contains that format. Services frequently return HTML error pages, partial byte ranges, or audio streams under misleading URLs.
 
@@ -145,7 +152,7 @@ The resolver must never assume that a URL ending in `.jpg` or `.mp4` contains th
 
 `BrowserActivity` provides one address bar and one shared WebView profile for all websites. Credentials are submitted directly to the loaded website; Acqua does not receive or store passwords. Download launches `DownloadActivity` above the browser instead of finishing it, preserving the live page, scroll position, navigation history, forms, session storage, and transient JavaScript state during normal operation. `WebView.saveState()` and `restoreState()` provide best-effort URL and history restoration after activity or process recreation.
 
-WebView keeps cookies and site storage in the application sandbox. The user can add a named website bookmark before opening the browser; `SavedWebsiteRepository` stores its display name, origin, and cached favicon for the Browser tab. `BrowserDataManager` only coordinates data clearing. Instagram cookies used by its network resolver are copied into `InstagramSessionStore`, where AES-GCM and Android Keystore protect them.
+WebView keeps cookies and site storage in the application sandbox. The user can add a named website bookmark before opening the browser; `SavedWebsiteRepository` stores its display name, origin, and cached favicon for the Browser tab. `BrowserDataManager` only coordinates data clearing. Cookies reused by network adapters are copied into an encrypted session store protected by AES-GCM and Android Keystore.
 
 The **Use browser sessions for extraction** preference is opt-in. When disabled, network adapters do not proactively reuse saved session cookies. An explicit Download action in the browser authorizes the dedicated download flow to use the shared WebView session for that media while leaving the preference disabled.
 
@@ -153,7 +160,7 @@ Backup rules exclude both the encrypted session payload and WebView data from cl
 
 ### Resolver flow
 
-`RenderedPageResolverActivity` creates a temporary WebView using the same cookie profile, visits the submitted URL, and returns media candidates to the calling main or download activity. Existing encrypted Instagram cookies are migrated into WebView when required.
+`RenderedPageResolverActivity` creates a temporary WebView using the same cookie profile, visits the submitted URL, and returns media candidates to the calling main or download activity. Existing encrypted adapter cookies are migrated into WebView when required.
 
 **Manage Website Data** can clear selected origins or all browser data. Selected clearing expires addressable cookies, deletes origin storage, removes the bookmark and favicon, and clears matching encrypted adapter sessions. Full clearing additionally removes all WebView cookies and storage, shared cache, form data, HTTP authentication, registry metadata, and encrypted adapter sessions. Debug and release builds maintain independent browser data because their application IDs and storage sandboxes differ.
 
@@ -178,22 +185,26 @@ Backup rules exclude both the encrypted session payload and WebView data from cl
 
 Downloads use the same resolved media item shown in preview. This keeps preview dimensions, file size, thumbnail, extension, and saved content aligned.
 
+Processed downloads run as persisted foreground work in an app-cache task directory. The processing engine merges separate streams or converts extracted audio, then `MediaStorage` imports the completed file into Downloads and deletes the temporary task. A notification and the downloader UI expose progress and cancellation. Quality selectors account for video orientation; metadata, chapters, and cover artwork are optional. Runtime updates and downloads share a read/write lock so an update cannot replace the executable during an active job.
+
 When changing extraction logic, test at least:
 
 - A public photo post.
-- A public video or Reel.
+- A public video.
 - A carousel containing both image and video items.
 - Signed-in-only content visible to the test account.
-- A Story visible to the test account.
+- Signed-in media visible to the test account.
 - An unavailable or deleted URL.
 - A response that returns HTML under a media-looking URL.
 - A partial video response.
+- A video with separate video and audio streams.
+- An audio link saved as original audio, M4A, and MP3.
 
 Use test accounts and content you control. Repeated automated requests can trigger service safeguards.
 
 ## Storage and history
 
-Acqua writes downloads through Android's supported storage APIs into a configurable subfolder under Downloads. Filename settings are applied before the file is created. The Settings page exposes the supported placeholders as toggleable chips and can restore `acqua_{username}_{resolution}_{date}_{time}_{index}` as the default pattern.
+Acqua writes downloads through Android's supported storage APIs into a configurable subfolder under Downloads. Filename settings are applied before the file is created. The Settings page exposes the supported placeholders, including `{title}` for processed media, as toggleable chips and can restore `acqua_{username}_{resolution}_{date}_{time}_{index}` as the default pattern.
 
 History stores local download records used by the Compose dashboard. Authentication state is separate from history and must not be mixed into user-visible records or exports.
 
@@ -224,12 +235,12 @@ Useful verification points:
 
 - `MediaContentDetectorTest` covers format detection and corrupt/partial payload rejection.
 - `WebLinkTest` covers generic URL normalization, shared-text extraction, and known-source routing.
-- `MediaResolutionServiceTest` covers source routing, browser fallback, validation, and Reel selection.
+- `MediaResolutionServiceTest` covers source routing, browser fallback, validation, and quality selection.
 - Feature-state tests cover history filtering, while Android tests cover history, settings, saved websites, encrypted sessions, and MediaStore-backed storage.
 - Install debug and release together and verify their names and independent data.
 - Confirm browsing, login persistence, app restart restoration, authenticated resolution, and **Clear Data**.
 - Try a direct media URL, a generic HTML page with media metadata, and an unsupported page.
-- Confirm image and video previews match the files that are downloaded.
+- Confirm image, video, and audio history entries match the files that are downloaded.
 - Check light/dark themes and compact/expanded layouts.
 
 ## Release checklist

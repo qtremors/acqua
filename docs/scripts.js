@@ -2,26 +2,37 @@ const header = document.querySelector("[data-header]");
 const navToggle = document.querySelector("[data-nav-toggle]");
 const navLinks = document.querySelector("[data-nav-links]");
 
-const updateHeader = () => header?.classList.toggle("scrolled", window.scrollY > 12);
+const closeNavigation = () => {
+  navToggle?.setAttribute("aria-expanded", "false");
+  navToggle?.setAttribute("aria-label", "Open navigation");
+  navLinks?.classList.remove("open");
+};
+
+const updateHeader = () => header?.classList.toggle("scrolled", window.scrollY > 14);
 updateHeader();
 window.addEventListener("scroll", updateHeader, { passive: true });
 
 navToggle?.addEventListener("click", () => {
   const open = navToggle.getAttribute("aria-expanded") === "true";
   navToggle.setAttribute("aria-expanded", String(!open));
+  navToggle.setAttribute("aria-label", open ? "Open navigation" : "Close navigation");
   navLinks?.classList.toggle("open", !open);
 });
 
-navLinks?.querySelectorAll("a").forEach((link) => {
-  link.addEventListener("click", () => {
-    navToggle?.setAttribute("aria-expanded", "false");
-    navLinks.classList.remove("open");
-  });
+navLinks?.querySelectorAll("a").forEach((link) => link.addEventListener("click", closeNavigation));
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeNavigation();
+});
+
+document.addEventListener("click", (event) => {
+  if (!header?.contains(event.target)) closeNavigation();
 });
 
 document.querySelectorAll(".faq-list button").forEach((button) => {
   button.addEventListener("click", () => {
-    const answer = button.closest("article")?.querySelector(".answer");
+    const answerId = button.getAttribute("aria-controls");
+    const answer = answerId ? document.getElementById(answerId) : null;
     const open = button.getAttribute("aria-expanded") !== "true";
     button.setAttribute("aria-expanded", String(open));
     if (answer) answer.hidden = !open;
@@ -29,7 +40,9 @@ document.querySelectorAll(".faq-list button").forEach((button) => {
 });
 
 const items = document.querySelectorAll(".reveal");
-if (!("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+if (!("IntersectionObserver" in window) || reducedMotion) {
   items.forEach((item) => item.classList.add("visible"));
 } else {
   const observer = new IntersectionObserver((entries) => {
@@ -38,6 +51,7 @@ if (!("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-m
       entry.target.classList.add("visible");
       observer.unobserve(entry.target);
     });
-  }, { threshold: 0.12 });
+  }, { threshold: 0.1, rootMargin: "0px 0px -25px" });
+
   items.forEach((item) => observer.observe(item));
 }
