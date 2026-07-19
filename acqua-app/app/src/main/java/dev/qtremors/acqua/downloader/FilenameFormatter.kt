@@ -7,7 +7,7 @@ import java.util.Locale
 object FilenameFormatter {
     const val DEFAULT_PATTERN = "acqua_{username}_{resolution}_{date}_{time}_{index}"
 
-    val variables = listOf("{username}", "{resolution}", "{date}", "{time}", "{index}")
+    val variables = listOf("{title}", "{username}", "{resolution}", "{date}", "{time}", "{index}")
 
     fun format(
         pattern: String,
@@ -16,6 +16,7 @@ object FilenameFormatter {
         height: Int,
         index: Int,
         fileExtension: String,
+        title: String? = null,
         now: Date = Date()
     ): String {
         val date = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(now)
@@ -26,12 +27,15 @@ object FilenameFormatter {
         val resolution = if (width > 0 && height > 0) "${width}x${height}" else ""
 
         var name = pattern
+            .replace("{title}", title.orEmpty())
             .replace("{username}", username.orEmpty())
             .replace("{resolution}", resolution)
             .replace("{date}", date)
             .replace("{time}", time)
             .replace("{index}", (index + 1).toString())
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
+            .replace(Regex("[\\p{Cc}\\p{Cf}]"), "")
+            .replace(Regex("\\s+"), " ")
 
         while (name.contains("__")) name = name.replace("__", "_")
         name = name.trim('_', ' ', '.')

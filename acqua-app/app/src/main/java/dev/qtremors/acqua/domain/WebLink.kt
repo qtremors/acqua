@@ -57,4 +57,12 @@ object WebLink {
         val path = runCatching { URI(normalized).path.orEmpty() }.getOrDefault("")
         return listOf("/p/", "/reel/", "/tv/", "/stories/").any { path.startsWith(it, true) }
     }
+
+    fun isYouTubeUrl(url: String): Boolean {
+        val host = host(url) ?: return false
+        return host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com")
+    }
+
+    fun isYouTubeMusicUrl(url: String): Boolean =
+        host(url) == "music.youtube.com"
 }

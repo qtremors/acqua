@@ -21,6 +21,9 @@ data class HistoryEntry(
 ) {
     val type: HistoryEntryType
         get() = if (isDownloaded) HistoryEntryType.DOWNLOAD else HistoryEntryType.LINK
+
+    val isAudio: Boolean
+        get() = isDownloaded && mimeType.startsWith("audio/")
 }
 
 class HistoryRepository(context: Context) {

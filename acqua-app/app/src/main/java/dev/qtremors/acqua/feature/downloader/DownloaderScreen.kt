@@ -12,6 +12,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,6 +30,8 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -41,6 +44,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,6 +65,10 @@ import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.network.MediaDownloader
 import dev.qtremors.acqua.domain.ResolvedMedia
+import dev.qtremors.acqua.domain.MediaBackend
+import dev.qtremors.acqua.downloader.AudioOutputFormat
+import dev.qtremors.acqua.downloader.DownloadContentType
+import dev.qtremors.acqua.downloader.YtDlpFormatSelector.qualityDimension
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
 
@@ -71,7 +80,7 @@ fun DownloaderScreen(
     sessionsInitialized: Boolean,
     browserRequestRevision: Int,
     resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
-    requestStorageAccess: (() -> Unit) -> Unit,
+    requestDownloadAccess: (needsNotification: Boolean, action: () -> Unit) -> Unit,
     onOpenBrowser: (String) -> Unit,
     modifier: Modifier = Modifier,
     onMediaSaved: () -> Unit = {},
@@ -164,11 +173,20 @@ fun DownloaderScreen(
                 mediaDownloader = mediaDownloader,
                 useBrowserSessions = useBrowserSessions,
                 onDownloadAll = {
-                    requestStorageAccess { viewModel.downloadAll(useBrowserSessions, resolveInBrowser) }
+                    val needsNotification = state.media?.any { it.backend == MediaBackend.YT_DLP } == true
+                    requestDownloadAccess(needsNotification) {
+                        viewModel.downloadAll(useBrowserSessions, resolveInBrowser)
+                    }
                 },
                 onDownloadOne = { item, index, width, height ->
-                    requestStorageAccess { viewModel.downloadOne(item, index, width, height) }
+                    requestDownloadAccess(false) { viewModel.downloadOne(item, index, width, height) }
                 },
+                onContentTypeChange = viewModel::setDownloadContentType,
+                onVideoHeightChange = viewModel::setMaximumVideoHeight,
+                onAudioFormatChange = viewModel::setAudioFormat,
+                onEmbedMetadataChange = viewModel::setEmbedMetadata,
+                onEmbedThumbnailChange = viewModel::setEmbedThumbnail,
+                onCancelDownload = viewModel::cancelActiveDownload,
                 onDismissError = viewModel::dismissError,
                 onCopyError = { error ->
                     (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
@@ -218,6 +236,12 @@ private fun ValidLinkContent(
     useBrowserSessions: Boolean,
     onDownloadAll: () -> Unit,
     onDownloadOne: (ResolvedMedia, Int, Int, Int) -> Unit,
+    onContentTypeChange: (DownloadContentType) -> Unit,
+    onVideoHeightChange: (Int) -> Unit,
+    onAudioFormatChange: (AudioOutputFormat) -> Unit,
+    onEmbedMetadataChange: (Boolean) -> Unit,
+    onEmbedThumbnailChange: (Boolean) -> Unit,
+    onCancelDownload: () -> Unit,
     onDismissError: () -> Unit,
     onCopyError: (String) -> Unit,
     onOpenBrowser: () -> Unit
@@ -226,6 +250,44 @@ private fun ValidLinkContent(
     AnimatedVisibility(state.isResolving, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxWidth()) {
         LinearProgressIndicator(Modifier.fillMaxWidth().height(8.dp))
     }
+    val ytDlpMedia = state.media?.singleOrNull()?.takeIf { it.backend == MediaBackend.YT_DLP }
+    if (ytDlpMedia != null) {
+        YtDlpDownloadControls(
+            state = state,
+            media = ytDlpMedia,
+            onContentTypeChange = onContentTypeChange,
+            onVideoHeightChange = onVideoHeightChange,
+            onAudioFormatChange = onAudioFormatChange,
+            onEmbedMetadataChange = onEmbedMetadataChange,
+            onEmbedThumbnailChange = onEmbedThumbnailChange
+        )
+    }
+    if (ytDlpMedia != null && state.isSaving) {
+        Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            LinearProgressIndicator(
+                progress = { (state.downloadProgress / 100f).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(8.dp)
+            )
+            if (state.downloadEtaSeconds > 0L) {
+                Text(
+                    pluralStringResource(
+                        R.plurals.download_eta,
+                        state.downloadEtaSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                        state.downloadEtaSeconds
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+            TextButton(
+                onClick = onCancelDownload,
+                modifier = Modifier.align(Alignment.End)
+            ) {
+                Text(stringResource(R.string.cancel_download))
+            }
+        }
+    }
     Card(
         Modifier.fillMaxWidth().padding(top = 12.dp), RoundedCornerShape(24.dp),
         CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
@@ -233,7 +295,7 @@ private fun ValidLinkContent(
         Button(
             onClick = onDownloadAll,
             modifier = Modifier.fillMaxWidth().padding(24.dp).height(52.dp),
-            enabled = !state.isSaving && state.savingItemIndex == null,
+            enabled = !state.isResolving && !state.isSaving && state.savingItemIndex == null,
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
         ) {
@@ -255,7 +317,16 @@ private fun ValidLinkContent(
                 else -> {
                     Icon(Icons.Filled.Download, stringResource(R.string.download))
                     Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.download_media), fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(
+                            if (ytDlpMedia != null && state.downloadContentType == DownloadContentType.AUDIO) {
+                                R.string.download_audio
+                            } else {
+                                R.string.download_media
+                            }
+                        ),
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -281,7 +352,8 @@ private fun ValidLinkContent(
                             item, index, useBrowserSessions, mediaDownloader,
                             isSaving = state.savingItemIndex == index,
                             isSaved = state.savedItemIndex == index,
-                            downloadsEnabled = !state.isSaving && state.savingItemIndex == null,
+                            downloadsEnabled = item.backend == MediaBackend.DIRECT &&
+                                !state.isSaving && state.savingItemIndex == null,
                             onDownload = { width, height -> onDownloadOne(item, index, width, height) }
                         )
                     }
@@ -312,5 +384,126 @@ private fun ValidLinkContent(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun YtDlpDownloadControls(
+    state: DownloaderUiState,
+    media: ResolvedMedia,
+    onContentTypeChange: (DownloadContentType) -> Unit,
+    onVideoHeightChange: (Int) -> Unit,
+    onAudioFormatChange: (AudioOutputFormat) -> Unit,
+    onEmbedMetadataChange: (Boolean) -> Unit,
+    onEmbedThumbnailChange: (Boolean) -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val availableHeights = media.formats.asSequence()
+        .filter { it.hasVideo && it.qualityDimension > 0 }
+        .map { it.qualityDimension }
+        .distinct()
+        .sortedDescending()
+        .toList()
+    Card(
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        RoundedCornerShape(24.dp),
+        CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            media.title?.let {
+                Text(it, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                media.username?.let { author ->
+                    Text(author, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
+                Spacer(Modifier.height(14.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = state.downloadContentType == DownloadContentType.VIDEO,
+                    onClick = { onContentTypeChange(DownloadContentType.VIDEO) },
+                    label = { Text(stringResource(R.string.video)) },
+                    leadingIcon = { Icon(Icons.Filled.Movie, null, Modifier.size(18.dp)) }
+                )
+                FilterChip(
+                    selected = state.downloadContentType == DownloadContentType.AUDIO,
+                    onClick = { onContentTypeChange(DownloadContentType.AUDIO) },
+                    label = { Text(stringResource(R.string.audio)) },
+                    leadingIcon = { Icon(Icons.Filled.MusicNote, null, Modifier.size(18.dp)) }
+                )
+            }
+            if (state.downloadContentType == DownloadContentType.VIDEO) {
+                Text(
+                    stringResource(R.string.quality),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(
+                        selected = state.maximumVideoHeight == 0,
+                        onClick = { onVideoHeightChange(0) },
+                        label = { Text(stringResource(R.string.best)) }
+                    )
+                    availableHeights.forEach { height ->
+                        FilterChip(
+                            selected = state.maximumVideoHeight == height,
+                            onClick = { onVideoHeightChange(height) },
+                            label = { Text("${height}p") }
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    stringResource(R.string.audio_format),
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AudioOutputFormat.entries.forEach { format ->
+                        FilterChip(
+                            selected = state.audioFormat == format,
+                            onClick = { onAudioFormatChange(format) },
+                            label = {
+                                Text(
+                                    when (format) {
+                                        AudioOutputFormat.ORIGINAL -> stringResource(R.string.original_audio)
+                                        AudioOutputFormat.M4A -> "M4A"
+                                        AudioOutputFormat.MP3 -> "MP3"
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+            DownloadOptionSwitch(
+                title = stringResource(R.string.embed_metadata),
+                checked = state.embedMetadata,
+                onCheckedChange = onEmbedMetadataChange
+            )
+            DownloadOptionSwitch(
+                title = stringResource(R.string.embed_thumbnail),
+                checked = state.embedThumbnail,
+                onCheckedChange = onEmbedThumbnailChange
+            )
+        }
+    }
+}
+
+@Composable
+private fun DownloadOptionSwitch(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyMedium)
+        Switch(checked, onCheckedChange)
     }
 }

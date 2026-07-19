@@ -8,9 +8,13 @@ import dev.qtremors.acqua.data.session.InstagramSessionStore
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.domain.MediaResolutionService
+import dev.qtremors.acqua.downloader.YtDlpEngine
+import dev.qtremors.acqua.downloader.YtDlpDownloadCoordinator
+import dev.qtremors.acqua.downloader.YtDlpMaintenance
 import dev.qtremors.acqua.platform.FileActions
 import dev.qtremors.acqua.platform.storage.MediaStorage
 import dev.qtremors.acqua.resolver.instagram.InstagramResolver
+import dev.qtremors.acqua.resolver.ytdlp.YtDlpResolver
 
 class MainDependencies(context: Context) {
     val history = HistoryRepository(context)
@@ -19,8 +23,16 @@ class MainDependencies(context: Context) {
     val instagramSessions = InstagramSessionStore(context)
     val savedWebsites = SavedWebsiteRepository(context)
     val instagramResolver = InstagramResolver()
+    val ytDlpEngine = YtDlpEngine(context)
+    val ytDlpDownloads = YtDlpDownloadCoordinator(context)
+    val ytDlpResolver = YtDlpResolver(ytDlpEngine)
+    val ytDlpMaintenance = YtDlpMaintenance(context, settings)
     val browserData = BrowserDataManager(context, savedWebsites, instagramSessions, settings)
     val mediaStorage = MediaStorage(context, history, settings, mediaDownloader)
-    val resolution = MediaResolutionService(instagramResolver, mediaDownloader::validateAndResolveMetadata)
+    val resolution = MediaResolutionService(
+        sourceResolver = instagramResolver,
+        ytDlpResolver = ytDlpResolver,
+        inspectMedia = mediaDownloader::validateAndResolveMetadata
+    )
     val fileActions = FileActions(context)
 }

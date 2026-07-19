@@ -12,6 +12,7 @@ import dev.qtremors.acqua.data.history.HistoryEntry
 import dev.qtremors.acqua.data.history.HistoryRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.downloader.FilenameFormatter
+import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.data.network.MediaDownloader
 import dev.qtremors.acqua.domain.ResolvedMedia
 import java.io.File
@@ -52,6 +53,78 @@ class MediaStorage(
             saveWithMediaStore(item, sourceUrl, relativePath, fileName, mimeType, requestCookies)
         } else {
             saveLegacy(item, sourceUrl, baseFolder, category, fileName, mimeType, requestCookies, settings.categorizeMedia)
+        }
+    }
+
+    fun saveProcessedFile(
+        sourceFile: File,
+        media: ResolvedMedia,
+        contentType: DownloadContentType,
+        sourceUrl: String
+    ): Uri {
+        require(sourceFile.isFile && sourceFile.length() > 0L) { "The processed media file is empty." }
+        val settings = settingsRepository.downloadSettings()
+        val baseFolder = settingsRepository.sanitizedBaseFolder(settings.baseFolder)
+        val isAudio = contentType == DownloadContentType.AUDIO
+        val category = if (isAudio) "Audio" else "Videos"
+        val extension = sourceFile.extension.lowercase().ifBlank { if (isAudio) "m4a" else "mp4" }
+        val mimeType = mimeTypeFor(extension, isAudio)
+        val fileName = FilenameFormatter.format(
+            pattern = settings.filenamePattern,
+            username = media.username,
+            width = if (isAudio) 0 else media.width,
+            height = if (isAudio) 0 else media.height,
+            index = 0,
+            fileExtension = extension,
+            title = media.title
+        )
+        val relativePath = buildString {
+            append("Download/")
+            append(baseFolder)
+            if (settings.categorizeMedia) append("/$category")
+        }
+
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                put(MediaStore.Downloads.MIME_TYPE, mimeType)
+                put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
+                put(MediaStore.Downloads.IS_PENDING, 1)
+            }
+            val resolver = appContext.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: error("Could not create the destination file in Downloads.")
+            try {
+                resolver.openOutputStream(uri)?.use { output ->
+                    sourceFile.inputStream().use { input -> input.copyTo(output) }
+                } ?: error("Could not open the destination media file.")
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+                recordProcessedDownload(media, sourceUrl, uri, fileName, mimeType, sourceFile.length(), !isAudio)
+                uri
+            } catch (error: Exception) {
+                resolver.delete(uri, null, null)
+                throw error
+            }
+        } else {
+            val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val targetDirectory = File(
+                downloads,
+                if (settings.categorizeMedia) "$baseFolder/$category" else baseFolder
+            )
+            check(targetDirectory.mkdirs() || targetDirectory.isDirectory) {
+                "Could not create the configured Downloads subfolder."
+            }
+            val target = File(targetDirectory, fileName)
+            sourceFile.copyTo(target, overwrite = true)
+            val uri = FileProvider.getUriForFile(
+                appContext,
+                "${appContext.packageName}.fileprovider",
+                target
+            )
+            recordProcessedDownload(media, sourceUrl, uri, fileName, mimeType, target.length(), !isAudio)
+            uri
         }
     }
 
@@ -147,5 +220,43 @@ class MediaStorage(
                 thumbnailUrl = item.thumbnailUrl ?: item.previewUrl
             )
         )
+    }
+
+    private fun recordProcessedDownload(
+        media: ResolvedMedia,
+        sourceUrl: String,
+        uri: Uri,
+        fileName: String,
+        mimeType: String,
+        bytesDownloaded: Long,
+        isVideo: Boolean
+    ) {
+        historyRepository.add(
+            HistoryEntry(
+                id = UUID.randomUUID().toString(),
+                timestamp = System.currentTimeMillis(),
+                url = sourceUrl,
+                fileName = fileName,
+                fileUri = uri.toString(),
+                isVideo = isVideo,
+                mimeType = mimeType,
+                sizeBytes = bytesDownloaded,
+                isDownloaded = true,
+                thumbnailUrl = media.thumbnailUrl
+            )
+        )
+    }
+
+    private fun mimeTypeFor(extension: String, audio: Boolean): String = when (extension) {
+        "mp3" -> "audio/mpeg"
+        "m4a" -> "audio/mp4"
+        "opus" -> "audio/opus"
+        "ogg", "oga" -> "audio/ogg"
+        "aac" -> "audio/aac"
+        "wav" -> "audio/wav"
+        "webm" -> if (audio) "audio/webm" else "video/webm"
+        "mkv" -> "video/x-matroska"
+        "mov" -> "video/quicktime"
+        else -> if (audio) "audio/*" else "video/mp4"
     }
 }

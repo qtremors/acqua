@@ -58,7 +58,7 @@ fun DashboardScreen(
     downloadRequestRevision: Int,
     onUrlHandoffConsumed: () -> Unit,
     resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
-    requestStorageAccess: (() -> Unit) -> Unit,
+    requestDownloadAccess: (needsNotification: Boolean, action: () -> Unit) -> Unit,
     openBrowser: (String?, Boolean, String?) -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
@@ -121,7 +121,7 @@ fun DashboardScreen(
                     browserState.initialized,
                     downloadRequestRevision,
                     resolveInBrowser,
-                    requestStorageAccess,
+                    requestDownloadAccess,
                     onOpenBrowser = { openBrowser(it, false, null) },
                     modifier = Modifier.fillMaxSize().padding(padding)
                 )

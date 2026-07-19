@@ -41,6 +41,12 @@ class MainActivity : ComponentActivity() {
         pendingStorageAction = null
         if (granted) action?.invoke()
     }
+    private var pendingNotificationAction: (() -> Unit)? = null
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            pendingNotificationAction?.invoke()
+            pendingNotificationAction = null
+        }
 
     private val browserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
@@ -76,7 +82,14 @@ class MainActivity : ComponentActivity() {
             AcquaTheme {
                 val downloader: DownloaderViewModel = viewModel(
                     factory = remember { ViewModelFactory {
-                        DownloaderViewModel(dependencies.history, dependencies.resolution, dependencies.mediaStorage)
+                        DownloaderViewModel(
+                            dependencies.history,
+                            dependencies.resolution,
+                            dependencies.mediaStorage,
+                            dependencies.settings,
+                            dependencies.ytDlpEngine,
+                            dependencies.ytDlpDownloads
+                        )
                     } }
                 )
                 val browser: BrowserViewModel = viewModel(
@@ -94,7 +107,11 @@ class MainActivity : ComponentActivity() {
                     factory = remember { ViewModelFactory { HistoryViewModel(dependencies.history) } }
                 )
                 val settings: SettingsViewModel = viewModel(
-                    factory = remember { ViewModelFactory { SettingsViewModel(dependencies.settings) } }
+                    factory = remember {
+                        ViewModelFactory {
+                            SettingsViewModel(dependencies.settings, dependencies.ytDlpMaintenance)
+                        }
+                    }
                 )
                 DashboardScreen(
                     downloader,
@@ -109,7 +126,7 @@ class MainActivity : ComponentActivity() {
                     browserResolutionCoordinator.downloadRequestRevision,
                     onUrlHandoffConsumed = browserResolutionCoordinator::consumeUrlHandoff,
                     resolveInBrowser = ::resolveInBrowser,
-                    requestStorageAccess = ::runWithStoragePermission,
+                    requestDownloadAccess = ::runWithDownloadPermissions,
                     openBrowser = ::openBrowser
                 )
             }
@@ -182,13 +199,25 @@ class MainActivity : ComponentActivity() {
         } ?: dependencies.instagramResolver.clearSessionCookies()
     }
 
-    private fun runWithStoragePermission(action: () -> Unit) {
+    private fun runWithDownloadPermissions(needsNotification: Boolean, action: () -> Unit) {
         val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
-            pendingStorageAction = action
+            pendingStorageAction = { runWithDownloadPermissions(needsNotification, action) }
             permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else if (needsNotification) {
+            runWithNotificationPermission(action)
+        } else action()
+    }
+
+    private fun runWithNotificationPermission(action: () -> Unit) {
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            pendingNotificationAction = action
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else action()
     }
 }

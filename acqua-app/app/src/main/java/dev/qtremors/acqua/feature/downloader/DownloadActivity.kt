@@ -47,6 +47,12 @@ class DownloadActivity : ComponentActivity() {
         pendingStorageAction = null
         if (granted) action?.invoke()
     }
+    private var pendingNotificationAction: (() -> Unit)? = null
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            pendingNotificationAction?.invoke()
+            pendingNotificationAction = null
+        }
 
     private val resolverLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val pending = resolutionCoordinator.pending ?: return@registerForActivityResult
@@ -85,7 +91,10 @@ class DownloadActivity : ComponentActivity() {
                             DownloaderViewModel(
                                 dependencies.history,
                                 dependencies.resolution,
-                                dependencies.mediaStorage
+                                dependencies.mediaStorage,
+                                dependencies.settings,
+                                dependencies.ytDlpEngine,
+                                dependencies.ytDlpDownloads
                             )
                         }
                     }
@@ -115,7 +124,7 @@ class DownloadActivity : ComponentActivity() {
                         sessionsInitialized = true,
                         browserRequestRevision = EXPLICIT_BROWSER_REQUEST_REVISION,
                         resolveInBrowser = ::resolveInBrowser,
-                        requestStorageAccess = ::runWithStoragePermission,
+                        requestDownloadAccess = ::runWithDownloadPermissions,
                         onOpenBrowser = { finish() },
                         onMediaSaved = { finish() },
                         showLinkEditor = false,
@@ -162,16 +171,28 @@ class DownloadActivity : ComponentActivity() {
         }
     }
 
-    private fun runWithStoragePermission(action: () -> Unit) {
+    private fun runWithDownloadPermissions(needsNotification: Boolean, action: () -> Unit) {
         val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
-            pendingStorageAction = action
+            pendingStorageAction = { runWithDownloadPermissions(needsNotification, action) }
             permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else if (needsNotification) {
+            runWithNotificationPermission(action)
         } else {
             action()
         }
+    }
+
+    private fun runWithNotificationPermission(action: () -> Unit) {
+        val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        if (needsPermission) {
+            pendingNotificationAction = action
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else action()
     }
 
     companion object {

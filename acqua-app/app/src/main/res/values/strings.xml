@@ -10,7 +10,7 @@
     <string name="paste">Paste</string>
     <string name="ready">Ready</string>
     <string name="ready_to_download">Ready to download</string>
-    <string name="supported_link_guidance">Paste an Instagram media link, or enable browser session extraction for other HTTP or HTTPS pages.</string>
+    <string name="supported_link_guidance">Paste an Instagram, YouTube, or YouTube Music link. Other websites can use browser extraction.</string>
     <plurals name="saving_progress">
         <item quantity="one">%1$d/%2$d downloaded</item>
         <item quantity="other">%1$d/%2$d downloaded</item>
@@ -19,6 +19,18 @@
     <string name="saved_to_downloads">Saved to Downloads</string>
     <string name="download">Download</string>
     <string name="download_media">Download media</string>
+    <string name="download_audio">Download audio</string>
+    <string name="cancel_download">Cancel download</string>
+    <string name="download_channel_name">Media downloads</string>
+    <string name="download_notification_title">Downloading with Acqua</string>
+    <string name="download_notification_preparing">Preparing media…</string>
+    <string name="audio">Audio</string>
+    <string name="quality">Quality</string>
+    <string name="audio_format">Audio format</string>
+    <plurals name="download_eta">
+        <item quantity="one">About %1$d second remaining</item>
+        <item quantity="other">About %1$d seconds remaining</item>
+    </plurals>
     <plurals name="files_found">
         <item quantity="one">%1$d file found</item>
         <item quantity="other">%1$d files found</item>
@@ -91,10 +103,25 @@
     <string name="downloads_and_filenames">Downloads &amp; filenames</string>
     <string name="downloads_subfolder">Downloads subfolder</string>
     <string name="categorize_media">Categorize by media type</string>
-    <string name="category_explanation">Save to Images/ and Videos/ subdirectories</string>
+    <string name="category_explanation">Save to Images/, Videos/, and Audio/ subdirectories</string>
     <string name="filename_pattern">Filename format pattern</string>
     <string name="filename_variables_guidance">Tap a variable below to add or remove it.</string>
     <string name="reset_filename_pattern">Reset to Acqua default</string>
+    <string name="media_processing">Video, audio &amp; metadata</string>
+    <string name="default_video_quality">Default video quality</string>
+    <string name="default_audio_format">Default audio format</string>
+    <string name="best">Best</string>
+    <string name="original_audio">Original</string>
+    <string name="embed_metadata">Embed metadata</string>
+    <string name="embed_metadata_explanation">Write available title, artist, album, date, track, and chapter information.</string>
+    <string name="embed_thumbnail">Embed artwork</string>
+    <string name="embed_thumbnail_explanation">Add the source thumbnail as cover artwork when the output format supports it.</string>
+    <string name="auto_update_ytdlp">Automatically update yt-dlp</string>
+    <string name="auto_update_ytdlp_explanation">Check the stable channel weekly so supported websites keep working.</string>
+    <string name="ytdlp_version">yt-dlp %1$s</string>
+    <string name="unknown">unknown</string>
+    <string name="update_ytdlp">Update yt-dlp now</string>
+    <string name="updating_ytdlp">Updating yt-dlp…</string>
 
     <string name="resolving_media">Resolving media</string>
     <string name="go">Go</string>

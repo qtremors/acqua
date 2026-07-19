@@ -9,9 +9,10 @@ class MediaResolutionServiceTest {
     @Test
     fun `known source is resolved and inspected`() = runBlocking {
         val raw = ResolvedMedia("https://cdn.test/photo", MediaKind.IMAGE)
-        val service = MediaResolutionService(MediaResolver { listOf(raw) }) {
-            it.copy(mimeType = "image/png", fileExtension = "png")
-        }
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { listOf(raw) },
+            inspectMedia = { it.copy(mimeType = "image/png", fileExtension = "png") }
+        )
 
         val result = service.resolve("https://instagram.com/p/abc", false) { _, _ -> emptyList() }
 
@@ -22,8 +23,92 @@ class MediaResolutionServiceTest {
     }
 
     @Test
+    fun `YouTube links are routed directly to yt-dlp`() = runBlocking {
+        var nativeCalled = false
+        val ytDlpItem = ResolvedMedia(
+            "https://youtube.com/watch?v=abc",
+            MediaKind.VIDEO,
+            backend = MediaBackend.YT_DLP
+        )
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { nativeCalled = true; emptyList() },
+            ytDlpResolver = MediaResolver { listOf(ytDlpItem) },
+            inspectMedia = { error("yt-dlp results must not be inspected as direct files") }
+        )
+
+        val result = service.resolve("https://youtu.be/abc", false) { _, _ -> emptyList() }
+
+        assertEquals(false, nativeCalled)
+        assertEquals(listOf(ytDlpItem), result)
+    }
+
+    @Test
+    fun `YouTube browser cookies are forwarded only when session use is authorized`() = runBlocking {
+        var sessionAllowed = false
+        val resolver = object : SessionAwareMediaResolver {
+            override fun resolve(url: String, allowBrowserSession: Boolean): List<ResolvedMedia> {
+                sessionAllowed = allowBrowserSession
+                return listOf(ResolvedMedia(url, MediaKind.VIDEO, backend = MediaBackend.YT_DLP))
+            }
+        }
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { emptyList() },
+            ytDlpResolver = resolver,
+            inspectMedia = { it }
+        )
+
+        service.resolve("https://music.youtube.com/watch?v=abc", true) { _, _ -> emptyList() }
+
+        assertEquals(true, sessionAllowed)
+    }
+
+    @Test
+    fun `higher resolution yt-dlp reel replaces native reel`() = runBlocking {
+        val native = ResolvedMedia("https://cdn.test/native.mp4", MediaKind.VIDEO, width = 720, height = 1280)
+        val higher = ResolvedMedia(
+            "https://instagram.com/reel/abc",
+            MediaKind.VIDEO,
+            width = 1080,
+            height = 1920,
+            backend = MediaBackend.YT_DLP
+        )
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { listOf(native) },
+            ytDlpResolver = MediaResolver { listOf(higher) },
+            inspectMedia = { it }
+        )
+
+        val result = service.resolve("https://instagram.com/reel/abc", false) { _, _ -> emptyList() }
+
+        assertEquals(listOf(higher), result)
+    }
+
+    @Test
+    fun `1080p native reel skips the yt-dlp quality probe`() = runBlocking {
+        val native = ResolvedMedia("https://cdn.test/native.mp4", MediaKind.VIDEO, width = 1080, height = 1920)
+        var ytDlpCalled = false
+        val lower = ResolvedMedia(
+            "https://instagram.com/reel/abc",
+            MediaKind.VIDEO,
+            width = 720,
+            height = 1280,
+            backend = MediaBackend.YT_DLP
+        )
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { listOf(native) },
+            ytDlpResolver = MediaResolver { ytDlpCalled = true; listOf(lower) },
+            inspectMedia = { it }
+        )
+
+        val result = service.resolve("https://instagram.com/reel/abc", false) { _, _ -> emptyList() }
+
+        assertEquals(false, ytDlpCalled)
+        assertEquals(listOf(native.copy(referer = "https://instagram.com/reel/abc")), result)
+    }
+
+    @Test
     fun `generic pages require browser extraction`() {
-        val service = MediaResolutionService(MediaResolver { emptyList() }) { it }
+        val service = MediaResolutionService(MediaResolver { emptyList() }, inspectMedia = { it })
 
         assertThrows(IllegalStateException::class.java) {
             runBlocking { service.resolve("https://example.com/page", false) { _, _ -> emptyList() } }
@@ -34,7 +119,7 @@ class MediaResolutionServiceTest {
     fun `browser resolver is used after known source failure`() = runBlocking {
         val browserItem = ResolvedMedia("https://cdn.test/video.mp4", MediaKind.VIDEO)
         var explicitlyAuthorized = true
-        val service = MediaResolutionService(MediaResolver { error("network unavailable") }) { it }
+        val service = MediaResolutionService(MediaResolver { error("network unavailable") }, inspectMedia = { it })
 
         val result = service.resolve("https://instagram.com/p/abc", true) { _, explicitAuthorization ->
             explicitlyAuthorized = explicitAuthorization
@@ -47,9 +132,9 @@ class MediaResolutionServiceTest {
 
     @Test
     fun `largest complete reel variant is selected`() = runBlocking {
-        val small = ResolvedMedia("https://cdn.test/small.mp4", MediaKind.VIDEO, width = 480, height = 854, fileSize = 1_000)
+        val small = ResolvedMedia("https://cdn.test/small.mp4", MediaKind.VIDEO, width = 480, height = 854, fileSize = 3_000)
         val large = ResolvedMedia("https://cdn.test/large.mp4", MediaKind.VIDEO, width = 1080, height = 1920, fileSize = 2_000)
-        val service = MediaResolutionService(MediaResolver { listOf(small, large) }) { it }
+        val service = MediaResolutionService(MediaResolver { listOf(small, large) }, inspectMedia = { it })
 
         val result = service.resolve("https://instagram.com/reel/abc", false) { _, _ -> emptyList() }
 
@@ -65,8 +150,9 @@ class MediaResolutionServiceTest {
             MediaResolver {
                 sourceCalled = true
                 emptyList()
-            }
-        ) { it }
+            },
+            inspectMedia = { it }
+        )
 
         val result = service.resolve(
             "https://instagram.com/reel/private",
@@ -86,9 +172,10 @@ class MediaResolutionServiceTest {
     fun `invalid source candidates fall back to browser when sessions are enabled`() = runBlocking {
         val sourceItem = ResolvedMedia("https://cdn.test/expired.mp4", MediaKind.VIDEO)
         val browserItem = ResolvedMedia("https://cdn.test/current.mp4", MediaKind.VIDEO)
-        val service = MediaResolutionService(MediaResolver { listOf(sourceItem) }) {
-            it.takeIf { candidate -> candidate.url == browserItem.url }
-        }
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { listOf(sourceItem) },
+            inspectMedia = { it.takeIf { candidate -> candidate.url == browserItem.url } }
+        )
 
         val result = service.resolve("https://instagram.com/reel/private", true) { _, _ ->
             listOf(browserItem)

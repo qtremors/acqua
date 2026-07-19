@@ -130,7 +130,12 @@ fun MediaPreviewCard(
                     .padding(horizontal = 6.dp, vertical = 3.dp)
             )
             IconButton(
-                onClick = { onDownload(bitmap?.width ?: item.width, bitmap?.height ?: item.height) },
+                onClick = {
+                    onDownload(
+                        if (item.isVideo) item.width else bitmap?.width ?: item.width,
+                        if (item.isVideo) item.height else bitmap?.height ?: item.height
+                    )
+                },
                 enabled = downloadsEnabled && !isSaved,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(32.dp)
                     .clip(CircleShape).background(
@@ -146,8 +151,8 @@ fun MediaPreviewCard(
             }
         }
         Spacer(Modifier.size(6.dp))
-        val width = bitmap?.width ?: item.width
-        val height = bitmap?.height ?: item.height
+        val width = if (item.isVideo) item.width else bitmap?.width ?: item.width
+        val height = if (item.isVideo) item.height else bitmap?.height ?: item.height
         val resolution = if (width > 0 && height > 0) "${width}x$height" else ""
         val locale = LocalConfiguration.current.locales[0]
         val size = item.fileSize?.let { String.format(locale, "%.1f MB", it / (1024.0 * 1024.0)) }.orEmpty()

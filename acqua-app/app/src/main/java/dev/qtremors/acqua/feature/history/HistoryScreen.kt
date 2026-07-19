@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
@@ -85,6 +86,7 @@ fun HistoryScreen(
         HistoryFilter.MEDIA to R.string.all_media,
         HistoryFilter.PHOTOS to R.string.photos,
         HistoryFilter.VIDEOS to R.string.videos,
+        HistoryFilter.AUDIO to R.string.audio,
         HistoryFilter.LINKS to R.string.links
     )
     LaunchedEffect(active) { if (active) viewModel.refresh() }
@@ -166,7 +168,7 @@ private fun HistoryRow(
     LaunchedEffect(entry.id, entry.thumbnailUrl, entry.fileUri) {
         image = withContext(Dispatchers.IO) {
             runCatching {
-                val bitmap = if (entry.isDownloaded && !entry.isVideo && entry.fileUri.isNotEmpty()) {
+                val bitmap = if (entry.isDownloaded && !entry.isVideo && !entry.isAudio && entry.fileUri.isNotEmpty()) {
                     context.contentResolver.openInputStream(entry.fileUri.toUri())?.use(BitmapFactory::decodeStream)
                 } else {
                     entry.thumbnailUrl?.let { url ->
@@ -189,7 +191,12 @@ private fun HistoryRow(
             ) {
                 image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                     ?: Icon(
-                        if (!entry.isDownloaded) Icons.Filled.Link else if (entry.isVideo) Icons.Filled.Movie else Icons.Filled.Image,
+                        when {
+                            !entry.isDownloaded -> Icons.Filled.Link
+                            entry.isVideo -> Icons.Filled.Movie
+                            entry.isAudio -> Icons.Filled.MusicNote
+                            else -> Icons.Filled.Image
+                        },
                         null,
                         tint = colors.primary.copy(alpha = 0.6f),
                         modifier = Modifier.size(24.dp)

@@ -2,6 +2,25 @@
 
 All notable user-visible changes are documented here.
 
+## [0.0.5] - 2026-07-19
+
+### Added
+
+- Download supported media as video or audio with selectable quality, audio format, metadata, artwork, progress, and cancellation.
+- Keep the bundled extraction engine current through automatic weekly or manual stable-channel updates.
+- Show audio downloads separately in history and support processed-media titles in filename patterns.
+- Continue long-running downloads as foreground work when Acqua's screen closes, with notification and in-app cancellation.
+
+### Changed
+
+- Improve resolution selection and processing across supported media links.
+- License Acqua under GNU GPL v3 or later and document bundled runtime components.
+
+### Fixed
+
+- Report and save video resolution from the selected video stream instead of its preview thumbnail.
+- Skip unnecessary quality inspection when extraction already provides 1080p, honor disabled chapter metadata, and label portrait quality by its short edge.
+
 ## [0.0.4] - 2026-07-19
 
 ### Added
@@ -39,7 +58,7 @@ All notable user-visible changes are documented here.
 ### Added
 
 - Material 3 downloader with link paste, Android sharing, previews, download history, and storage settings.
-- Photo, video, Reel, Story, and carousel extraction for the currently supported source.
+- Photo, video, and multi-item media extraction from supported links.
 - Optional authenticated browser sessions encrypted with Android Keystore for content available to the signed-in account.
 - Media-type and completeness validation to prevent corrupt, partial, audio-only, or mislabeled downloads.
 - Custom download folders and configurable filenames.

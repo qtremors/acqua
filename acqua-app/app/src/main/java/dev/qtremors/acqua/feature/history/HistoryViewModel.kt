@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class HistoryFilter { MEDIA, PHOTOS, VIDEOS, LINKS }
+enum class HistoryFilter { MEDIA, PHOTOS, VIDEOS, AUDIO, LINKS }
 
 data class HistoryUiState(
     val entries: List<HistoryEntry> = emptyList(),
@@ -19,8 +19,9 @@ data class HistoryUiState(
     val filteredEntries: List<HistoryEntry>
         get() = when (filter) {
             HistoryFilter.MEDIA -> entries.filter(HistoryEntry::isDownloaded)
-            HistoryFilter.PHOTOS -> entries.filter { it.isDownloaded && !it.isVideo }
+            HistoryFilter.PHOTOS -> entries.filter { it.isDownloaded && !it.isVideo && !it.isAudio }
             HistoryFilter.VIDEOS -> entries.filter { it.isDownloaded && it.isVideo }
+            HistoryFilter.AUDIO -> entries.filter(HistoryEntry::isAudio)
             HistoryFilter.LINKS -> entries.filterNot(HistoryEntry::isDownloaded)
         }
 }

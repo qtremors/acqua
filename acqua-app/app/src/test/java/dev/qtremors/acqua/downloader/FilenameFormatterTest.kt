@@ -34,4 +34,20 @@ class FilenameFormatterTest {
 
         assertEquals("a_b.webp", name)
     }
+
+    @Test
+    fun `supports titles for processed media`() {
+        val name = FilenameFormatter.format(
+            pattern = "{title}_{username}",
+            username = "artist",
+            width = 0,
+            height = 0,
+            index = 0,
+            fileExtension = "m4a",
+            title = "Track: One",
+            now = Date(0)
+        )
+
+        assertEquals("Track_ One_artist.m4a", name)
+    }
 }

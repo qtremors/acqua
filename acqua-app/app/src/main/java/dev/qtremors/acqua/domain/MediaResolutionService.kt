@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 
 class MediaResolutionService(
     private val sourceResolver: MediaResolver,
+    private val ytDlpResolver: MediaResolver? = null,
     private val inspectMedia: (ResolvedMedia) -> ResolvedMedia?
 ) {
     suspend fun resolve(
@@ -20,6 +21,9 @@ class MediaResolutionService(
         val url = WebLink.normalize(input)
             ?: throw IllegalArgumentException("Enter a valid HTTP or HTTPS link.")
 
+        if (WebLink.isYouTubeUrl(url)) {
+            return resolveWithYtDlp(url, browserSessionsEnabled || forceBrowserResolution)
+        }
         if (forceBrowserResolution) {
             return validateAndSelect(url, browserResolver(url, true))
         }
@@ -32,13 +36,20 @@ class MediaResolutionService(
             val candidates = withContext(Dispatchers.IO) {
                 sourceResolver.resolve(url).map { it.copy(referer = it.referer ?: url) }
             }
-            return validateAndSelect(url, candidates)
+            val selected = validateAndSelect(url, candidates)
+            return preferHigherInstagramVariant(url, selected, browserSessionsEnabled)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             error
         }
 
+        ytDlpResolver?.let {
+            runCatching { resolveWithYtDlp(url, browserSessionsEnabled) }
+                .getOrNull()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { return it }
+        }
         if (!browserSessionsEnabled) throw sourceFailure
         return try {
             validateAndSelect(url, browserResolver(url, false))
@@ -50,12 +61,50 @@ class MediaResolutionService(
         }
     }
 
+    private suspend fun preferHigherInstagramVariant(
+        sourceUrl: String,
+        nativeItems: List<ResolvedMedia>,
+        browserSessionsEnabled: Boolean
+    ): List<ResolvedMedia> {
+        val resolver = ytDlpResolver ?: return nativeItems
+        val isSingleVideo = Regex("/(?:reel|tv)/", RegexOption.IGNORE_CASE).containsMatchIn(sourceUrl) &&
+            nativeItems.size == 1 && nativeItems.single().isVideo
+        if (!isSingleVideo) return nativeItems
+
+        val native = nativeItems.single()
+        val nativeQuality = minOf(native.width, native.height)
+        if (nativeQuality >= INSTAGRAM_HIGH_QUALITY_EDGE) return nativeItems
+
+        val alternative = runCatching {
+            resolveWithYtDlp(sourceUrl, browserSessionsEnabled).singleOrNull()
+        }.getOrNull() ?: return nativeItems
+        val nativeArea = native.width.toLong() * native.height.toLong()
+        val alternativeArea = alternative.width.toLong() * alternative.height.toLong()
+        return if (alternativeArea > nativeArea) listOf(alternative) else nativeItems
+    }
+
+    private suspend fun resolveWithYtDlp(
+        url: String,
+        allowBrowserSession: Boolean
+    ): List<ResolvedMedia> {
+        val resolver = ytDlpResolver ?: error("The yt-dlp runtime is unavailable.")
+        return withContext(Dispatchers.IO) {
+            if (resolver is SessionAwareMediaResolver) {
+                resolver.resolve(url, allowBrowserSession)
+            } else {
+                resolver.resolve(url)
+            }
+        }
+    }
+
     private suspend fun validateAndSelect(
         sourceUrl: String,
         candidates: List<ResolvedMedia>
     ): List<ResolvedMedia> {
         val validated = coroutineScope {
-            candidates.map { item -> async(Dispatchers.IO) { inspectMedia(item) } }
+            candidates.map { item -> async(Dispatchers.IO) {
+                if (item.backend == MediaBackend.YT_DLP) item else inspectMedia(item)
+            } }
                 .awaitAll().filterNotNull()
         }
         if (validated.isEmpty()) error("The resolved links did not contain complete downloadable media files.")
@@ -67,8 +116,12 @@ class MediaResolutionService(
             Regex("/(?:reel|tv)/", RegexOption.IGNORE_CASE).containsMatchIn(sourceUrl)
         if (!singleVideo) return items.distinctBy(ResolvedMedia::url)
         return items.filter(ResolvedMedia::isVideo).maxWithOrNull(
-            compareBy<ResolvedMedia> { it.fileSize ?: 0L }
-                .thenBy { it.width.toLong() * it.height.toLong() }
+            compareBy<ResolvedMedia> { it.width.toLong() * it.height.toLong() }
+                .thenBy { it.fileSize ?: 0L }
         )?.let(::listOf) ?: items.distinctBy(ResolvedMedia::url)
+    }
+
+    private companion object {
+        const val INSTAGRAM_HIGH_QUALITY_EDGE = 1080
     }
 }

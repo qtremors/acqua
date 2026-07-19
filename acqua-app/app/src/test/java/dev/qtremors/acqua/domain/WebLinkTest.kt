@@ -34,4 +34,12 @@ class WebLinkTest {
         assertFalse(WebLink.isInstagramMediaUrl("https://example.com/reel/ABC123/"))
         assertEquals("example.com", WebLink.host("https://example.com/reel/ABC123/"))
     }
+
+    @Test
+    fun recognizesYouTubeAndYouTubeMusicHosts() {
+        assertTrue(WebLink.isYouTubeUrl("https://youtu.be/abc"))
+        assertTrue(WebLink.isYouTubeUrl("https://www.youtube.com/watch?v=abc"))
+        assertTrue(WebLink.isYouTubeMusicUrl("https://music.youtube.com/watch?v=abc"))
+        assertFalse(WebLink.isYouTubeUrl("https://example.com/watch?v=abc"))
+    }
 }
