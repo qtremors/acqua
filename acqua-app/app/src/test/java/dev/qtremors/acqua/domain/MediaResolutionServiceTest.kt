@@ -1,5 +1,7 @@
 package dev.qtremors.acqua.domain
 
+import dev.qtremors.acqua.downloader.DownloadContentType
+import dev.qtremors.acqua.feature.downloader.isAudioPreview
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -8,6 +10,14 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class MediaResolutionServiceTest {
+    @Test
+    fun `yt-dlp preview follows selected output type`() {
+        val video = ResolvedMedia("https://example.com/video", MediaKind.VIDEO, backend = MediaBackend.YT_DLP)
+
+        assertTrue(video.isAudioPreview(DownloadContentType.AUDIO))
+        assertEquals(false, video.isAudioPreview(DownloadContentType.VIDEO))
+    }
+
     @Test
     fun `known source is resolved and inspected`() = runBlocking {
         val raw = ResolvedMedia("https://cdn.test/photo", MediaKind.IMAGE)
@@ -25,7 +35,7 @@ class MediaResolutionServiceTest {
     }
 
     @Test
-    fun `YouTube links are routed directly to yt-dlp`() = runBlocking {
+    fun `yt-dlp selection routes YouTube links directly to yt-dlp`() = runBlocking {
         var nativeCalled = false
         val ytDlpItem = ResolvedMedia(
             "https://youtube.com/watch?v=abc",
@@ -38,10 +48,31 @@ class MediaResolutionServiceTest {
             inspectMedia = { error("yt-dlp results must not be inspected as direct files") }
         )
 
-        val result = service.resolve("https://youtu.be/abc", false) { _, _ -> emptyList() }
+        val result = service.resolve(
+            "https://youtu.be/abc",
+            browserSessionsEnabled = false,
+            engine = DownloadEngine.YT_DLP
+        ) { _, _ -> emptyList() }
 
         assertEquals(false, nativeCalled)
         assertEquals(listOf(ytDlpItem), result)
+    }
+
+    @Test
+    fun `Acqua is the default and requires explicit yt-dlp selection for YouTube`() {
+        var ytDlpCalled = false
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { emptyList() },
+            ytDlpResolver = MediaResolver { ytDlpCalled = true; emptyList() },
+            inspectMedia = { it }
+        )
+
+        val error = assertThrows(MediaResolutionException::class.java) {
+            runBlocking { service.resolve("https://youtu.be/abc", false) { _, _ -> emptyList() } }
+        }
+
+        assertEquals(MediaResolutionFailure.ENGINE_REQUIRED, error.failure)
+        assertEquals(false, ytDlpCalled)
     }
 
     @Test
@@ -59,7 +90,11 @@ class MediaResolutionServiceTest {
             inspectMedia = { it }
         )
 
-        service.resolve("https://music.youtube.com/watch?v=abc", true) { _, _ -> emptyList() }
+        service.resolve(
+            "https://music.youtube.com/watch?v=abc",
+            browserSessionsEnabled = true,
+            engine = DownloadEngine.YT_DLP
+        ) { _, _ -> emptyList() }
 
         assertEquals(true, sessionAllowed)
     }
@@ -112,50 +147,6 @@ class MediaResolutionServiceTest {
 
         assertEquals(false, acquaCalled)
         assertEquals(listOf(ytDlpItem), result)
-    }
-
-    @Test
-    fun `higher resolution yt-dlp reel replaces native reel`() = runBlocking {
-        val native = ResolvedMedia("https://cdn.test/native.mp4", MediaKind.VIDEO, width = 720, height = 1280)
-        val higher = ResolvedMedia(
-            "https://instagram.com/reel/abc",
-            MediaKind.VIDEO,
-            width = 1080,
-            height = 1920,
-            backend = MediaBackend.YT_DLP
-        )
-        val service = MediaResolutionService(
-            sourceResolver = MediaResolver { listOf(native) },
-            ytDlpResolver = MediaResolver { listOf(higher) },
-            inspectMedia = { it }
-        )
-
-        val result = service.resolve("https://instagram.com/reel/abc", false) { _, _ -> emptyList() }
-
-        assertEquals(listOf(higher), result)
-    }
-
-    @Test
-    fun `1080p native reel skips the yt-dlp quality probe`() = runBlocking {
-        val native = ResolvedMedia("https://cdn.test/native.mp4", MediaKind.VIDEO, width = 1080, height = 1920)
-        var ytDlpCalled = false
-        val lower = ResolvedMedia(
-            "https://instagram.com/reel/abc",
-            MediaKind.VIDEO,
-            width = 720,
-            height = 1280,
-            backend = MediaBackend.YT_DLP
-        )
-        val service = MediaResolutionService(
-            sourceResolver = MediaResolver { listOf(native) },
-            ytDlpResolver = MediaResolver { ytDlpCalled = true; listOf(lower) },
-            inspectMedia = { it }
-        )
-
-        val result = service.resolve("https://instagram.com/reel/abc", false) { _, _ -> emptyList() }
-
-        assertEquals(false, ytDlpCalled)
-        assertEquals(listOf(native.copy(referer = "https://instagram.com/reel/abc")), result)
     }
 
     @Test
@@ -234,28 +225,6 @@ class MediaResolutionServiceTest {
         }
 
         assertEquals(listOf(browserItem), result)
-    }
-
-    @Test
-    fun `automatic engine tries yt-dlp for a generic page`() = runBlocking {
-        val processed = ResolvedMedia(
-            "https://example.com/watch/123",
-            MediaKind.VIDEO,
-            backend = MediaBackend.YT_DLP
-        )
-        val service = MediaResolutionService(
-            sourceResolver = MediaResolver { error("native resolver must not run") },
-            ytDlpResolver = MediaResolver { listOf(processed) },
-            inspectMedia = { error("processed media must not be inspected") }
-        )
-
-        val result = service.resolve(
-            "https://example.com/watch/123",
-            browserSessionsEnabled = false,
-            engine = DownloadEngine.AUTO
-        ) { _, _ -> error("browser must not run") }
-
-        assertEquals(listOf(processed), result)
     }
 
     @Test

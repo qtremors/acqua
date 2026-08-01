@@ -1,11 +1,15 @@
 package dev.qtremors.acqua.feature.settings
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.YtDlpMaintenance
+import dev.qtremors.acqua.downloader.YtDlpFailure
+import dev.qtremors.acqua.downloader.toYtDlpFailure
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -21,7 +25,7 @@ data class SettingsUiState(
     val autoUpdateYtDlp: Boolean = true,
     val ytDlpVersion: String? = null,
     val isUpdatingYtDlp: Boolean = false,
-    val ytDlpUpdateError: String? = null
+    val ytDlpUpdateError: YtDlpFailure? = null
 )
 
 class SettingsViewModel(
@@ -100,19 +104,27 @@ class SettingsViewModel(
         if (mutableState.value.isUpdatingYtDlp) return
         viewModelScope.launch {
             mutableState.value = mutableState.value.copy(isUpdatingYtDlp = true, ytDlpUpdateError = null)
-            runCatching { maintenance.update(force) }
-                .onSuccess { version ->
-                    mutableState.value = mutableState.value.copy(
-                        isUpdatingYtDlp = false,
-                        ytDlpVersion = version
-                    )
-                }
-                .onFailure { error ->
-                    mutableState.value = mutableState.value.copy(
-                        isUpdatingYtDlp = false,
-                        ytDlpUpdateError = error.message ?: "yt-dlp update failed"
-                    )
-                }
+            try {
+                val version = maintenance.update(force)
+                mutableState.value = mutableState.value.copy(
+                    isUpdatingYtDlp = false,
+                    ytDlpVersion = version
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                if (error is VirtualMachineError || error is ThreadDeath) throw error
+                val failure = error.toYtDlpFailure()
+                Log.e(TAG, "yt-dlp update failed (${failure.name})", error)
+                mutableState.value = mutableState.value.copy(
+                    isUpdatingYtDlp = false,
+                    ytDlpUpdateError = failure
+                )
+            }
         }
+    }
+
+    private companion object {
+        const val TAG = "SettingsViewModel"
     }
 }

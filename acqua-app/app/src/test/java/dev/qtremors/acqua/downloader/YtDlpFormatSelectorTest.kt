@@ -32,6 +32,21 @@ class YtDlpFormatSelectorTest {
     }
 
     @Test
+    fun `progress parses exact and estimated download sizes`() {
+        val exact = YtDlpProgress.fromCallback(
+            25f, 12L, "[download]  25.0% of 20.00MiB at 1.00MiB/s ETA 00:12"
+        )
+        val estimated = YtDlpProgress.fromCallback(
+            50f, 5L, "[download]  50.0% of ~ 2.00GiB at 5.00MiB/s ETA 00:05"
+        )
+
+        assertEquals(5L shl 20, exact.downloadedBytes)
+        assertEquals(20L shl 20, exact.totalBytes)
+        assertEquals(1L shl 30, estimated.downloadedBytes)
+        assertEquals(2L shl 30, estimated.totalBytes)
+    }
+
+    @Test
     fun `selected format metadata follows the configured height cap`() {
         val formats = listOf(
             MediaFormatOption("720", "mp4", videoCodec = "avc1", width = 1280, height = 720),

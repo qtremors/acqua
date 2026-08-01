@@ -2,6 +2,20 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.0] - 2026-08-01
+
+### Added
+
+- Add an About page with app and device details, privacy information, project links, support links, and bundled license and open-source notices.
+- Support release signing with the Arcile certificate through ignored local signing properties.
+
+### Changed
+
+- Give debug installs a separate application ID, label, and `Acqua-Debug` APK name while keeping production releases under the `Acqua` identity.
+- Produce a universal APK alongside the four ABI-specific packages, and make it the website's default release download.
+- Show the latest published version and download count dynamically on the website, and use live GitHub release badges in the README.
+- Use Acqua as the default download engine and offer yt-dlp as an explicit alternative.
+
 ## [0.0.9] - 2026-08-01
 
 ### Added

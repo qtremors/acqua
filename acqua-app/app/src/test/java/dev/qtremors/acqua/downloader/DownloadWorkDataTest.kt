@@ -168,13 +168,17 @@ class DownloadWorkDataTest {
 
     @Test
     fun `progress data clamps percentage and eta`() {
-        val below = DownloadWorkData.progress(-10f, -5L)
-        val above = DownloadWorkData.progress(140f, 12L)
+        val below = DownloadWorkData.progress(-10f, -5L, -20L, -30L)
+        val above = DownloadWorkData.progress(140f, 12L, 8_000L, 10_000L)
 
         assertEquals(0f, below.getFloat(DownloadWorkData.KEY_PROGRESS, -1f), 0.001f)
         assertEquals(0L, below.getLong(DownloadWorkData.KEY_ETA_SECONDS, -1L))
+        assertEquals(0L, below.getLong(DownloadWorkData.KEY_DOWNLOADED_BYTES, -1L))
+        assertEquals(0L, below.getLong(DownloadWorkData.KEY_TOTAL_BYTES, -1L))
         assertEquals(100f, above.getFloat(DownloadWorkData.KEY_PROGRESS, -1f), 0.001f)
         assertEquals(12L, above.getLong(DownloadWorkData.KEY_ETA_SECONDS, -1L))
+        assertEquals(8_000L, above.getLong(DownloadWorkData.KEY_DOWNLOADED_BYTES, -1L))
+        assertEquals(10_000L, above.getLong(DownloadWorkData.KEY_TOTAL_BYTES, -1L))
     }
 
     @Test

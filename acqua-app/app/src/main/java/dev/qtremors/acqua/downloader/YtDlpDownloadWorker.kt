@@ -1,6 +1,7 @@
 package dev.qtremors.acqua.downloader
 
 import android.content.Context
+import android.util.Log
 import android.webkit.CookieManager
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
@@ -14,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
-import java.io.IOException
 import kotlin.concurrent.thread
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -31,7 +31,7 @@ class YtDlpDownloadWorker(
                 DownloadWorkData.error("The background download request is incomplete.")
             )
         notifications.ensureChannel()
-        setForeground(notifications.foregroundInfo(request.media.title, 0f, 0L))
+        setForeground(notifications.foregroundInfo(request.media.title, 0f, 0L, 0L, 0L))
 
         val activeEngine = YtDlpEngine(applicationContext)
         var processedFile: File? = null
@@ -40,10 +40,26 @@ class YtDlpDownloadWorker(
                 runDirectDownload(request)
                 return Result.success()
             }
+            var downloadedBytes = 0L
+            var totalBytes = 0L
             val completedFile = runDownload(activeEngine, request) { progress ->
                     val percent = progress.percent.coerceIn(0f, 100f)
-                    setProgressAsync(DownloadWorkData.progress(percent, progress.etaSeconds))
-                    notifications.update(request.media.title, percent, progress.etaSeconds)
+                    if (progress.totalBytes > 0L) {
+                        downloadedBytes = progress.downloadedBytes
+                        totalBytes = progress.totalBytes
+                    }
+                    setProgressAsync(
+                        DownloadWorkData.progress(
+                            percent, progress.etaSeconds, downloadedBytes, totalBytes
+                        )
+                    )
+                    notifications.update(
+                        request.media.title,
+                        percent,
+                        progress.etaSeconds,
+                        downloadedBytes,
+                        totalBytes
+                    )
             }
             processedFile = completedFile
             withContext(Dispatchers.IO) {
@@ -60,11 +76,16 @@ class YtDlpDownloadWorker(
             Result.success()
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (error: Exception) {
-            if (error is IOException && runAttemptCount < MAX_RETRIES) {
+        } catch (error: Throwable) {
+            if (error is VirtualMachineError || error is ThreadDeath) throw error
+            if (error.hasNetworkCause() && runAttemptCount < MAX_RETRIES) {
                 Result.retry()
             } else {
-                Result.failure(DownloadWorkData.error(error.message))
+                val failure = error.toYtDlpFailure()
+                Log.e(TAG, "Background download failed (${failure.name})", error)
+                Result.failure(
+                    DownloadWorkData.error(failure.userMessage(error))
+                )
             }
         } finally {
             processedFile?.let(activeEngine::cleanup)
@@ -89,8 +110,8 @@ class YtDlpDownloadWorker(
             request.sourceUrl
         ) { downloaded, total ->
             val percent = if (total > 0L) downloaded * 100f / total else 0f
-            setProgressAsync(DownloadWorkData.progress(percent))
-            notifications.update(media.title ?: media.username, percent, 0L)
+            setProgressAsync(DownloadWorkData.progress(percent, 0L, downloaded, total))
+            notifications.update(media.title ?: media.username, percent, 0L, downloaded, total)
         }
     }
 
@@ -115,13 +136,23 @@ class YtDlpDownloadWorker(
                 } else {
                     activeEngine.cleanup(file)
                 }
-            } catch (error: Exception) {
+            } catch (error: Throwable) {
                 if (continuation.isActive) continuation.resumeWithException(error)
             }
         }
     }
 
     companion object {
+        private const val TAG = "YtDlpDownloadWorker"
         private const val MAX_RETRIES = 2
     }
+}
+
+private fun YtDlpFailure.userMessage(error: Throwable): String = when (this) {
+    YtDlpFailure.RUNTIME -> "The download engine could not start. Restart Acqua or reinstall this APK."
+    YtDlpFailure.NETWORK -> "The connection was interrupted. Check your connection and try again."
+    YtDlpFailure.STORAGE -> "Acqua could not save the download. Check storage space and permissions."
+    YtDlpFailure.UPDATE_SERVICE -> "The download engine update service is temporarily unavailable."
+    YtDlpFailure.UNKNOWN -> error.message?.takeIf(String::isNotBlank)
+        ?: "The background download failed unexpectedly."
 }

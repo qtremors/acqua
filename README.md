@@ -9,10 +9,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/qtremors/acqua/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/qtremors/acqua?label=release&amp;color=8dcfff"></a>
+  <a href="https://github.com/qtremors/acqua/releases/latest"><img alt="Download latest release" src="https://img.shields.io/github/v/release/qtremors/acqua?label=Download%20APK&amp;color=8dcfff&amp;logo=android&amp;logoColor=white"></a>
   <img alt="Android 7.0+" src="https://img.shields.io/badge/Android-7.0%2B-3ddc84">
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.2.10-7f52ff">
   <a href="LICENSE.md"><img alt="GPL v3 or later" src="https://img.shields.io/badge/license-GPLv3%2B-f4c95d"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/qtremors/acqua/releases"><img alt="Total release downloads" src="https://img.shields.io/github/downloads/qtremors/acqua/total?label=Total%20Downloads&amp;color=3f51b5"></a>
+  <a href="https://github.com/qtremors/acqua/releases/latest"><img alt="Latest release downloads" src="https://img.shields.io/github/downloads/qtremors/acqua/latest/total?label=Latest%20Downloads&amp;color=00a6a6"></a>
 </p>
 
 Acqua is a media downloader that previews and saves supported media from links.
@@ -21,7 +26,7 @@ Acqua is a media downloader that previews and saves supported media from links.
 
 ## Highlights
 
-- Automatic source selection with manual Acqua and yt-dlp overrides.
+- Acqua downloads by default with yt-dlp available as an explicit alternative.
 - Persistent direct, video, and audio downloads with queue progress, cancellation, and automatic network retry.
 - Best-effort media extraction from supported links and pages.
 - Shared in-app browser for browsing and signing in to websites.
@@ -33,11 +38,12 @@ Acqua is a media downloader that previews and saves supported media from links.
 - Image dimensions, video metadata, thumbnails, and download sizes when available.
 - Searchable and sortable download history with missing-file recovery, a configurable Downloads subfolder, filename previews, and Android sharing.
 - Material 3 interface with adaptive light and dark themes.
+- In-app About, privacy, source, support, license, and third-party notice information.
 - No ads, analytics, or telemetry.
 
 ## Install
 
-Download the APK matching your device from [GitHub Releases](https://github.com/qtremors/acqua/releases). Most current Android phones use `arm64-v8a`. Android may ask you to allow installation from your browser or file manager.
+Download the universal APK from the [latest GitHub release](https://github.com/qtremors/acqua/releases/latest), or choose a smaller ABI-specific APK if you know your device architecture. Android may ask you to allow installation from your browser or file manager.
 
 For browser-based or authenticated extraction, open the **Browser** tab, tap **+**, and enter a name and website URL. The bookmark opens full-screen so you can sign in. Use the floating Acqua control to refresh the page, download from the current page, or return to Acqua. The download screen opens above the live browser, so returning preserves the page, navigation history, and normal WebView state. **Use browser sessions for extraction** separately controls automatic session reuse outside an explicit browser download.
 
@@ -55,16 +61,17 @@ cd acqua-app
 ./gradlew :app:testDebugUnitTest
 ```
 
-On Windows, use `gradlew.bat`. APKs are split by CPU architecture so each download contains only the native runtime for that device:
+On Windows, use `gradlew.bat`. The universal APK supports every packaged architecture, while the smaller split APKs contain only the native runtime for a specific device:
 
 | ABI | Typical device | Release APK |
 | :--- | :--- | :--- |
+| Universal | Any supported device | `Acqua-<version>.apk` |
 | `arm64-v8a` | Most modern phones | `Acqua-<version>-arm64-v8a.apk` |
 | `armeabi-v7a` | Older 32-bit ARM devices | `Acqua-<version>-armeabi-v7a.apk` |
 | `x86_64` | 64-bit x86 emulators/devices | `Acqua-<version>-x86_64.apk` |
 | `x86` | Older 32-bit x86 emulators/devices | `Acqua-<version>-x86.apk` |
 
-Debug outputs add `-debug` before the ABI suffix. Debug and release builds can be installed side by side.
+Debug outputs use `Acqua-Debug-<version>.apk` and `Acqua-Debug-<version>-<abi>.apk`; release outputs use the equivalent `Acqua` names. Their separate application IDs allow both builds to be installed side by side.
 
 ## Project layout
 
@@ -76,6 +83,8 @@ acqua/
 ├── CHANGELOG.md        Release history
 ├── DEVELOPMENT.md      Architecture and contributor guide
 ├── LICENSE.md          GNU GPL v3-or-later notice
+├── LICENSES/           Bundled third-party license texts
+├── PRIVACY.md          User-facing privacy policy
 └── THIRD_PARTY_NOTICES.md Runtime dependency notices
 ```
 
@@ -98,7 +107,7 @@ The Android app uses Kotlin, Jetpack Compose, Material 3, OkHttp, Android WebVie
 
 ## License
 
-Acqua is free software licensed under the [GNU General Public License v3 or later](LICENSE.md). Runtime component licensing and source links are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Acqua is free software licensed under the [GNU General Public License v3 or later](LICENSE.md). Runtime component licensing and source links are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). These documents and applicable license texts are also bundled inside every APK.
 
 ---
 

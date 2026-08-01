@@ -61,6 +61,8 @@ data class DownloaderUiState(
     val embedThumbnail: Boolean = true,
     val downloadProgress: Float = 0f,
     val downloadEtaSeconds: Long = 0L,
+    val downloadedBytes: Long = 0L,
+    val totalBytes: Long = 0L,
     val downloadEngine: DownloadEngine = DownloadEngine.ACQUA,
     val activeDownloadCount: Int = 0,
     val downloadQueue: DownloadQueueSnapshot = DownloadQueueSnapshot(),
@@ -109,6 +111,8 @@ class DownloaderViewModel(
                 mutableState.value = mutableState.value.copy(
                     activeDownloadCount = queue.activeCount,
                     downloadQueue = queue,
+                    downloadedBytes = queue.aggregateDownloadedBytes,
+                    totalBytes = queue.aggregateTotalBytes,
                     downloadProgress = if (active.isNotEmpty()) {
                         queue.aggregateProgress
                     } else {
@@ -164,7 +168,9 @@ class DownloaderViewModel(
             showBrowserAction = false,
             resolutionFailure = null,
             downloadProgress = 0f,
-            downloadEtaSeconds = 0L
+            downloadEtaSeconds = 0L,
+            downloadedBytes = 0L,
+            totalBytes = 0L
         )
     }
 
@@ -190,7 +196,9 @@ class DownloaderViewModel(
         mutableState.value = mutableState.value.copy(
             isSaving = false,
             downloadProgress = 0f,
-            downloadEtaSeconds = 0L
+            downloadEtaSeconds = 0L,
+            downloadedBytes = 0L,
+            totalBytes = 0L
         )
     }
 
@@ -387,6 +395,10 @@ class DownloaderViewModel(
                         if (it.state == WorkInfo.State.SUCCEEDED) 100f
                         else it.progress.getFloat(DownloadWorkData.KEY_PROGRESS, 0f)
                     }.average().toFloat()
+                    val knownSizeJobs = unfinished.filter {
+                        it.progress.getLong(DownloadWorkData.KEY_TOTAL_BYTES, 0L) > 0L
+                    }
+                    val sizeJobs = knownSizeJobs.ifEmpty { unfinished }
                     mutableState.value = mutableState.value.copy(
                         isSaving = itemIndex == null,
                         savingItemIndex = itemIndex,
@@ -394,7 +406,13 @@ class DownloaderViewModel(
                         downloadProgress = progress,
                         downloadEtaSeconds = unfinished.maxOfOrNull {
                             it.progress.getLong(DownloadWorkData.KEY_ETA_SECONDS, 0L)
-                        } ?: 0L
+                        } ?: 0L,
+                        downloadedBytes = sizeJobs.sumOf {
+                            it.progress.getLong(DownloadWorkData.KEY_DOWNLOADED_BYTES, 0L)
+                        },
+                        totalBytes = knownSizeJobs.sumOf {
+                            it.progress.getLong(DownloadWorkData.KEY_TOTAL_BYTES, 0L)
+                        }
                     )
                 }
             }
@@ -410,6 +428,8 @@ class DownloaderViewModel(
                     savingItemIndex = null,
                     downloadProgress = 0f,
                     downloadEtaSeconds = 0L,
+                    downloadedBytes = 0L,
+                    totalBytes = 0L,
                     error = if (itemIndex == null) message else null
                 )
                 if (itemIndex != null) mutableEvents.send(DownloaderEvent.ItemSaveFailed(message))
@@ -418,13 +438,17 @@ class DownloaderViewModel(
                 isSaving = false,
                 savingItemIndex = null,
                 downloadProgress = 0f,
-                downloadEtaSeconds = 0L
+                downloadEtaSeconds = 0L,
+                downloadedBytes = 0L,
+                totalBytes = 0L
             )
             itemIndex != null -> {
                 mutableState.value = mutableState.value.copy(
                     savingItemIndex = null,
                     savedItemIndex = itemIndex,
-                    downloadProgress = 100f
+                    downloadProgress = 100f,
+                    downloadedBytes = 0L,
+                    totalBytes = 0L
                 )
                 mutableEvents.send(DownloaderEvent.ItemSaved)
                 delay(2000)
@@ -435,7 +459,9 @@ class DownloaderViewModel(
                     isSaving = false,
                     saved = true,
                     downloadProgress = 100f,
-                    downloadEtaSeconds = 0L
+                    downloadEtaSeconds = 0L,
+                    downloadedBytes = 0L,
+                    totalBytes = 0L
                 )
                 mutableEvents.send(DownloaderEvent.DownloadComplete)
             }
@@ -455,7 +481,7 @@ class DownloaderViewModel(
                 else -> LinkValidity.INVALID
             },
             downloadContentType = contentType,
-            downloadEngine = DownloadEngine.AUTO,
+            downloadEngine = DownloadEngine.ACQUA,
             maximumVideoHeight = preferences.maximumVideoHeight,
             audioFormat = preferences.audioFormat,
             embedMetadata = preferences.embedMetadata,

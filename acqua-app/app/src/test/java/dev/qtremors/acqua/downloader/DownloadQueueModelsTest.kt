@@ -87,6 +87,20 @@ class DownloadQueueModelsTest {
     }
 
     @Test
+    fun `aggregate size includes active downloads with known totals`() {
+        val snapshot = DownloadQueueSnapshot(
+            listOf(
+                DownloadQueueItem("known", DownloadQueueState.RUNNING, downloadedBytes = 4_000L, totalBytes = 10_000L),
+                DownloadQueueItem("unknown", DownloadQueueState.QUEUED),
+                DownloadQueueItem("finished", DownloadQueueState.SUCCEEDED, downloadedBytes = 5_000L, totalBytes = 5_000L)
+            )
+        )
+
+        assertEquals(4_000L, snapshot.aggregateDownloadedBytes)
+        assertEquals(10_000L, snapshot.aggregateTotalBytes)
+    }
+
+    @Test
     fun `only three most recent failures are exposed`() {
         val failures = (1..5).map { index ->
             DownloadQueueItem(

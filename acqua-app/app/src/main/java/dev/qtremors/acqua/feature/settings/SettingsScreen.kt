@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -39,9 +40,14 @@ import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.AudioOutputFormat
+import dev.qtremors.acqua.downloader.YtDlpFailure
 
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    onOpenAbout: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val state by viewModel.state.collectAsState()
     val colors = MaterialTheme.colorScheme
     Column(
@@ -216,8 +222,45 @@ fun SettingsScreen(viewModel: SettingsViewModel, modifier: Modifier = Modifier) 
                     }
                     Text(stringResource(if (state.isUpdatingYtDlp) R.string.updating_ytdlp else R.string.update_ytdlp))
                 }
-                state.ytDlpUpdateError?.let {
-                    Text(it, color = colors.error, style = MaterialTheme.typography.bodySmall)
+                state.ytDlpUpdateError?.let { failure ->
+                    val message = when (failure) {
+                        YtDlpFailure.RUNTIME -> R.string.ytdlp_error_runtime
+                        YtDlpFailure.NETWORK -> R.string.ytdlp_error_network
+                        YtDlpFailure.STORAGE -> R.string.ytdlp_error_storage
+                        YtDlpFailure.UPDATE_SERVICE -> R.string.ytdlp_error_update_service
+                        YtDlpFailure.UNKNOWN -> R.string.ytdlp_error_unknown
+                    }
+                    Text(stringResource(message), color = colors.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(
+            stringResource(R.string.about_section_title),
+            style = MaterialTheme.typography.titleSmall.copy(
+                fontWeight = FontWeight.Bold,
+                color = colors.primary
+            ),
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+        Card(
+            onClick = onOpenAbout,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.Info, null, tint = colors.primary)
+                Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                    Text(stringResource(R.string.about_title), fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(R.string.about_settings_description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
                 }
             }
         }

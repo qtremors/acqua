@@ -1,4 +1,35 @@
 import com.android.build.api.variant.FilterConfiguration
+import java.util.Properties
+import javax.inject.Inject
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+
+abstract class GenerateLegalAssetsTask : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceFiles: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @get:Inject
+    abstract val fileSystemOperations: FileSystemOperations
+
+    @TaskAction
+    fun generate() {
+        fileSystemOperations.sync {
+            from(sourceFiles)
+            into(outputDirectory)
+        }
+    }
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -13,8 +44,8 @@ android {
         applicationId = "dev.qtremors.acqua"
         minSdk = 24
         targetSdk = 37
-        versionCode = 9
-        versionName = "0.0.9"
+        versionCode = 10
+        versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -23,7 +54,38 @@ android {
                 isEnable = true
                 reset()
                 include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-                isUniversalApk = false
+                isUniversalApk = true
+            }
+        }
+    }
+
+    val keystoreProperties = Properties()
+    var keystorePropertiesFile = rootProject.file("signing.properties")
+    if (!keystorePropertiesFile.exists()) {
+        keystorePropertiesFile = rootProject.file("local.properties")
+    }
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use(keystoreProperties::load)
+    }
+
+    val signingStoreFile = keystoreProperties["signing.storeFile"]?.toString()
+    val signingStorePassword = keystoreProperties["signing.storePassword"]?.toString()
+    val signingKeyAlias = keystoreProperties["signing.keyAlias"]?.toString()
+    val signingKeyPassword = keystoreProperties["signing.keyPassword"]?.toString()
+    val hasReleaseSigning = listOf(
+        signingStoreFile,
+        signingStorePassword,
+        signingKeyAlias,
+        signingKeyPassword
+    ).all { !it.isNullOrBlank() }
+
+    if (hasReleaseSigning) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
             }
         }
     }
@@ -32,16 +94,19 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            manifestPlaceholders["appLabel"] = "Acqua Debug"
+            resValue("string", "application_label", "Acqua Debug")
         }
         release {
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            manifestPlaceholders["appLabel"] = "Acqua"
+            resValue("string", "application_label", "Acqua")
         }
     }
     compileOptions {
@@ -50,21 +115,38 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+        resValues = true
     }
     packaging {
         jniLibs.useLegacyPackaging = true
     }
 }
 
+val generatedLegalAssets = layout.buildDirectory.dir("generated/legal-assets")
+val generateLegalAssets = tasks.register<GenerateLegalAssetsTask>("generateLegalAssets") {
+    sourceFiles.from(
+        rootProject.file("../LICENSE.md"),
+        rootProject.file("../THIRD_PARTY_NOTICES.md"),
+        rootProject.file("../LICENSES/Apache-2.0.txt")
+    )
+    outputDirectory.set(generatedLegalAssets)
+}
+
 androidComponents {
     onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            generateLegalAssets,
+            GenerateLegalAssetsTask::outputDirectory
+        )
         variant.outputs.forEach { output ->
-            val version = output.versionName.get() ?: "0.0.0"
+            val version = (output.versionName.get() ?: "0.0.0").removeSuffix("-debug")
             val abi = output.filters
                 .firstOrNull { it.filterType == FilterConfiguration.FilterType.ABI }
                 ?.identifier
             val abiSuffix = abi?.let { "-$it" }.orEmpty()
-            output.outputFileName.set("Acqua-$version$abiSuffix.apk")
+            val appName = if (variant.buildType == "debug") "Acqua-Debug" else "Acqua"
+            output.outputFileName.set("$appName-$version$abiSuffix.apk")
         }
     }
 }

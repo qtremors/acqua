@@ -12,8 +12,15 @@ import org.junit.runner.RunWith
 class HistoryRepositoryTest {
     private val repository = HistoryRepository(ApplicationProvider.getApplicationContext())
 
-    @Before fun setUp() = repository.clear()
-    @After fun tearDown() = repository.clear()
+    @Before
+    fun setUp() {
+        repository.clear()
+    }
+
+    @After
+    fun tearDown() {
+        repository.clear()
+    }
 
     @Test
     fun downloadedEntryRoundTrips() {

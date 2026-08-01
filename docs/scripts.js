@@ -1,6 +1,62 @@
 const header = document.querySelector("[data-header]");
 const navToggle = document.querySelector("[data-nav-toggle]");
 const navLinks = document.querySelector("[data-nav-links]");
+const latestReleaseApi = "https://api.github.com/repos/qtremors/acqua/releases/latest";
+const latestReleaseFallback = "https://github.com/qtremors/acqua/releases/latest";
+
+const releaseDownloadCount = (release) => {
+  if (!Array.isArray(release?.assets)) return 0;
+  return release.assets.reduce(
+    (total, asset) => total + (Number(asset?.download_count) || 0),
+    0
+  );
+};
+
+const universalApkUrl = (release, tag) => {
+  if (!Array.isArray(release?.assets)) return null;
+  const version = tag.replace(/^v/i, "");
+  const expectedName = `Acqua-${version}.apk`;
+  const asset = release.assets.find((candidate) => candidate?.name === expectedName);
+  return typeof asset?.browser_download_url === "string" && asset.browser_download_url.startsWith("https://")
+    ? asset.browser_download_url
+    : null;
+};
+
+const applyLatestRelease = (release) => {
+  const tag = typeof release?.tag_name === "string" ? release.tag_name.trim() : "";
+  if (!tag) return;
+
+  const releaseUrl = typeof release.html_url === "string" && release.html_url.startsWith("https://")
+    ? release.html_url
+    : latestReleaseFallback;
+  const downloadUrl = universalApkUrl(release, tag) || releaseUrl;
+  const downloads = releaseDownloadCount(release);
+
+  document.querySelectorAll("[data-latest-release]").forEach((element) => {
+    element.textContent = downloads > 0
+      ? `Latest release · ${tag} · ${downloads.toLocaleString()} downloads`
+      : `Latest release · ${tag}`;
+  });
+  document.querySelectorAll("[data-download-label]").forEach((element) => {
+    element.textContent = `Download ${tag}`;
+  });
+  document.querySelectorAll("[data-latest-release-link]").forEach((element) => {
+    element.setAttribute("href", downloadUrl);
+    element.setAttribute("aria-label", `Download Acqua ${tag} universal APK`);
+  });
+};
+
+const loadLatestRelease = async () => {
+  try {
+    const response = await fetch(latestReleaseApi, {
+      headers: { Accept: "application/vnd.github+json" }
+    });
+    if (!response.ok) return;
+    applyLatestRelease(await response.json());
+  } catch {
+    // Static labels and /releases/latest links remain usable offline or when rate limited.
+  }
+};
 
 const closeNavigation = () => {
   navToggle?.setAttribute("aria-expanded", "false");
@@ -38,6 +94,8 @@ document.querySelectorAll(".faq-list button").forEach((button) => {
     if (answer) answer.hidden = !open;
   });
 });
+
+loadLatestRelease();
 
 const items = document.querySelectorAll(".reveal");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;

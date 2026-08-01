@@ -3,6 +3,7 @@ package dev.qtremors.acqua.feature.downloader
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.text.format.Formatter
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -177,6 +178,17 @@ fun DownloaderScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = colors.onSecondaryContainer
                                 )
+                                downloadProgressDetails(
+                                    item.downloadedBytes,
+                                    item.totalBytes,
+                                    item.etaSeconds
+                                ).takeIf(String::isNotEmpty)?.let { details ->
+                                    Text(
+                                        details,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = colors.onSecondaryContainer
+                                    )
+                                }
                             }
                             if (item.progress > 0f) {
                                 Text(
@@ -338,8 +350,6 @@ private fun ValidLinkContent(
                 stringResource(
                     if (state.downloadEngine == DownloadEngine.YT_DLP) {
                         R.string.ytdlp_engine_explanation
-                    } else if (state.downloadEngine == DownloadEngine.AUTO) {
-                        R.string.auto_engine_explanation
                     } else {
                         R.string.acqua_engine_explanation
                     }
@@ -352,12 +362,6 @@ private fun ValidLinkContent(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                FilterChip(
-                    selected = state.downloadEngine == DownloadEngine.AUTO,
-                    onClick = { onEngineChange(DownloadEngine.AUTO) },
-                    label = { Text(stringResource(R.string.auto_engine)) },
-                    enabled = !state.isSaving && state.savingItemIndex == null
-                )
                 FilterChip(
                     selected = state.downloadEngine == DownloadEngine.ACQUA,
                     onClick = { onEngineChange(DownloadEngine.ACQUA) },
@@ -394,13 +398,14 @@ private fun ValidLinkContent(
                 progress = { (state.downloadProgress / 100f).coerceIn(0f, 1f) },
                 modifier = Modifier.fillMaxWidth().height(8.dp)
             )
-            if (state.downloadEtaSeconds > 0L) {
+            val details = downloadProgressDetails(
+                state.downloadedBytes,
+                state.totalBytes,
+                state.downloadEtaSeconds
+            )
+            if (details.isNotEmpty()) {
                 Text(
-                    pluralStringResource(
-                        R.plurals.download_eta,
-                        state.downloadEtaSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                        state.downloadEtaSeconds
-                    ),
+                    details,
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp)
@@ -477,6 +482,8 @@ private fun ValidLinkContent(
                     media.forEachIndexed { index, item ->
                         MediaPreviewCard(
                             item, index, useBrowserSessions, mediaDownloader,
+                            contentType = state.downloadContentType,
+                            audioFormat = state.audioFormat,
                             isSaving = state.savingItemIndex == index,
                             isSaved = state.savedItemIndex == index,
                             downloadsEnabled = item.backend == MediaBackend.DIRECT &&
@@ -525,6 +532,33 @@ private fun ValidLinkContent(
             }
         }
     }
+}
+
+@Composable
+private fun downloadProgressDetails(
+    downloadedBytes: Long,
+    totalBytes: Long,
+    etaSeconds: Long
+): String {
+    val context = LocalContext.current
+    val size = when {
+        downloadedBytes > 0L && totalBytes > 0L -> stringResource(
+            R.string.download_size_progress,
+            Formatter.formatShortFileSize(context, downloadedBytes),
+            Formatter.formatShortFileSize(context, totalBytes)
+        )
+        downloadedBytes > 0L -> stringResource(
+            R.string.download_size_downloaded,
+            Formatter.formatShortFileSize(context, downloadedBytes)
+        )
+        else -> null
+    }
+    val eta = if (etaSeconds > 0L) pluralStringResource(
+        R.plurals.download_eta,
+        etaSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+        etaSeconds
+    ) else null
+    return listOfNotNull(size, eta).joinToString(" · ")
 }
 
 @Composable

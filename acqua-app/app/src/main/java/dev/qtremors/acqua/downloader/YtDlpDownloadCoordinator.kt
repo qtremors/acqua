@@ -84,6 +84,8 @@ class YtDlpDownloadCoordinator(context: Context) {
                     },
                     progress = job.progress.getFloat(DownloadWorkData.KEY_PROGRESS, 0f),
                     etaSeconds = job.progress.getLong(DownloadWorkData.KEY_ETA_SECONDS, 0L),
+                    downloadedBytes = job.progress.getLong(DownloadWorkData.KEY_DOWNLOADED_BYTES, 0L),
+                    totalBytes = job.progress.getLong(DownloadWorkData.KEY_TOTAL_BYTES, 0L),
                     error = job.outputData.getString(DownloadWorkData.KEY_ERROR)
                 )
             }

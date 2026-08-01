@@ -13,8 +13,7 @@ enum class MediaBackend {
 
 enum class DownloadEngine {
     ACQUA,
-    YT_DLP,
-    AUTO
+    YT_DLP
 }
 
 data class MediaFormatOption(

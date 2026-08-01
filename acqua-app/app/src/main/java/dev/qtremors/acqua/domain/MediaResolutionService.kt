@@ -16,7 +16,7 @@ class MediaResolutionService(
         input: String,
         browserSessionsEnabled: Boolean,
         forceBrowserResolution: Boolean = false,
-        engine: DownloadEngine = DownloadEngine.AUTO,
+        engine: DownloadEngine = DownloadEngine.ACQUA,
         browserResolver: suspend (url: String, explicitSessionAuthorization: Boolean) -> List<ResolvedMedia>
     ): List<ResolvedMedia> {
         val url = WebLink.normalize(input)
@@ -25,12 +25,10 @@ class MediaResolutionService(
                 "Enter a valid HTTP or HTTPS link."
             )
 
-        if (engine == DownloadEngine.YT_DLP ||
-            (engine == DownloadEngine.AUTO && WebLink.isYouTubeUrl(url))
-        ) {
+        if (engine == DownloadEngine.YT_DLP) {
             return resolveWithYtDlp(url, browserSessionsEnabled || forceBrowserResolution)
         }
-        if (engine == DownloadEngine.ACQUA && WebLink.isYouTubeUrl(url)) {
+        if (WebLink.isYouTubeUrl(url)) {
             throw MediaResolutionException(
                 MediaResolutionFailure.ENGINE_REQUIRED,
                 "YouTube links require the yt-dlp engine."
@@ -40,12 +38,6 @@ class MediaResolutionService(
             return validateAndSelect(url, browserResolver(url, true))
         }
         if (!WebLink.isInstagramMediaUrl(url)) {
-            if (engine == DownloadEngine.AUTO) {
-                runCatching { resolveWithYtDlp(url, browserSessionsEnabled) }
-                    .getOrNull()
-                    ?.takeIf(List<ResolvedMedia>::isNotEmpty)
-                    ?.let { return it }
-            }
             if (!browserSessionsEnabled) {
                 throw MediaResolutionException(
                     MediaResolutionFailure.SESSION_REQUIRED,
@@ -60,25 +52,13 @@ class MediaResolutionService(
                 sourceResolver.resolve(url).map { it.copy(referer = it.referer ?: url) }
             }
             val selected = validateAndSelect(url, candidates)
-            return if (engine == DownloadEngine.AUTO) {
-                preferHigherInstagramVariant(url, selected, browserSessionsEnabled)
-            } else {
-                selected
-            }
+            return selected
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             error
         }
 
-        if (engine == DownloadEngine.AUTO) {
-            ytDlpResolver?.let {
-                runCatching { resolveWithYtDlp(url, browserSessionsEnabled) }
-                    .getOrNull()
-                    ?.takeIf { it.isNotEmpty() }
-                    ?.let { return it }
-            }
-        }
         if (!browserSessionsEnabled) throw sourceFailure
         return try {
             validateAndSelect(url, browserResolver(url, false))
@@ -88,28 +68,6 @@ class MediaResolutionService(
             browserFailure.addSuppressed(sourceFailure)
             throw browserFailure
         }
-    }
-
-    private suspend fun preferHigherInstagramVariant(
-        sourceUrl: String,
-        nativeItems: List<ResolvedMedia>,
-        browserSessionsEnabled: Boolean
-    ): List<ResolvedMedia> {
-        val resolver = ytDlpResolver ?: return nativeItems
-        val isSingleVideo = Regex("/(?:reel|tv)/", RegexOption.IGNORE_CASE).containsMatchIn(sourceUrl) &&
-            nativeItems.size == 1 && nativeItems.single().isVideo
-        if (!isSingleVideo) return nativeItems
-
-        val native = nativeItems.single()
-        val nativeQuality = minOf(native.width, native.height)
-        if (nativeQuality >= INSTAGRAM_HIGH_QUALITY_EDGE) return nativeItems
-
-        val alternative = runCatching {
-            resolveWithYtDlp(sourceUrl, browserSessionsEnabled).singleOrNull()
-        }.getOrNull() ?: return nativeItems
-        val nativeArea = native.width.toLong() * native.height.toLong()
-        val alternativeArea = alternative.width.toLong() * alternative.height.toLong()
-        return if (alternativeArea > nativeArea) listOf(alternative) else nativeItems
     }
 
     private suspend fun resolveWithYtDlp(
@@ -161,7 +119,6 @@ class MediaResolutionService(
     }
 
     private companion object {
-        const val INSTAGRAM_HIGH_QUALITY_EDGE = 1080
         const val MAX_CANDIDATES = 24
         const val MAX_CONCURRENT_INSPECTIONS = 4
     }

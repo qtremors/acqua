@@ -39,6 +39,8 @@ internal object DownloadWorkData {
     const val KEY_FILE_SIZE = "file_size"
     const val KEY_PROGRESS = "progress"
     const val KEY_ETA_SECONDS = "eta_seconds"
+    const val KEY_DOWNLOADED_BYTES = "downloaded_bytes"
+    const val KEY_TOTAL_BYTES = "total_bytes"
     const val KEY_ERROR = "error"
 
     fun processedRequest(
@@ -120,9 +122,16 @@ internal object DownloadWorkData {
         )
     }
 
-    fun progress(progress: Float, etaSeconds: Long = 0L): Data = Data.Builder()
+    fun progress(
+        progress: Float,
+        etaSeconds: Long = 0L,
+        downloadedBytes: Long = 0L,
+        totalBytes: Long = 0L
+    ): Data = Data.Builder()
         .putFloat(KEY_PROGRESS, progress.coerceIn(0f, 100f))
         .putLong(KEY_ETA_SECONDS, etaSeconds.coerceAtLeast(0L))
+        .putLong(KEY_DOWNLOADED_BYTES, downloadedBytes.coerceAtLeast(0L))
+        .putLong(KEY_TOTAL_BYTES, totalBytes.coerceAtLeast(0L))
         .build()
 
     fun error(message: String?): Data = Data.Builder()

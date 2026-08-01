@@ -1,6 +1,7 @@
 package dev.qtremors.acqua.downloader
 
 import android.content.Context
+import android.util.Log
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -17,10 +18,15 @@ object YtDlpRuntime {
         if (initialized) return
         synchronized(this) {
             if (initialized) return
-            YtDlpTemporaryFiles.cleanupAbandoned(context.applicationContext)
-            YoutubeDL.getInstance().init(context.applicationContext)
-            FFmpeg.getInstance().init(context.applicationContext)
-            initialized = true
+            try {
+                YtDlpTemporaryFiles.cleanupAbandoned(context.applicationContext)
+                YoutubeDL.getInstance().init(context.applicationContext)
+                FFmpeg.getInstance().init(context.applicationContext)
+                initialized = true
+            } catch (error: Throwable) {
+                Log.e(TAG, "Unable to initialize the yt-dlp runtime", error)
+                throw error
+            }
         }
     }
 
@@ -44,8 +50,15 @@ object YtDlpRuntime {
         )
     }
 
-    fun version(context: Context): String? = runCatching {
+    fun version(context: Context): String? = lifecycleLock.read {
         initialize(context)
         YoutubeDL.getInstance().version(context.applicationContext)
-    }.getOrNull()
+            ?.trim()
+            ?.takeIf(String::isNotEmpty)
+            ?: YoutubeDL.getInstance().execute(
+                YoutubeDLRequest(emptyList()).apply { addOption("--version") }
+            ).out.lineSequence().map(String::trim).firstOrNull(String::isNotEmpty)
+    }
+
+    private const val TAG = "YtDlpRuntime"
 }

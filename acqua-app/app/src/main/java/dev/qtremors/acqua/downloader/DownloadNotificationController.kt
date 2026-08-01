@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.text.format.Formatter
 import androidx.core.app.NotificationCompat
 import androidx.work.ForegroundInfo
 import androidx.work.WorkManager
@@ -33,8 +34,14 @@ internal class DownloadNotificationController(
         )
     }
 
-    fun foregroundInfo(title: String?, progress: Float, etaSeconds: Long): ForegroundInfo {
-        val notification = buildNotification(title, progress, etaSeconds)
+    fun foregroundInfo(
+        title: String?,
+        progress: Float,
+        etaSeconds: Long,
+        downloadedBytes: Long,
+        totalBytes: Long
+    ): ForegroundInfo {
+        val notification = buildNotification(title, progress, etaSeconds, downloadedBytes, totalBytes)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             ForegroundInfo(
                 notificationId,
@@ -46,11 +53,17 @@ internal class DownloadNotificationController(
         }
     }
 
-    fun update(title: String?, progress: Float, etaSeconds: Long) {
+    fun update(
+        title: String?,
+        progress: Float,
+        etaSeconds: Long,
+        downloadedBytes: Long,
+        totalBytes: Long
+    ) {
         runCatching {
             notificationManager.notify(
                 notificationId,
-                buildNotification(title, progress, etaSeconds)
+                buildNotification(title, progress, etaSeconds, downloadedBytes, totalBytes)
             )
         }
     }
@@ -58,11 +71,13 @@ internal class DownloadNotificationController(
     private fun buildNotification(
         title: String?,
         progress: Float,
-        etaSeconds: Long
+        etaSeconds: Long,
+        downloadedBytes: Long,
+        totalBytes: Long
     ): Notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
         .setSmallIcon(R.drawable.acqua_monochrome)
         .setContentTitle(title ?: applicationContext.getString(R.string.download_notification_title))
-        .setContentText(statusText(etaSeconds))
+        .setContentText(statusText(etaSeconds, downloadedBytes, totalBytes))
         .setOnlyAlertOnce(true)
         .setOngoing(true)
         .setProgress(100, progress.coerceIn(0f, 100f).toInt(), progress <= 0f)
@@ -73,14 +88,27 @@ internal class DownloadNotificationController(
         )
         .build()
 
-    private fun statusText(etaSeconds: Long): String = if (etaSeconds > 0L) {
-        applicationContext.resources.getQuantityString(
+    private fun statusText(etaSeconds: Long, downloadedBytes: Long, totalBytes: Long): String {
+        val size = when {
+            downloadedBytes > 0L && totalBytes > 0L -> applicationContext.getString(
+                R.string.download_size_progress,
+                Formatter.formatShortFileSize(applicationContext, downloadedBytes),
+                Formatter.formatShortFileSize(applicationContext, totalBytes)
+            )
+            downloadedBytes > 0L -> applicationContext.getString(
+                R.string.download_size_downloaded,
+                Formatter.formatShortFileSize(applicationContext, downloadedBytes)
+            )
+            else -> null
+        }
+        val eta = if (etaSeconds > 0L) applicationContext.resources.getQuantityString(
             R.plurals.download_eta,
             etaSeconds.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
             etaSeconds
-        )
-    } else {
-        applicationContext.getString(R.string.download_notification_preparing)
+        ) else null
+        return listOfNotNull(size, eta).joinToString(" · ").ifBlank {
+            applicationContext.getString(R.string.download_notification_preparing)
+        }
     }
 
     private companion object {

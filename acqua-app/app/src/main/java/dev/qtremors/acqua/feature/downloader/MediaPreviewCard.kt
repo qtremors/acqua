@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -46,8 +47,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.network.MediaDownloader
+import dev.qtremors.acqua.domain.MediaBackend
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
+import dev.qtremors.acqua.downloader.AudioOutputFormat
+import dev.qtremors.acqua.downloader.DownloadContentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -57,11 +61,14 @@ fun MediaPreviewCard(
     index: Int,
     useBrowserSessions: Boolean,
     mediaDownloader: MediaDownloader,
+    contentType: DownloadContentType,
+    audioFormat: AudioOutputFormat,
     isSaving: Boolean,
     isSaved: Boolean,
     downloadsEnabled: Boolean,
     onDownload: (width: Int, height: Int) -> Unit
 ) {
+    val audioPreview = item.isAudioPreview(contentType)
     val previewUrl = item.previewUrl
     var failed by remember(previewUrl) { mutableStateOf(false) }
     val cookies = remember(
@@ -99,12 +106,14 @@ fun MediaPreviewCard(
             when {
                 bitmap != null -> Image(
                     bitmap!!,
-                    stringResource(if (item.isVideo) R.string.video_preview else R.string.image_preview),
+                    stringResource(
+                        if (audioPreview) R.string.audio else if (item.isVideo) R.string.video_preview else R.string.image_preview
+                    ),
                     Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
                 )
                 previewUrl == null || failed -> Icon(
-                    if (item.isVideo) Icons.Filled.Movie else Icons.Filled.Image,
+                    if (audioPreview) Icons.Filled.MusicNote else if (item.isVideo) Icons.Filled.Movie else Icons.Filled.Image,
                     null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     modifier = Modifier.size(36.dp)
@@ -115,13 +124,19 @@ fun MediaPreviewCard(
                 Box(
                     Modifier.size(42.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.4f)),
                     contentAlignment = Alignment.Center
-                ) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.video), tint = Color.White) }
+                ) {
+                    Icon(
+                        if (audioPreview) Icons.Filled.MusicNote else Icons.Filled.PlayArrow,
+                        stringResource(if (audioPreview) R.string.audio else R.string.video),
+                        tint = Color.White
+                    )
+                }
             }
             Text(
                 stringResource(
                     R.string.media_index_type,
                     index + 1,
-                    stringResource(if (item.isVideo) R.string.video else R.string.photo)
+                    stringResource(if (audioPreview) R.string.audio else if (item.isVideo) R.string.video else R.string.photo)
                 ),
                 color = Color.White,
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
@@ -156,9 +171,16 @@ fun MediaPreviewCard(
         val resolution = if (width > 0 && height > 0) "${width}x$height" else ""
         val locale = LocalConfiguration.current.locales[0]
         val size = item.fileSize?.let { String.format(locale, "%.1f MB", it / (1024.0 * 1024.0)) }.orEmpty()
-        if (resolution.isNotEmpty() || size.isNotEmpty()) {
+        val details = if (audioPreview) {
+            listOf(when (audioFormat) {
+                AudioOutputFormat.ORIGINAL -> stringResource(R.string.original_audio)
+                AudioOutputFormat.M4A -> "M4A"
+                AudioOutputFormat.MP3 -> "MP3"
+            })
+        } else listOf(resolution, size).filter(String::isNotEmpty)
+        if (details.isNotEmpty()) {
             Text(
-                listOf(resolution, size).filter(String::isNotEmpty).joinToString("\n"),
+                details.joinToString("\n"),
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -167,3 +189,6 @@ fun MediaPreviewCard(
         }
     }
 }
+
+internal fun ResolvedMedia.isAudioPreview(contentType: DownloadContentType): Boolean =
+    backend == MediaBackend.YT_DLP && contentType == DownloadContentType.AUDIO

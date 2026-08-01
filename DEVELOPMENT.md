@@ -17,8 +17,9 @@ This document describes Acqua's architecture, authenticated extraction flow, dev
 6. [Validation and downloads](#validation-and-downloads)
 7. [Storage and history](#storage-and-history)
 8. [Testing](#testing)
-9. [Release checklist](#release-checklist)
-10. [Troubleshooting](#troubleshooting)
+9. [Release signing](#release-signing)
+10. [Release checklist](#release-checklist)
+11. [Troubleshooting](#troubleshooting)
 
 ## Development setup
 
@@ -54,12 +55,38 @@ Both use the version code derived from the release version by removing its dots.
 
 APK output names are generated from the variant version and ABI:
 
-- `Acqua-<version>-debug-arm64-v8a.apk`
+- `Acqua-Debug-<version>-arm64-v8a.apk`
+- `Acqua-Debug-<version>.apk`
 - `Acqua-<version>-arm64-v8a.apk`
+- `Acqua-<version>.apk`
 
-Equivalent `armeabi-v7a`, `x86`, and `x86_64` outputs are produced. There is no universal APK; this avoids packaging four complete native processing runtimes into every download. Release builds enable R8 minification and resource shrinking.
+Equivalent `armeabi-v7a`, `x86`, and `x86_64` outputs are produced. The APK without an ABI suffix is universal and bundles all four native processing runtimes. Release builds enable R8 minification and resource shrinking.
 
-Variant configuration lives in `acqua-app/app/build.gradle.kts`. The manifest reads `${appLabel}`, so do not hard-code the display name in `AndroidManifest.xml`.
+Variant configuration lives in `acqua-app/app/build.gradle.kts`. Each build type generates the `application_label` string consumed by the manifest, keeping the debug and release labels distinct while preserving a valid Android resource ID for system launchers.
+
+The Gradle version is also exposed to the in-app About page through `BuildConfig`. README release badges resolve the current published tag through Shields.io, and the website queries GitHub's latest-release API at runtime. Their static fallback copy intentionally contains no release number, so a new release does not require documentation-only version edits.
+
+## Release signing
+
+Official Acqua releases use the same signing certificate as Arcile. Release signing is optional for local verification and automatic when all four signing values are available. Create `acqua-app/signing.properties` with:
+
+```properties
+signing.storeFile=/absolute/path/to/acqua-release.jks
+signing.storePassword=your-store-password
+signing.keyAlias=your-key-alias
+signing.keyPassword=your-key-password
+```
+
+If `signing.properties` is absent, the build also checks `acqua-app/local.properties`. Both files and common keystore formats are ignored by Git. Never commit signing passwords or keystore files.
+
+With complete signing values, every release APK, including the universal package, is signed with the configured key. Without them, Gradle still produces unsigned release APKs suitable for local build verification. Debug APKs always use the Android debug key and the separate `dev.qtremors.acqua.debug` application ID.
+
+Before publishing, verify the certificate and application ID rather than relying only on the filename:
+
+```bash
+apksigner verify --verbose --print-certs app/build/outputs/apk/release/Acqua-<version>-arm64-v8a.apk
+aapt dump badging app/build/outputs/apk/release/Acqua-<version>-arm64-v8a.apk
+```
 
 ## Architecture
 

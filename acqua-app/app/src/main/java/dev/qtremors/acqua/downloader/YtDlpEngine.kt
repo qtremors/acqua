@@ -99,7 +99,7 @@ class YtDlpEngine(context: Context) {
         return try {
             activeProcesses += processId
             val response = YtDlpRuntime.execute(appContext, request, processId) { percent, eta, line ->
-                onProgress(YtDlpProgress(percent, eta, line))
+                onProgress(YtDlpProgress.fromCallback(percent, eta, line))
             }
             if (response.exitCode != 0) error(readableError(response.err))
             taskDirectory.walkTopDown()
@@ -108,7 +108,7 @@ class YtDlpEngine(context: Context) {
                 .maxByOrNull(File::length)
                 ?.takeIf { it.length() > 0L }
                 ?: error("yt-dlp completed without producing a media file.")
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             taskDirectory.deleteRecursively()
             throw error
         } finally {

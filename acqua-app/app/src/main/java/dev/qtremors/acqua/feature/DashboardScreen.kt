@@ -1,10 +1,12 @@
 package dev.qtremors.acqua.feature
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Public
@@ -12,6 +14,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -33,6 +36,10 @@ import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.network.MediaDownloader
 import dev.qtremors.acqua.domain.ResolvedMedia
+import dev.qtremors.acqua.feature.about.AboutDestination
+import dev.qtremors.acqua.feature.about.AboutScreen
+import dev.qtremors.acqua.feature.about.LegalDocumentScreen
+import dev.qtremors.acqua.feature.about.OpenSourceNoticesScreen
 import dev.qtremors.acqua.feature.browser.BrowserScreen
 import dev.qtremors.acqua.feature.browser.BrowserViewModel
 import dev.qtremors.acqua.feature.downloader.DownloaderScreen
@@ -62,7 +69,15 @@ fun DashboardScreen(
     openBrowser: (String?, Boolean, String?) -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
+    var overlay by remember { androidx.compose.runtime.mutableStateOf<AboutDestination?>(null) }
     val browserState by browserViewModel.state.collectAsState()
+    BackHandler(enabled = overlay != null) {
+        overlay = if (overlay == AboutDestination.NOTICES || overlay == AboutDestination.LICENSE) {
+            AboutDestination.ABOUT
+        } else {
+            null
+        }
+    }
     LaunchedEffect(initialUrl) { downloaderViewModel.setInitialUrl(initialUrl) }
     LaunchedEffect(browserRevision) {
         if (browserRevision > 0) browserViewModel.refresh()
@@ -85,12 +100,44 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(stringResource(R.string.app_name), fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        stringResource(
+                            when (overlay) {
+                                AboutDestination.ABOUT -> R.string.about_title
+                                AboutDestination.NOTICES -> R.string.about_open_source_notices
+                                AboutDestination.LICENSE -> R.string.about_license
+                                null -> R.string.app_name
+                            }
+                        ),
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                navigationIcon = {
+                    if (overlay != null) {
+                        IconButton(onClick = {
+                            overlay = if (
+                                overlay == AboutDestination.NOTICES ||
+                                overlay == AboutDestination.LICENSE
+                            ) {
+                                AboutDestination.ABOUT
+                            } else {
+                                null
+                            }
+                        }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                stringResource(R.string.back)
+                            )
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                 modifier = Modifier.clip(RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp))
             )
         },
         bottomBar = {
+            if (overlay == null) {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 modifier = Modifier.clip(RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
@@ -110,10 +157,26 @@ fun DashboardScreen(
                     )
                 }
             }
+            }
         }
     ) { padding ->
         Box(Modifier.fillMaxSize()) {
-            when (tab) {
+            when (overlay) {
+                AboutDestination.ABOUT -> AboutScreen(
+                    onOpenNotices = { overlay = AboutDestination.NOTICES },
+                    onOpenLicense = { overlay = AboutDestination.LICENSE },
+                    modifier = Modifier.fillMaxSize().padding(padding)
+                )
+                AboutDestination.NOTICES -> OpenSourceNoticesScreen(
+                    Modifier.fillMaxSize().padding(padding)
+                )
+                AboutDestination.LICENSE -> LegalDocumentScreen(
+                    title = stringResource(R.string.about_license),
+                    assetName = "LICENSE.md",
+                    introduction = stringResource(R.string.acqua_legal_notice),
+                    modifier = Modifier.fillMaxSize().padding(padding)
+                )
+                null -> when (tab) {
                 0 -> DownloaderScreen(
                     downloaderViewModel,
                     mediaDownloader,
@@ -139,7 +202,12 @@ fun DashboardScreen(
                     onRefetch = { downloaderViewModel.updateUrl(it); tab = 0 },
                     modifier = Modifier.fillMaxSize().padding(padding)
                 )
-                else -> SettingsScreen(settingsViewModel, Modifier.fillMaxSize().padding(padding))
+                else -> SettingsScreen(
+                    settingsViewModel,
+                    onOpenAbout = { overlay = AboutDestination.ABOUT },
+                    modifier = Modifier.fillMaxSize().padding(padding)
+                )
+                }
             }
         }
     }
