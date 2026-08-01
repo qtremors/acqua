@@ -82,6 +82,17 @@ class DownloadActivity : ComponentActivity() {
             finish()
             return
         }
+        dependencies.instagramSessions.load()?.let { session ->
+            dependencies.instagramResolver.setSessionCookies(session.cookies, session.userAgent)
+        }
+        val browserMedia = RenderedPageResolverActivity.parseMediaJson(
+            intent.getStringExtra(EXTRA_MEDIA_JSON).orEmpty()
+        ).map { item ->
+            item.copy(
+                requestCookies = CookieManager.getInstance().getCookie(item.url)?.takeIf(String::isNotBlank),
+                explicitBrowserSessionAuthorized = true
+            )
+        }
 
         setContent {
             AcquaTheme {
@@ -99,8 +110,9 @@ class DownloadActivity : ComponentActivity() {
                         }
                     }
                 )
-                LaunchedEffect(sourceUrl) {
-                    downloader.requestBrowserResolution(sourceUrl)
+                LaunchedEffect(sourceUrl, browserMedia) {
+                    if (browserMedia.isEmpty()) downloader.updateUrl(sourceUrl)
+                    else downloader.seedResolvedMedia(sourceUrl, browserMedia)
                 }
                 Scaffold(
                     topBar = {
@@ -120,13 +132,12 @@ class DownloadActivity : ComponentActivity() {
                     DownloaderScreen(
                         viewModel = downloader,
                         mediaDownloader = dependencies.mediaDownloader,
-                        useBrowserSessions = dependencies.settings.useBrowserSessions(),
+                        useBrowserSessions = true,
                         sessionsInitialized = true,
                         browserRequestRevision = EXPLICIT_BROWSER_REQUEST_REVISION,
                         resolveInBrowser = ::resolveInBrowser,
                         requestDownloadAccess = ::runWithDownloadPermissions,
                         onOpenBrowser = { finish() },
-                        onMediaSaved = { finish() },
                         showLinkEditor = false,
                         modifier = Modifier.padding(padding)
                     )
@@ -197,6 +208,7 @@ class DownloadActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_URL = "download_url"
+        const val EXTRA_MEDIA_JSON = "download_media_json"
         private const val EXPLICIT_BROWSER_REQUEST_REVISION = 1
     }
 }

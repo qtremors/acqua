@@ -1,6 +1,6 @@
 # Third-party notices
 
-Acqua 0.0.5 includes or downloads the following independent runtime components.
+Acqua 0.0.7 includes or downloads the following independent runtime components.
 Their names are used only to identify and credit those components.
 
 ## youtubedl-android

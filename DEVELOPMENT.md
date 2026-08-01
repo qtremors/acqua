@@ -2,7 +2,7 @@
 
 | Metadata | Value |
 | :--- | :--- |
-| Current version | 0.0.6 |
+| Current version | 0.0.7 |
 | Minimum Android version | Android 7.0 (API 24) |
 | Target/compile SDK | 37 |
 
@@ -48,15 +48,15 @@ Acqua uses separate identities for local development and production:
 
 | Variant | Label | Application ID | Version name |
 | :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.6-debug` |
-| Release | Acqua | `dev.qtremors.acqua` | `0.0.6` |
+| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.7-debug` |
+| Release | Acqua | `dev.qtremors.acqua` | `0.0.7` |
 
-Both use version code `6`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
+Both use version code `7`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
 
 APK output names are generated from the variant version and ABI:
 
-- `Acqua-0.0.6-debug-arm64-v8a.apk`
-- `Acqua-0.0.6-arm64-v8a.apk`
+- `Acqua-0.0.7-debug-arm64-v8a.apk`
+- `Acqua-0.0.7-arm64-v8a.apk`
 
 Equivalent `armeabi-v7a`, `x86`, and `x86_64` outputs are produced. There is no universal APK; this avoids packaging four complete native processing runtimes into every download. Release builds enable R8 minification and resource shrinking.
 

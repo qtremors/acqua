@@ -16,13 +16,19 @@ class MediaResolutionService(
         input: String,
         browserSessionsEnabled: Boolean,
         forceBrowserResolution: Boolean = false,
+        engine: DownloadEngine = DownloadEngine.AUTO,
         browserResolver: suspend (url: String, explicitSessionAuthorization: Boolean) -> List<ResolvedMedia>
     ): List<ResolvedMedia> {
         val url = WebLink.normalize(input)
             ?: throw IllegalArgumentException("Enter a valid HTTP or HTTPS link.")
 
-        if (WebLink.isYouTubeUrl(url)) {
+        if (engine == DownloadEngine.YT_DLP ||
+            (engine == DownloadEngine.AUTO && WebLink.isYouTubeUrl(url))
+        ) {
             return resolveWithYtDlp(url, browserSessionsEnabled || forceBrowserResolution)
+        }
+        if (engine == DownloadEngine.ACQUA && WebLink.isYouTubeUrl(url)) {
+            error("YouTube links require the yt-dlp engine.")
         }
         if (forceBrowserResolution) {
             return validateAndSelect(url, browserResolver(url, true))
@@ -37,18 +43,24 @@ class MediaResolutionService(
                 sourceResolver.resolve(url).map { it.copy(referer = it.referer ?: url) }
             }
             val selected = validateAndSelect(url, candidates)
-            return preferHigherInstagramVariant(url, selected, browserSessionsEnabled)
+            return if (engine == DownloadEngine.AUTO) {
+                preferHigherInstagramVariant(url, selected, browserSessionsEnabled)
+            } else {
+                selected
+            }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             error
         }
 
-        ytDlpResolver?.let {
-            runCatching { resolveWithYtDlp(url, browserSessionsEnabled) }
-                .getOrNull()
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { return it }
+        if (engine == DownloadEngine.AUTO) {
+            ytDlpResolver?.let {
+                runCatching { resolveWithYtDlp(url, browserSessionsEnabled) }
+                    .getOrNull()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { return it }
+            }
         }
         if (!browserSessionsEnabled) throw sourceFailure
         return try {

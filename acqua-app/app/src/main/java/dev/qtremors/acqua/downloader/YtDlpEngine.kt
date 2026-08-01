@@ -11,6 +11,9 @@ import dev.qtremors.acqua.domain.WebLink
 import org.json.JSONObject
 import java.io.File
 import java.net.URI
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -47,10 +50,7 @@ class YtDlpEngine(context: Context) {
         taskKey: String? = null
     ): File {
         val processId = "download-${taskKey ?: UUID.randomUUID()}"
-        val taskDirectory = File(appContext.cacheDir, "yt-dlp/$processId").apply {
-            deleteRecursively()
-            mkdirs()
-        }
+        val taskDirectory = YtDlpTemporaryFiles.prepareTaskDirectory(appContext, processId)
         val cookieFile = createCookieFile(media.url, media.explicitBrowserSessionAuthorized)
         val request = YoutubeDLRequest(media.url).apply {
             addOption("--no-playlist")
@@ -70,9 +70,6 @@ class YtDlpEngine(context: Context) {
                     AudioOutputFormat.M4A -> addOption("--audio-format", "m4a")
                     AudioOutputFormat.MP3 -> addOption("--audio-format", "mp3")
                 }
-                addOption("--parse-metadata", "%(release_year,upload_date)s:%(meta_date)s")
-                addOption("--parse-metadata", "%(album,playlist,title)s:%(meta_album)s")
-                addOption("--parse-metadata", "%(track_number,playlist_index)d:%(meta_track)s")
             } else {
                 addOption(
                     "-f",
@@ -84,6 +81,11 @@ class YtDlpEngine(context: Context) {
             }
 
             if (options.embedMetadata) {
+                addOption("--parse-metadata", "%(release_year,upload_date)s:%(meta_date)s")
+                if (options.contentType == DownloadContentType.AUDIO) {
+                    addOption("--parse-metadata", "%(album,playlist,title)s:%(meta_album)s")
+                    addOption("--parse-metadata", "%(track_number,playlist_index)d:%(meta_track)s")
+                }
                 addOption("--embed-metadata")
                 addOption("--no-embed-info-json")
                 if (options.contentType == DownloadContentType.VIDEO) addOption("--embed-chapters")
@@ -185,8 +187,23 @@ class YtDlpEngine(context: Context) {
             title = title,
             durationSeconds = root.optInt("duration").coerceAtLeast(0),
             formats = formats,
-            explicitBrowserSessionAuthorized = allowBrowserSession
+            explicitBrowserSessionAuthorized = allowBrowserSession,
+            sourceTimestampMillis = sourceTimestampMillis(root)
         )
+    }
+
+    private fun sourceTimestampMillis(root: JSONObject): Long? {
+        sequenceOf(root.optLong("release_timestamp"), root.optLong("timestamp"))
+            .firstOrNull { it > 0L }
+            ?.let { return if (it > 10_000_000_000L) it else it * 1_000L }
+        val uploadDate = root.optString("upload_date").takeIf { it.matches(Regex("\\d{8}")) }
+            ?: return null
+        return runCatching {
+            SimpleDateFormat("yyyyMMdd", Locale.US).apply {
+                isLenient = false
+                timeZone = TimeZone.getTimeZone("UTC")
+            }.parse(uploadDate)?.time
+        }.getOrNull()
     }
 
     private fun createCookieFile(url: String, allowed: Boolean): File? {
@@ -211,9 +228,7 @@ class YtDlpEngine(context: Context) {
             else "$cookieDomain\tTRUE\t/\tTRUE\t0\t${pair[0]}\t${pair[1]}"
         }
         if (rows.isEmpty()) return null
-        return File.createTempFile("cookies-", ".txt", appContext.cacheDir).apply {
-            writeText((listOf("# Netscape HTTP Cookie File") + rows).joinToString("\n"))
-        }
+        return YtDlpTemporaryFiles.createCookieFile(appContext, rows)
     }
 
     private fun readableError(stderr: String): String = stderr.lineSequence()

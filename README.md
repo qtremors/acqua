@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/qtremors/acqua/releases"><img alt="Version 0.0.6" src="https://img.shields.io/badge/version-0.0.6-8dcfff"></a>
+  <a href="https://github.com/qtremors/acqua/releases"><img alt="Version 0.0.7" src="https://img.shields.io/badge/version-0.0.7-8dcfff"></a>
   <img alt="Android 7.0+" src="https://img.shields.io/badge/Android-7.0%2B-3ddc84">
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.2.10-7f52ff">
   <a href="LICENSE.md"><img alt="GPL v3 or later" src="https://img.shields.io/badge/license-GPLv3%2B-f4c95d"></a>
@@ -59,10 +59,10 @@ On Windows, use `gradlew.bat`. APKs are split by CPU architecture so each downlo
 
 | ABI | Typical device | Release APK |
 | :--- | :--- | :--- |
-| `arm64-v8a` | Most modern phones and tablets | `Acqua-0.0.6-arm64-v8a.apk` |
-| `armeabi-v7a` | Older 32-bit ARM devices | `Acqua-0.0.6-armeabi-v7a.apk` |
-| `x86_64` | 64-bit x86 emulators/devices | `Acqua-0.0.6-x86_64.apk` |
-| `x86` | Older 32-bit x86 emulators/devices | `Acqua-0.0.6-x86.apk` |
+| `arm64-v8a` | Most modern phones and tablets | `Acqua-0.0.7-arm64-v8a.apk` |
+| `armeabi-v7a` | Older 32-bit ARM devices | `Acqua-0.0.7-armeabi-v7a.apk` |
+| `x86_64` | 64-bit x86 emulators/devices | `Acqua-0.0.7-x86_64.apk` |
+| `x86` | Older 32-bit x86 emulators/devices | `Acqua-0.0.7-x86.apk` |
 
 Debug outputs add `-debug` before the ABI suffix. Debug and release builds can be installed side by side.
 

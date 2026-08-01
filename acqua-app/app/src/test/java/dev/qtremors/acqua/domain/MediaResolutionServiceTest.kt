@@ -63,6 +63,56 @@ class MediaResolutionServiceTest {
     }
 
     @Test
+    fun `acqua selection never probes yt-dlp`() = runBlocking {
+        val direct = ResolvedMedia("https://cdn.test/post.jpg", MediaKind.IMAGE)
+        var ytDlpCalled = false
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { listOf(direct) },
+            ytDlpResolver = MediaResolver {
+                ytDlpCalled = true
+                error("yt-dlp should not be called")
+            },
+            inspectMedia = { it }
+        )
+
+        val result = service.resolve(
+            "https://instagram.com/p/abc",
+            browserSessionsEnabled = false,
+            engine = DownloadEngine.ACQUA
+        ) { _, _ -> emptyList() }
+
+        assertEquals(false, ytDlpCalled)
+        assertEquals(listOf(direct.copy(referer = "https://instagram.com/p/abc")), result)
+    }
+
+    @Test
+    fun `yt-dlp selection bypasses acqua extraction`() = runBlocking {
+        var acquaCalled = false
+        val ytDlpItem = ResolvedMedia(
+            "https://example.com/watch/abc",
+            MediaKind.VIDEO,
+            backend = MediaBackend.YT_DLP
+        )
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver {
+                acquaCalled = true
+                emptyList()
+            },
+            ytDlpResolver = MediaResolver { listOf(ytDlpItem) },
+            inspectMedia = { it }
+        )
+
+        val result = service.resolve(
+            "https://example.com/watch/abc",
+            browserSessionsEnabled = false,
+            engine = DownloadEngine.YT_DLP
+        ) { _, _ -> emptyList() }
+
+        assertEquals(false, acquaCalled)
+        assertEquals(listOf(ytDlpItem), result)
+    }
+
+    @Test
     fun `higher resolution yt-dlp reel replaces native reel`() = runBlocking {
         val native = ResolvedMedia("https://cdn.test/native.mp4", MediaKind.VIDEO, width = 720, height = 1280)
         val higher = ResolvedMedia(

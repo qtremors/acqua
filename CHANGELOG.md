@@ -2,6 +2,28 @@
 
 All notable user-visible changes are documented here.
 
+## [0.0.7] - 2026-08-01
+
+### Added
+
+- Choose Acqua or yt-dlp for each link, with yt-dlp video, audio, quality, format, metadata, and artwork controls.
+- Support Android themed icons with a dedicated monochrome Acqua mark.
+
+### Changed
+
+- Use Acqua as the name of the built-in direct-media downloader.
+- Use scalable Acqua vector artwork for app launcher, browser action, notification, README, and website branding.
+
+### Fixed
+
+- Keep download previews open after one or all items finish so returning to the browser remains a user choice.
+- Resolve floating-ball downloads without always reopening the current page in another WebView.
+- Recover complete Instagram carousel data from rendered page JSON instead of stopping at the first fallback item.
+- Preserve available source dates in downloaded media and honor the disabled metadata option for audio downloads.
+- Limit oversized media previews to prevent excessive memory use.
+- Remove abandoned processing files and temporary session cookies after interrupted downloads.
+- Remove em dashes from website and documentation copy.
+
 ## [0.0.6] - 2026-07-19
 
 ### Added

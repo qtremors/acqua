@@ -17,6 +17,7 @@ object YtDlpRuntime {
         if (initialized) return
         synchronized(this) {
             if (initialized) return
+            YtDlpTemporaryFiles.cleanupAbandoned(context.applicationContext)
             YoutubeDL.getInstance().init(context.applicationContext)
             FFmpeg.getInstance().init(context.applicationContext)
             initialized = true

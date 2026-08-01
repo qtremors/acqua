@@ -118,7 +118,7 @@ class YtDlpDownloadWorker(
 
     private fun notification(title: String?, progress: Float, etaSeconds: Long) =
         NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_download_notification)
+            .setSmallIcon(R.drawable.acqua_monochrome)
             .setContentTitle(title ?: applicationContext.getString(R.string.download_notification_title))
             .setContentText(
                 if (etaSeconds > 0L) {
@@ -171,7 +171,8 @@ class YtDlpDownloadWorker(
             username = getString(KEY_USERNAME),
             explicitBrowserSessionAuthorized = getBoolean(KEY_BROWSER_SESSION_AUTHORIZED, false),
             backend = MediaBackend.YT_DLP,
-            title = getString(KEY_TITLE)
+            title = getString(KEY_TITLE),
+            sourceTimestampMillis = getLong(KEY_SOURCE_TIMESTAMP_MILLIS, 0L).takeIf { it > 0L }
         )
         return WorkerRequest(
             media = media,
@@ -208,6 +209,7 @@ class YtDlpDownloadWorker(
         const val KEY_BROWSER_SESSION_AUTHORIZED = "browser_session_authorized"
         const val KEY_MEDIA_WIDTH = "media_width"
         const val KEY_MEDIA_HEIGHT = "media_height"
+        const val KEY_SOURCE_TIMESTAMP_MILLIS = "source_timestamp_millis"
         const val KEY_OUTPUT_WIDTH = "output_width"
         const val KEY_OUTPUT_HEIGHT = "output_height"
         const val KEY_THUMBNAIL_URL = "thumbnail_url"

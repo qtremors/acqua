@@ -292,6 +292,7 @@ class InstagramResolver : MediaResolver {
         val posterHeight = posterCandidate?.optInt("height") ?: 0
 
         val username = item.optJSONObject("user")?.optString("username").takeIf { !it.isNullOrEmpty() }
+        val sourceTimestampMillis = sourceTimestampMillis(item)
 
         highestResolutionCandidate(item.optJSONArray("video_versions"))?.let { video ->
             val videoUrl = video.optString("url").takeIf { it.isNotBlank() }
@@ -302,7 +303,8 @@ class InstagramResolver : MediaResolver {
                     thumbnailUrl = poster,
                     width = video.optInt("width").takeIf { it > 0 } ?: posterWidth,
                     height = video.optInt("height").takeIf { it > 0 } ?: posterHeight,
-                    username = username
+                    username = username,
+                    sourceTimestampMillis = sourceTimestampMillis
                 )
             }
         }
@@ -314,7 +316,8 @@ class InstagramResolver : MediaResolver {
                 thumbnailUrl = it,
                 width = posterWidth,
                 height = posterHeight,
-                username = username
+                username = username,
+                sourceTimestampMillis = sourceTimestampMillis
             )
         }
 
@@ -367,6 +370,10 @@ class InstagramResolver : MediaResolver {
         }
 
         try {
+            InstagramEmbeddedJson.findShortcodeMedia(html)?.let { mediaJson ->
+                val items = parseShortcodeMedia(mediaJson)
+                if (items.isNotEmpty()) return items
+            }
             val jsonBlock = extractJsonBlock(html, "\\\"shortcode_media\\\":")
                 ?.let { unescapeJson(it) }
                 ?: extractJsonBlock(html, "\"shortcode_media\":")
@@ -476,6 +483,7 @@ class InstagramResolver : MediaResolver {
 
     private fun parseShortcodeMedia(media: JSONObject): List<ResolvedMedia> {
         val username = media.optJSONObject("owner")?.optString("username").takeIf { !it.isNullOrEmpty() }
+        val postTimestampMillis = sourceTimestampMillis(media)
         val edges = media.optJSONObject("edge_sidecar_to_children")?.optJSONArray("edges")
         if (edges != null && edges.length() > 0) {
             val items = mutableListOf<ResolvedMedia>()
@@ -485,12 +493,19 @@ class InstagramResolver : MediaResolver {
                 val dimensions = node.optJSONObject("dimensions")
                 val w = dimensions?.optInt("width") ?: 0
                 val h = dimensions?.optInt("height") ?: 0
+                val itemTimestampMillis = sourceTimestampMillis(node) ?: postTimestampMillis
                 if (node.optBoolean("is_video", false)) {
                     val url = node.optString("video_url").takeIf { it.isNotEmpty() } ?: continue
-                    items += ResolvedMedia(url, MediaKind.VIDEO, thumbnailUrl = poster, width = w, height = h, username = username)
+                    items += ResolvedMedia(
+                        url, MediaKind.VIDEO, thumbnailUrl = poster, width = w, height = h,
+                        username = username, sourceTimestampMillis = itemTimestampMillis
+                    )
                 } else {
                     val url = poster ?: continue
-                    items += ResolvedMedia(url, MediaKind.IMAGE, thumbnailUrl = url, width = w, height = h, username = username)
+                    items += ResolvedMedia(
+                        url, MediaKind.IMAGE, thumbnailUrl = url, width = w, height = h,
+                        username = username, sourceTimestampMillis = itemTimestampMillis
+                    )
                 }
             }
             if (items.isNotEmpty()) return items
@@ -503,11 +518,29 @@ class InstagramResolver : MediaResolver {
         return if (media.optBoolean("is_video", false)) {
             val url = media.optString("video_url").takeIf { it.isNotEmpty() }
                 ?: throw Exception("Media node is marked as video, but video_url is empty")
-            listOf(ResolvedMedia(url, MediaKind.VIDEO, thumbnailUrl = poster, width = w, height = h, username = username))
+            listOf(
+                ResolvedMedia(
+                    url, MediaKind.VIDEO, thumbnailUrl = poster, width = w, height = h,
+                    username = username, sourceTimestampMillis = postTimestampMillis
+                )
+            )
         } else {
             val url = poster ?: throw Exception("Display URL is missing in photo media node")
-            listOf(ResolvedMedia(url, MediaKind.IMAGE, thumbnailUrl = url, width = w, height = h, username = username))
+            listOf(
+                ResolvedMedia(
+                    url, MediaKind.IMAGE, thumbnailUrl = url, width = w, height = h,
+                    username = username, sourceTimestampMillis = postTimestampMillis
+                )
+            )
         }
+    }
+
+    private fun sourceTimestampMillis(item: JSONObject): Long? = sequenceOf(
+        item.optLong("taken_at_timestamp"),
+        item.optLong("taken_at"),
+        item.optLong("published_time")
+    ).firstOrNull { it > 0L }?.let { seconds ->
+        if (seconds > 10_000_000_000L) seconds else seconds * 1_000L
     }
 
     private fun extractJsonBlock(html: String, key: String): String? {

@@ -262,6 +262,7 @@ class RenderedPageResolverActivity : ComponentActivity() {
             }
 
             val username = payload.optString("username").takeIf { it.isNotBlank() }
+            val sourceTimestampMillis = payload.optLong("sourceTimestampMillis").takeIf { it > 0L }
             pageExpectsVideo = pageExpectsVideo || payload.optBoolean("expectsVideo") ||
                 payload.optInt("videoElementCount") > 0
             latestVideoPoster = payload.optString("videoPoster")
@@ -289,7 +290,8 @@ class RenderedPageResolverActivity : ComponentActivity() {
                     width = item.optInt("width").coerceAtLeast(0),
                     height = item.optInt("height").coerceAtLeast(0),
                     username = username,
-                    referer = webView.url
+                    referer = webView.url,
+                    sourceTimestampMillis = sourceTimestampMillis
                 )
             }
 
@@ -302,7 +304,8 @@ class RenderedPageResolverActivity : ComponentActivity() {
                         width = latestVideoWidth,
                         height = latestVideoHeight,
                         username = username,
-                        referer = webView.url
+                        referer = webView.url,
+                        sourceTimestampMillis = sourceTimestampMillis
                     )
                 }
             }
@@ -376,6 +379,7 @@ class RenderedPageResolverActivity : ComponentActivity() {
                         .put("height", item.height)
                         .put("username", item.username)
                         .put("referer", item.referer)
+                        .put("sourceTimestampMillis", item.sourceTimestampMillis)
                 )
             }
         }
@@ -441,6 +445,10 @@ class RenderedPageResolverActivity : ComponentActivity() {
 
         fun parseMediaResults(data: Intent?): List<ResolvedMedia> {
             val raw = data?.getStringExtra(EXTRA_MEDIA_JSON).orEmpty()
+            return parseMediaJson(raw)
+        }
+
+        internal fun parseMediaJson(raw: String): List<ResolvedMedia> {
             if (raw.isBlank()) return emptyList()
             val array = JSONArray(raw)
             return buildList {
@@ -458,19 +466,20 @@ class RenderedPageResolverActivity : ComponentActivity() {
                             width = item.optInt("width"),
                             height = item.optInt("height"),
                             username = item.optString("username").takeIf { it.isNotBlank() && it != "null" },
-                            referer = item.optString("referer").takeIf { it.startsWith("http") }
+                            referer = item.optString("referer").takeIf { it.startsWith("http") },
+                            sourceTimestampMillis = item.optLong("sourceTimestampMillis").takeIf { it > 0L }
                         )
                     )
                 }
             }
         }
 
-        private fun decodeJavascriptResult(value: String?): JSONObject? = runCatching {
+        internal fun decodeJavascriptResult(value: String?): JSONObject? = runCatching {
             val decoded = JSONTokener(value.orEmpty()).nextValue() as? String ?: return@runCatching null
             JSONObject(decoded)
         }.getOrNull()
 
-        private val EXTRACTION_SCRIPT = """
+        internal val EXTRACTION_SCRIPT = """
             (function() {
               const path = location.pathname || '';
               const host = (location.hostname || '').toLowerCase();
@@ -487,6 +496,7 @@ class RenderedPageResolverActivity : ComponentActivity() {
                 videoPoster: '',
                 videoWidth: 0,
                 videoHeight: 0,
+                sourceTimestampMillis: 0,
                 networkVideoUrls: []
               };
               result.loginPage = isInstagram && location.pathname.indexOf('/accounts/login') === 0;
@@ -501,6 +511,11 @@ class RenderedPageResolverActivity : ComponentActivity() {
               if (profileLink) {
                 const segment = profileLink.getAttribute('href').split('/').filter(Boolean)[0] || '';
                 if (segment && !['p', 'reel', 'tv', 'stories', 'explore'].includes(segment)) result.username = segment;
+              }
+              const publishedTime = scope.querySelector('time[datetime]');
+              if (publishedTime) {
+                const parsedTime = Date.parse(publishedTime.getAttribute('datetime') || '');
+                if (Number.isFinite(parsedTime) && parsedTime > 0) result.sourceTimestampMillis = parsedTime;
               }
 
               const seen = new Set();

@@ -6,15 +6,12 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.ViewConfiguration
 import android.view.inputmethod.EditorInfo
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
@@ -27,7 +24,6 @@ import android.webkit.WebViewClient
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
@@ -36,15 +32,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.content.edit
 import dev.qtremors.acqua.R
+import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.data.session.InstagramSessionStore
 import dev.qtremors.acqua.data.session.SavedInstagramSession
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import dev.qtremors.acqua.feature.downloader.DownloadActivity
+import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
+import org.json.JSONArray
+import org.json.JSONObject
 import org.json.JSONTokener
-import kotlin.math.hypot
 
 class BrowserActivity : ComponentActivity() {
     private val savedWebsites by lazy { SavedWebsiteRepository(applicationContext) }
@@ -57,6 +55,7 @@ class BrowserActivity : ComponentActivity() {
     private var loginName = ""
     private var addressHeader: View? = null
     private var downloadRequestPending = false
+    private val livePageMediaCollector = LivePageMediaCollector()
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,7 +130,13 @@ class BrowserActivity : ComponentActivity() {
         content.addView(container, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(content, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         root.addView(
-            createFloatingControls(root),
+            createBrowserFloatingControls(
+                context = this,
+                parent = root,
+                onRefresh = { if (currentUrl == null) showStartPage() else webView.reload() },
+                onDownload = ::downloadCurrentPage,
+                onReturnToAcqua = ::finishBrowser
+            ),
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
                 gravity = Gravity.START or Gravity.TOP
             }
@@ -192,167 +197,6 @@ class BrowserActivity : ComponentActivity() {
             setPadding(10.dp, 0, 10.dp, 0)
             setOnClickListener { navigateToInput() }
         }, LinearLayout.LayoutParams(52.dp, 52.dp))
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private fun createFloatingControls(parent: FrameLayout): View {
-        val wrapper = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.END
-        }
-        val menu = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(6.dp, 6.dp, 6.dp, 6.dp)
-            background = roundedBackground(SURFACE, 18.dp.toFloat())
-            elevation = 10.dp.toFloat()
-            visibility = View.GONE
-        }
-        lateinit var ball: ImageButton
-
-        fun moveWithinBounds(targetX: Float, targetY: Float) {
-            val minX = parent.paddingLeft.toFloat()
-            val minY = parent.paddingTop.toFloat()
-            val maxX = (parent.width - parent.paddingRight - wrapper.width)
-                .coerceAtLeast(parent.paddingLeft).toFloat()
-            val maxY = (parent.height - parent.paddingBottom - wrapper.height)
-                .coerceAtLeast(parent.paddingTop).toFloat()
-            wrapper.x = targetX.coerceIn(minX, maxX)
-            wrapper.y = targetY.coerceIn(minY, maxY)
-        }
-
-        fun saveBallPosition() {
-            if (parent.width <= 0 || parent.height <= 0 || ball.width <= 0) return
-            val centerX = wrapper.x + ball.left + ball.width / 2f
-            val centerY = wrapper.y + ball.top + ball.height / 2f
-            getSharedPreferences(BROWSER_UI_PREFS, MODE_PRIVATE).edit {
-                putFloat(KEY_BUBBLE_X, centerX / parent.width)
-                putFloat(KEY_BUBBLE_Y, centerY / parent.height)
-            }
-        }
-
-        fun setMenuVisible(visible: Boolean) {
-            val centerX = wrapper.x + ball.left + ball.width / 2f
-            val centerY = wrapper.y + ball.top + ball.height / 2f
-            menu.visibility = if (visible) View.VISIBLE else View.GONE
-            wrapper.post {
-                moveWithinBounds(
-                    centerX - ball.left - ball.width / 2f,
-                    centerY - ball.top - ball.height / 2f
-                )
-            }
-        }
-
-        fun menuAction(icon: Int, label: String, action: () -> Unit): View =
-            LinearLayout(this).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(12.dp, 0, 14.dp, 0)
-                background = roundedBackground(Color.TRANSPARENT, 12.dp.toFloat())
-                isClickable = true
-                isFocusable = true
-                contentDescription = label
-                addView(ImageView(context).apply {
-                    setImageResource(icon)
-                    imageTintList = ColorStateList.valueOf(Color.WHITE)
-                }, LinearLayout.LayoutParams(24.dp, 24.dp))
-                addView(TextView(context).apply {
-                    text = label
-                    setTextColor(Color.WHITE)
-                    textSize = 14f
-                    gravity = Gravity.CENTER_VERTICAL
-                    setPadding(12.dp, 0, 0, 0)
-                }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, 48.dp).apply {
-                    gravity = Gravity.CENTER_VERTICAL
-                })
-                setOnClickListener {
-                    setMenuVisible(false)
-                    action()
-                }
-            }
-
-        menu.addView(menuAction(android.R.drawable.ic_popup_sync, getString(R.string.refresh)) {
-            if (currentUrl == null) showStartPage() else webView.reload()
-        }, LinearLayout.LayoutParams(156.dp, 48.dp))
-        menu.addView(menuAction(android.R.drawable.stat_sys_download_done, getString(R.string.download)) {
-            downloadCurrentPage()
-        }, LinearLayout.LayoutParams(156.dp, 48.dp))
-        menu.addView(menuAction(android.R.drawable.ic_menu_revert, getString(R.string.go_to_acqua)) {
-            finishBrowser()
-        }, LinearLayout.LayoutParams(156.dp, 48.dp))
-        wrapper.addView(menu, LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-
-        ball = ImageButton(this).apply {
-            setImageResource(R.mipmap.ic_launcher_round)
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            background = roundedBackground(PRIMARY, 30.dp.toFloat(), GradientDrawable.OVAL)
-            contentDescription = getString(R.string.browser_controls)
-            elevation = 12.dp.toFloat()
-            setPadding(3.dp, 3.dp, 3.dp, 3.dp)
-            val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-            var downRawX = 0f
-            var downRawY = 0f
-            var startX = 0f
-            var startY = 0f
-            var dragging = false
-            setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> {
-                        downRawX = event.rawX
-                        downRawY = event.rawY
-                        startX = wrapper.x
-                        startY = wrapper.y
-                        dragging = false
-                        true
-                    }
-                    MotionEvent.ACTION_MOVE -> {
-                        val deltaX = event.rawX - downRawX
-                        val deltaY = event.rawY - downRawY
-                        if (!dragging && hypot(deltaX.toDouble(), deltaY.toDouble()) >= touchSlop.toDouble()) {
-                            dragging = true
-                        }
-                        if (dragging) moveWithinBounds(startX + deltaX, startY + deltaY)
-                        true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        if (dragging) {
-                            saveBallPosition()
-                        } else {
-                            performClick()
-                            setMenuVisible(menu.visibility != View.VISIBLE)
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_CANCEL -> true
-                    else -> false
-                }
-            }
-        }
-        wrapper.addView(ball, LinearLayout.LayoutParams(58.dp, 58.dp).apply {
-            gravity = Gravity.END
-            topMargin = 8.dp
-        })
-        parent.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            wrapper.post { moveWithinBounds(wrapper.x, wrapper.y) }
-        }
-        wrapper.post {
-            val preferences = getSharedPreferences(BROWSER_UI_PREFS, MODE_PRIVATE)
-            val centerX = preferences.getFloat(KEY_BUBBLE_X, 0.9f) * parent.width
-            val centerY = preferences.getFloat(KEY_BUBBLE_Y, 0.86f) * parent.height
-            moveWithinBounds(
-                centerX - ball.left - ball.width / 2f,
-                centerY - ball.top - ball.height / 2f
-            )
-        }
-        return wrapper
-    }
-
-    private fun roundedBackground(
-        color: Int,
-        radius: Float,
-        backgroundShape: Int = GradientDrawable.RECTANGLE
-    ) = GradientDrawable().apply {
-        shape = backgroundShape
-        setColor(color)
-        cornerRadius = radius
     }
 
     private fun iconButton(icon: Int, description: String, action: () -> Unit) = ImageButton(this).apply {
@@ -498,7 +342,6 @@ class BrowserActivity : ComponentActivity() {
         if (downloadRequestPending) return
         downloadRequestPending = true
         webView.evaluateJavascript("window.location.href") { rawValue ->
-            downloadRequestPending = false
             val activeUrl = sequenceOf(
                 decodeJavascriptString(rawValue),
                 webView.url,
@@ -506,15 +349,71 @@ class BrowserActivity : ComponentActivity() {
             ).mapNotNull { it?.let(WebLink::normalize) }
                 .firstOrNull { isBrowsablePage(it) }
             if (activeUrl == null) {
+                downloadRequestPending = false
                 Toast.makeText(this, R.string.open_website_before_download, Toast.LENGTH_SHORT).show()
                 return@evaluateJavascript
             }
             currentUrl = activeUrl
-            startActivity(
-                Intent(this, DownloadActivity::class.java)
-                    .putExtra(DownloadActivity.EXTRA_URL, activeUrl)
-            )
+            Toast.makeText(this, R.string.resolving_media, Toast.LENGTH_SHORT).show()
+            beginCurrentPageExtraction(activeUrl)
         }
+    }
+
+    private fun beginCurrentPageExtraction(sourceUrl: String) {
+        livePageMediaCollector.reset()
+        extractCurrentPageMedia(sourceUrl)
+    }
+
+    private fun extractCurrentPageMedia(sourceUrl: String) {
+        if (!downloadRequestPending || isFinishing) return
+        webView.evaluateJavascript(RenderedPageResolverActivity.EXTRACTION_SCRIPT) { rawValue ->
+            if (!downloadRequestPending || isFinishing) return@evaluateJavascript
+            val payload = RenderedPageResolverActivity.decodeJavascriptResult(rawValue)
+            when (val outcome = livePageMediaCollector.consume(payload, sourceUrl)) {
+                LivePageExtractionOutcome.Continue -> continueCurrentPageExtraction(sourceUrl)
+                is LivePageExtractionOutcome.Complete -> openDownloadPreview(sourceUrl, outcome.media)
+                is LivePageExtractionOutcome.Failed -> failCurrentPageExtraction(
+                    when (outcome.reason) {
+                        LivePageExtractionFailure.SESSION_EXPIRED -> R.string.session_expired
+                        LivePageExtractionFailure.CONTENT_UNAVAILABLE -> R.string.content_unavailable
+                        LivePageExtractionFailure.NO_MEDIA -> R.string.no_media_found
+                    }
+                )
+            }
+        }
+    }
+
+    private fun continueCurrentPageExtraction(sourceUrl: String) {
+        webView.postDelayed({ extractCurrentPageMedia(sourceUrl) }, DOWNLOAD_EXTRACTION_INTERVAL_MS)
+    }
+
+    private fun openDownloadPreview(sourceUrl: String, items: List<ResolvedMedia>) {
+        val json = JSONArray().apply {
+            items.forEach { item ->
+                put(
+                    JSONObject()
+                        .put("url", item.url)
+                        .put("isVideo", item.isVideo)
+                        .put("thumbnailUrl", item.thumbnailUrl)
+                        .put("width", item.width)
+                        .put("height", item.height)
+                        .put("username", item.username)
+                        .put("referer", item.referer)
+                        .put("sourceTimestampMillis", item.sourceTimestampMillis)
+                )
+            }
+        }
+        downloadRequestPending = false
+        startActivity(
+            Intent(this, DownloadActivity::class.java)
+                .putExtra(DownloadActivity.EXTRA_URL, sourceUrl)
+                .putExtra(DownloadActivity.EXTRA_MEDIA_JSON, json.toString())
+        )
+    }
+
+    private fun failCurrentPageExtraction(message: Int) {
+        downloadRequestPending = false
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     private fun finishBrowser() {
@@ -556,12 +455,10 @@ class BrowserActivity : ComponentActivity() {
         const val EXTRA_INITIAL_URL = "browser_initial_url"
         const val EXTRA_ADD_LOGIN = "browser_add_login"
         const val EXTRA_LOGIN_NAME = "browser_login_name"
-        private const val BROWSER_UI_PREFS = "acqua_browser_ui"
-        private const val KEY_BUBBLE_X = "bubble_x"
-        private const val KEY_BUBBLE_Y = "bubble_y"
         private const val STATE_CURRENT_URL = "browser_current_page_url"
         private const val STATE_HAS_ADDRESS_HEADER = "browser_has_address_header"
         private const val INSTAGRAM_ORIGIN = "https://www.instagram.com"
+        private const val DOWNLOAD_EXTRACTION_INTERVAL_MS = 500L
         private val BACKGROUND = Color.rgb(12, 16, 20)
         private val SURFACE = Color.rgb(36, 43, 48)
         private val PRIMARY = Color.rgb(129, 216, 255)

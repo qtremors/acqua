@@ -64,6 +64,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.network.MediaDownloader
+import dev.qtremors.acqua.domain.DownloadEngine
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.MediaBackend
 import dev.qtremors.acqua.downloader.AudioOutputFormat
@@ -91,7 +92,13 @@ fun DownloaderScreen(
     val currentOnMediaSaved by rememberUpdatedState(onMediaSaved)
     val colors = MaterialTheme.colorScheme
 
-    LaunchedEffect(state.url, sessionsInitialized, useBrowserSessions, browserRequestRevision) {
+    LaunchedEffect(
+        state.url,
+        state.downloadEngine,
+        sessionsInitialized,
+        useBrowserSessions,
+        browserRequestRevision
+    ) {
         if (sessionsInitialized) {
             viewModel.resolve(useBrowserSessions, browserRequestRevision, resolveInBrowser)
         }
@@ -181,6 +188,7 @@ fun DownloaderScreen(
                 onDownloadOne = { item, index, width, height ->
                     requestDownloadAccess(false) { viewModel.downloadOne(item, index, width, height) }
                 },
+                onEngineChange = viewModel::setDownloadEngine,
                 onContentTypeChange = viewModel::setDownloadContentType,
                 onVideoHeightChange = viewModel::setMaximumVideoHeight,
                 onAudioFormatChange = viewModel::setAudioFormat,
@@ -236,6 +244,7 @@ private fun ValidLinkContent(
     useBrowserSessions: Boolean,
     onDownloadAll: () -> Unit,
     onDownloadOne: (ResolvedMedia, Int, Int, Int) -> Unit,
+    onEngineChange: (DownloadEngine) -> Unit,
     onContentTypeChange: (DownloadContentType) -> Unit,
     onVideoHeightChange: (Int) -> Unit,
     onAudioFormatChange: (AudioOutputFormat) -> Unit,
@@ -247,6 +256,44 @@ private fun ValidLinkContent(
     onOpenBrowser: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
+    Card(
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        RoundedCornerShape(24.dp),
+        CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            Text(
+                stringResource(R.string.download_engine),
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+            )
+            Text(
+                stringResource(
+                    if (state.downloadEngine == DownloadEngine.YT_DLP) {
+                        R.string.ytdlp_engine_explanation
+                    } else {
+                        R.string.acqua_engine_explanation
+                    }
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = state.downloadEngine == DownloadEngine.ACQUA,
+                    onClick = { onEngineChange(DownloadEngine.ACQUA) },
+                    label = { Text(stringResource(R.string.acqua_engine)) },
+                    enabled = !state.isSaving && state.savingItemIndex == null
+                )
+                FilterChip(
+                    selected = state.downloadEngine == DownloadEngine.YT_DLP,
+                    onClick = { onEngineChange(DownloadEngine.YT_DLP) },
+                    label = { Text(stringResource(R.string.ytdlp_engine)) },
+                    enabled = !state.isSaving && state.savingItemIndex == null
+                )
+            }
+        }
+    }
     AnimatedVisibility(state.isResolving, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxWidth()) {
         LinearProgressIndicator(Modifier.fillMaxWidth().height(8.dp))
     }
@@ -295,7 +342,8 @@ private fun ValidLinkContent(
         Button(
             onClick = onDownloadAll,
             modifier = Modifier.fillMaxWidth().padding(24.dp).height(52.dp),
-            enabled = !state.isResolving && !state.isSaving && state.savingItemIndex == null,
+            enabled = !state.isResolving && !state.isSaving && !state.saved &&
+                state.savingItemIndex == null && state.media != null,
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
         ) {

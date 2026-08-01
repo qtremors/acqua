@@ -36,6 +36,11 @@ class YtDlpDownloadCoordinator(context: Context) {
             )
             .putInt(YtDlpDownloadWorker.KEY_MEDIA_WIDTH, media.width)
             .putInt(YtDlpDownloadWorker.KEY_MEDIA_HEIGHT, media.height)
+            .apply {
+                media.sourceTimestampMillis?.let {
+                    putLong(YtDlpDownloadWorker.KEY_SOURCE_TIMESTAMP_MILLIS, it)
+                }
+            }
             .putInt(YtDlpDownloadWorker.KEY_OUTPUT_WIDTH, outputMedia.width)
             .putInt(YtDlpDownloadWorker.KEY_OUTPUT_HEIGHT, outputMedia.height)
             .apply {

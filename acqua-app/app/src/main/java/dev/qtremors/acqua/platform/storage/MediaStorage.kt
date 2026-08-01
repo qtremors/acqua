@@ -90,6 +90,7 @@ class MediaStorage(
                 put(MediaStore.Downloads.MIME_TYPE, mimeType)
                 put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
                 put(MediaStore.Downloads.IS_PENDING, 1)
+                putSourceTimestamp(media.sourceTimestampMillis, includeDateTaken = !isAudio)
             }
             val resolver = appContext.contentResolver
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -100,6 +101,7 @@ class MediaStorage(
                 } ?: error("Could not open the destination media file.")
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
+                values.putSourceTimestamp(media.sourceTimestampMillis, includeDateTaken = !isAudio)
                 resolver.update(uri, values, null, null)
                 recordProcessedDownload(media, sourceUrl, uri, fileName, mimeType, sourceFile.length(), !isAudio)
                 uri
@@ -118,6 +120,7 @@ class MediaStorage(
             }
             val target = File(targetDirectory, fileName)
             sourceFile.copyTo(target, overwrite = true)
+            media.sourceTimestampMillis?.let(target::setLastModified)
             val uri = FileProvider.getUriForFile(
                 appContext,
                 "${appContext.packageName}.fileprovider",
@@ -142,6 +145,7 @@ class MediaStorage(
             put(MediaStore.Downloads.MIME_TYPE, mimeType)
             put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
             put(MediaStore.Downloads.IS_PENDING, 1)
+            putSourceTimestamp(item.sourceTimestampMillis, includeDateTaken = true)
         }
         val resolver = appContext.contentResolver
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
@@ -154,6 +158,7 @@ class MediaStorage(
 
             values.clear()
             values.put(MediaStore.Downloads.IS_PENDING, 0)
+            values.putSourceTimestamp(item.sourceTimestampMillis, includeDateTaken = true)
             resolver.update(uri, values, null, null)
             recordDownload(item, sourceUrl, uri, fileName, mimeType, bytesDownloaded)
             uri
@@ -185,6 +190,7 @@ class MediaStorage(
             val bytesDownloaded = file.outputStream().use { output ->
                 mediaDownloader.downloadToStream(item, output, requestCookies)
             }
+            item.sourceTimestampMillis?.let(file::setLastModified)
             val uri = FileProvider.getUriForFile(
                 appContext,
                 "${appContext.packageName}.fileprovider",
@@ -258,5 +264,11 @@ class MediaStorage(
         "mkv" -> "video/x-matroska"
         "mov" -> "video/quicktime"
         else -> if (audio) "audio/*" else "video/mp4"
+    }
+
+    private fun ContentValues.putSourceTimestamp(timestampMillis: Long?, includeDateTaken: Boolean) {
+        val timestamp = timestampMillis?.takeIf { it > 0L } ?: return
+        put(MediaStore.MediaColumns.DATE_MODIFIED, timestamp / 1_000L)
+        if (includeDateTaken) put("datetaken", timestamp)
     }
 }

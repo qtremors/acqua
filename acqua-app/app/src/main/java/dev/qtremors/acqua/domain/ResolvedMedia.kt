@@ -11,6 +11,12 @@ enum class MediaBackend {
     YT_DLP
 }
 
+enum class DownloadEngine {
+    ACQUA,
+    YT_DLP,
+    AUTO
+}
+
 data class MediaFormatOption(
     val id: String,
     val extension: String,
@@ -43,7 +49,8 @@ data class ResolvedMedia(
     val backend: MediaBackend = MediaBackend.DIRECT,
     val title: String? = null,
     val durationSeconds: Int = 0,
-    val formats: List<MediaFormatOption> = emptyList()
+    val formats: List<MediaFormatOption> = emptyList(),
+    val sourceTimestampMillis: Long? = null
 ) {
     val isVideo: Boolean get() = kind == MediaKind.VIDEO
     val isAudio: Boolean get() = kind == MediaKind.AUDIO

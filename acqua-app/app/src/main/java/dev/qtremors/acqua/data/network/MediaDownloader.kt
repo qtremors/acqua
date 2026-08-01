@@ -126,7 +126,11 @@ class MediaDownloader(
     fun fetchBytes(item: ResolvedMedia): ByteArray =
         client.newCall(buildRequest(item.url, item.referer, item.requestCookies)).execute().use { response ->
             if (!response.isSuccessful) error("Failed to fetch media preview (HTTP ${response.code}).")
-            response.body?.bytes() ?: error("The media preview response was empty.")
+            val body = response.body ?: error("The media preview response was empty.")
+            if (body.contentLength() > MAX_PREVIEW_BYTES) {
+                error("The media preview is too large to load safely.")
+            }
+            body.byteStream().readLimited(MAX_PREVIEW_BYTES)
         }
 
     private fun hasEmbeddedByteRange(url: String): Boolean =
@@ -144,7 +148,23 @@ class MediaDownloader(
         return buffer.copyOf(total)
     }
 
+    private fun InputStream.readLimited(maxBytes: Long): ByteArray {
+        val output = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
+        while (true) {
+            val read = read(buffer)
+            if (read <= 0) break
+            total += read
+            if (total > maxBytes) error("The media preview is too large to load safely.")
+            output.write(buffer, 0, read)
+        }
+        return output.toByteArray()
+    }
+
     private companion object {
+        const val MAX_PREVIEW_BYTES = 16L * 1024L * 1024L
+
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
