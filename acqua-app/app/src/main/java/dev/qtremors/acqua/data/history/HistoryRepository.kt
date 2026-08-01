@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import androidx.core.net.toUri
+import java.io.File
 
 enum class HistoryEntryType { DOWNLOAD, LINK }
 
@@ -101,6 +103,18 @@ class HistoryRepository(context: Context) {
 
     fun clear() = DatabaseHelper(appContext).use { helper ->
         helper.writableDatabase.delete(TABLE_HISTORY, null, null)
+    }
+
+    fun fileExists(entry: HistoryEntry): Boolean {
+        if (!entry.isDownloaded || entry.fileUri.isBlank()) return false
+        return runCatching {
+            val uri = entry.fileUri.toUri()
+            when (uri.scheme) {
+                "file" -> File(uri.path.orEmpty()).isFile
+                "content" -> appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.use { true } ?: false
+                else -> false
+            }
+        }.getOrDefault(false)
     }
 
     private class DatabaseHelper(context: Context) :

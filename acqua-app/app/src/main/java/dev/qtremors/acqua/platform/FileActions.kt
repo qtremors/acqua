@@ -2,6 +2,7 @@ package dev.qtremors.acqua.platform
 
 import android.content.Context
 import android.content.Intent
+import android.app.DownloadManager
 import android.widget.Toast
 import androidx.core.net.toUri
 import dev.qtremors.acqua.R
@@ -30,5 +31,13 @@ class FileActions(context: Context) {
         )
     }.onFailure {
         Toast.makeText(appContext, R.string.could_not_share_file, Toast.LENGTH_SHORT).show()
+    }
+
+    fun openDownloads() = runCatching {
+        appContext.startActivity(
+            Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }.onFailure {
+        Toast.makeText(appContext, R.string.no_app_to_open_file, Toast.LENGTH_SHORT).show()
     }
 }

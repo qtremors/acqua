@@ -31,6 +31,30 @@ class HistoryUiStateTest {
         listOf(link), HistoryUiState(listOf(photo, video, link), HistoryFilter.LINKS).filteredEntries
     )
 
+    @Test fun `search matches filenames and source links without case sensitivity`() = assertEquals(
+        listOf(video),
+        HistoryUiState(
+            entries = listOf(photo, video, audio),
+            query = "VIDEO"
+        ).filteredEntries
+    )
+
+    @Test fun `largest sort orders media by saved size`() = assertEquals(
+        listOf(video.copy(sizeBytes = 30), photo.copy(sizeBytes = 20), audio.copy(sizeBytes = 10)),
+        HistoryUiState(
+            entries = listOf(photo.copy(sizeBytes = 20), audio.copy(sizeBytes = 10), video.copy(sizeBytes = 30)),
+            sort = HistorySort.LARGEST
+        ).filteredEntries
+    )
+
+    @Test fun `oldest sort orders entries chronologically`() = assertEquals(
+        listOf(photo.copy(timestamp = 1), video.copy(timestamp = 2)),
+        HistoryUiState(
+            entries = listOf(video.copy(timestamp = 2), photo.copy(timestamp = 1)),
+            sort = HistorySort.OLDEST
+        ).filteredEntries
+    )
+
     private fun entry(
         id: String,
         downloaded: Boolean,

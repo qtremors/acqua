@@ -1,6 +1,7 @@
 package dev.qtremors.acqua.downloader
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Date
 
@@ -49,5 +50,18 @@ class FilenameFormatterTest {
         )
 
         assertEquals("Track_ One_artist.m4a", name)
+    }
+
+    @Test
+    fun `preview renders a stable representative filename`() {
+        val preview = FilenameFormatter.preview("{title}_{username}_{resolution}_{date}_{time}_{index}")
+        assertTrue(preview.startsWith("Sample video_creator_1080x1920_20240101_"))
+        assertTrue(preview.endsWith("_1.mp4"))
+    }
+
+    @Test
+    fun `collision suffix is inserted before extension`() {
+        assertEquals("photo (2).jpg", FilenameFormatter.withCollisionSuffix("photo.jpg", 2))
+        assertEquals("download (1)", FilenameFormatter.withCollisionSuffix("download", 1))
     }
 }

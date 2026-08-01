@@ -72,8 +72,37 @@
     <string name="download_item">Download item</string>
 
     <string name="downloads_and_links">Downloads and links</string>
+    <string name="search_history">Search downloads and links</string>
+    <string name="clear_search">Clear search</string>
+    <string name="history_summary_title">Library at a glance</string>
+    <string name="history_filter_count">%1$s · %2$d</string>
+    <string name="history_storage_used">%1$s available in history</string>
+    <string name="no_history_search_results">No downloads or links match this search.</string>
+    <string name="no_history_filter_results">Nothing has been saved in this category yet.</string>
+    <plurals name="history_results">
+        <item quantity="one">%1$d result</item>
+        <item quantity="other">%1$d results</item>
+    </plurals>
+    <plurals name="history_download_count">
+        <item quantity="one">%1$d download</item>
+        <item quantity="other">%1$d downloads</item>
+    </plurals>
+    <plurals name="history_link_count">
+        <item quantity="one">%1$d link</item>
+        <item quantity="other">%1$d links</item>
+    </plurals>
+    <plurals name="history_missing_count">
+        <item quantity="one">%1$d missing file</item>
+        <item quantity="other">%1$d missing files</item>
+    </plurals>
+    <string name="newest">Newest</string>
+    <string name="oldest">Oldest</string>
+    <string name="largest">Largest</string>
+    <string name="file_missing">File missing · download again</string>
     <string name="clear_all">Clear all</string>
     <string name="history_cleared">History cleared</string>
+    <string name="clear_history">Clear history?</string>
+    <string name="clear_history_confirmation">This removes every download and link record. Downloaded files stay on your device.</string>
     <string name="all_media">All media</string>
     <string name="photos">Photos</string>
     <string name="videos">Videos</string>
@@ -82,6 +111,7 @@
     <string name="media_link_title">Media link</string>
     <string name="unknown_size">Unknown size</string>
     <string name="open_file">Open file</string>
+    <string name="open_downloads_folder">Open Downloads</string>
     <string name="share_file">Share file</string>
     <string name="refetch_link">Fetch link again</string>
     <string name="delete_record">Delete record</string>
@@ -125,6 +155,7 @@
     <string name="category_explanation">Save to Images/, Videos/, and Audio/ subdirectories</string>
     <string name="filename_pattern">Filename format pattern</string>
     <string name="filename_variables_guidance">Tap a variable below to add or remove it.</string>
+    <string name="filename_preview">Example: %1$s</string>
     <string name="reset_filename_pattern">Reset to Acqua default</string>
     <string name="media_processing">Video, audio &amp; metadata</string>
     <string name="default_video_quality">Default video quality</string>

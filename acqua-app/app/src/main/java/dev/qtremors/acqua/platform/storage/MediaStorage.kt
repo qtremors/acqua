@@ -133,7 +133,7 @@ class MediaStorage(
             check(targetDirectory.mkdirs() || targetDirectory.isDirectory) {
                 "Could not create the configured Downloads subfolder."
             }
-            val target = File(targetDirectory, fileName)
+            val target = uniqueFile(targetDirectory, fileName)
             sourceFile.copyTo(target, overwrite = true)
             media.sourceTimestampMillis?.let(target::setLastModified)
             val uri = FileProvider.getUriForFile(
@@ -141,7 +141,7 @@ class MediaStorage(
                 "${appContext.packageName}.fileprovider",
                 target
             )
-            recordProcessedDownload(media, sourceUrl, uri, fileName, mimeType, target.length(), !isAudio)
+            recordProcessedDownload(media, sourceUrl, uri, target.name, mimeType, target.length(), !isAudio)
             uri
         }
     }
@@ -201,7 +201,7 @@ class MediaStorage(
         check(targetDirectory.mkdirs() || targetDirectory.isDirectory) {
             "Could not create the configured Downloads subfolder."
         }
-        val file = File(targetDirectory, fileName)
+        val file = uniqueFile(targetDirectory, fileName)
 
         return try {
             val bytesDownloaded = file.outputStream().use { output ->
@@ -213,7 +213,7 @@ class MediaStorage(
                 "${appContext.packageName}.fileprovider",
                 file
             )
-            recordDownload(item, sourceUrl, uri, fileName, mimeType, bytesDownloaded)
+            recordDownload(item, sourceUrl, uri, file.name, mimeType, bytesDownloaded)
             uri
         } catch (error: Exception) {
             file.delete()
@@ -281,6 +281,16 @@ class MediaStorage(
         "mkv" -> "video/x-matroska"
         "mov" -> "video/quicktime"
         else -> if (audio) "audio/*" else "video/mp4"
+    }
+
+    private fun uniqueFile(directory: File, fileName: String): File {
+        val original = File(directory, fileName)
+        if (!original.exists()) return original
+        for (sequence in 1..9_999) {
+            val candidate = File(directory, FilenameFormatter.withCollisionSuffix(fileName, sequence))
+            if (!candidate.exists()) return candidate
+        }
+        error("Could not create a unique destination filename.")
     }
 
     private fun ContentValues.putSourceTimestamp(timestampMillis: Long?, includeDateTaken: Boolean) {

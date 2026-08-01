@@ -10,20 +10,24 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class HistoryFilter { MEDIA, PHOTOS, VIDEOS, AUDIO, LINKS }
-
 data class HistoryUiState(
     val entries: List<HistoryEntry> = emptyList(),
-    val filter: HistoryFilter = HistoryFilter.MEDIA
+    val filter: HistoryFilter = HistoryFilter.MEDIA,
+    val sort: HistorySort = HistorySort.NEWEST,
+    val query: String = "",
+    val missingEntryIds: Set<String> = emptySet()
 ) {
+    val activeQuery: HistoryQuery
+        get() = HistoryQuery(filter = filter, sort = sort, text = query)
+
     val filteredEntries: List<HistoryEntry>
-        get() = when (filter) {
-            HistoryFilter.MEDIA -> entries.filter(HistoryEntry::isDownloaded)
-            HistoryFilter.PHOTOS -> entries.filter { it.isDownloaded && !it.isVideo && !it.isAudio }
-            HistoryFilter.VIDEOS -> entries.filter { it.isDownloaded && it.isVideo }
-            HistoryFilter.AUDIO -> entries.filter(HistoryEntry::isAudio)
-            HistoryFilter.LINKS -> entries.filterNot(HistoryEntry::isDownloaded)
-        }
+        get() = entries.applyHistoryQuery(activeQuery)
+
+    val summary: HistorySummary
+        get() = entries.summarizeHistory(missingEntryIds)
+
+    val emptyReason: HistoryEmptyReason
+        get() = historyEmptyReason(entries, activeQuery)
 }
 
 class HistoryViewModel(private val repository: HistoryRepository) : ViewModel() {
@@ -31,17 +35,32 @@ class HistoryViewModel(private val repository: HistoryRepository) : ViewModel() 
     val state = mutableState.asStateFlow()
 
     fun refresh() = viewModelScope.launch {
-        val entries = withContext(Dispatchers.IO) { repository.load() }
-        mutableState.value = mutableState.value.copy(entries = entries)
+        val (entries, missing) = withContext(Dispatchers.IO) {
+            val loaded = repository.load()
+            loaded to loaded.asSequence()
+                .filter(HistoryEntry::isDownloaded)
+                .filterNot(repository::fileExists)
+                .map(HistoryEntry::id)
+                .toSet()
+        }
+        mutableState.value = mutableState.value.copy(entries = entries, missingEntryIds = missing)
     }
 
     fun selectFilter(filter: HistoryFilter) {
         mutableState.value = mutableState.value.copy(filter = filter)
     }
 
+    fun setQuery(query: String) {
+        mutableState.value = mutableState.value.copy(query = query)
+    }
+
+    fun selectSort(sort: HistorySort) {
+        mutableState.value = mutableState.value.copy(sort = sort)
+    }
+
     fun clear() = viewModelScope.launch {
         withContext(Dispatchers.IO) { repository.clear() }
-        mutableState.value = mutableState.value.copy(entries = emptyList())
+        mutableState.value = mutableState.value.copy(entries = emptyList(), missingEntryIds = emptySet())
     }
 
     fun delete(id: String) = viewModelScope.launch {
@@ -49,6 +68,9 @@ class HistoryViewModel(private val repository: HistoryRepository) : ViewModel() 
             repository.delete(id)
             repository.load()
         }
-        mutableState.value = mutableState.value.copy(entries = entries)
+        mutableState.value = mutableState.value.copy(
+            entries = entries,
+            missingEntryIds = mutableState.value.missingEntryIds - id
+        )
     }
 }

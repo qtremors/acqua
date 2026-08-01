@@ -54,4 +54,21 @@ object FilenameFormatter {
         while (updated.contains("__")) updated = updated.replace("__", "_")
         return updated.trim('_')
     }
+
+    fun preview(pattern: String): String = format(
+        pattern = pattern,
+        username = "creator",
+        width = 1080,
+        height = 1920,
+        index = 0,
+        fileExtension = "mp4",
+        title = "Sample video",
+        now = Date(1_704_067_200_000L)
+    )
+
+    fun withCollisionSuffix(fileName: String, sequence: Int): String {
+        if (sequence <= 0) return fileName
+        val extensionIndex = fileName.lastIndexOf('.').takeIf { it > 0 } ?: fileName.length
+        return "${fileName.substring(0, extensionIndex)} ($sequence)${fileName.substring(extensionIndex)}"
+    }
 }

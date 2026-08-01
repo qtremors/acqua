@@ -205,7 +205,7 @@ Use test accounts and content you control. Repeated automated requests can trigg
 
 Acqua writes downloads through Android's supported storage APIs into a configurable subfolder under Downloads. Filename settings are applied before the file is created. The Settings page exposes the supported placeholders, including `{title}` for processed media, as toggleable chips and can restore `acqua_{username}_{resolution}_{date}_{time}_{index}` as the default pattern.
 
-History stores local download records used by the Compose dashboard. Authentication state is separate from history and must not be mixed into user-visible records or exports.
+History stores searchable and sortable local download records used by the Compose dashboard. It checks whether completed files still exist and offers source re-fetch when a file has moved or been deleted. Authentication state is separate from history and must not be mixed into user-visible records or exports.
 
 If the schema changes, preserve existing entries or provide an explicit migration. Avoid destructive database recreation in production builds.
 

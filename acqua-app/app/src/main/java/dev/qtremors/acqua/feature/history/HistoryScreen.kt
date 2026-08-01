@@ -4,7 +4,6 @@ import android.graphics.BitmapFactory
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -31,10 +29,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -81,66 +79,64 @@ fun HistoryScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
+    val visibleEntries = state.filteredEntries
     val colors = MaterialTheme.colorScheme
-    val filters = listOf(
-        HistoryFilter.MEDIA to R.string.all_media,
-        HistoryFilter.PHOTOS to R.string.photos,
-        HistoryFilter.VIDEOS to R.string.videos,
-        HistoryFilter.AUDIO to R.string.audio,
-        HistoryFilter.LINKS to R.string.links
-    )
+    var confirmClear by remember { mutableStateOf(false) }
     LaunchedEffect(active) { if (active) viewModel.refresh() }
 
-    Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                stringResource(R.string.downloads_and_links),
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
-            )
-            if (state.entries.isNotEmpty()) {
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(stringResource(R.string.clear_history)) },
+            text = { Text(stringResource(R.string.clear_history_confirmation)) },
+            confirmButton = {
                 TextButton(onClick = {
+                    confirmClear = false
                     context.performHaptic(HapticSignal.WARNING)
                     viewModel.clear()
                     Toast.makeText(context, R.string.history_cleared, Toast.LENGTH_SHORT).show()
                 }) { Text(stringResource(R.string.clear_all), color = colors.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) }
             }
-        }
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = 16.dp).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            filters.forEach { (filter, label) ->
-                val selected = state.filter == filter
-                Surface(
-                    onClick = {
-                        context.performHaptic(HapticSignal.CLICK)
-                        viewModel.selectFilter(filter)
-                    },
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (selected) colors.primary else colors.surfaceContainerHigh,
-                    contentColor = if (selected) colors.onPrimary else colors.onSurfaceVariant,
-                    modifier = Modifier.height(40.dp)
-                ) {
-                    Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
-                        Text(stringResource(label), style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
-                    }
-                }
+        )
+    }
+
+    Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
+        HistoryHeader(
+            hasEntries = state.entries.isNotEmpty(),
+            onOpenDownloads = fileActions::openDownloads,
+            onClear = { confirmClear = true }
+        )
+        HistorySummaryCard(state.summary)
+        HistorySearchAndFilters(
+            query = state.query,
+            selectedFilter = state.filter,
+            selectedSort = state.sort,
+            summary = state.summary,
+            resultCount = visibleEntries.size,
+            onQueryChange = viewModel::setQuery,
+            onFilterChange = { filter ->
+                context.performHaptic(HapticSignal.CLICK)
+                viewModel.selectFilter(filter)
+            },
+            onSortChange = { sort ->
+                context.performHaptic(HapticSignal.CLICK)
+                viewModel.selectSort(sort)
             }
-        }
-        if (state.filteredEntries.isEmpty()) {
+        )
+        if (visibleEntries.isEmpty()) {
             Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.no_history), color = colors.onSurfaceVariant)
+                HistoryEmptyState(state.emptyReason)
             }
         } else {
             LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(state.filteredEntries, key = HistoryEntry::id) { entry ->
+                items(visibleEntries, key = HistoryEntry::id) { entry ->
                     HistoryRow(
                         entry,
                         mediaDownloader,
+                        missing = entry.id in state.missingEntryIds,
                         onOpen = { context.performHaptic(HapticSignal.CLICK); fileActions.open(entry.fileUri, entry.mimeType) },
                         onShare = { context.performHaptic(HapticSignal.CLICK); fileActions.share(entry.fileUri, entry.mimeType) },
                         onDelete = { context.performHaptic(HapticSignal.CLICK); viewModel.delete(entry.id) },
@@ -157,6 +153,7 @@ fun HistoryScreen(
 private fun HistoryRow(
     entry: HistoryEntry,
     mediaDownloader: MediaDownloader,
+    missing: Boolean,
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
@@ -184,49 +181,61 @@ private fun HistoryRow(
         Modifier.fillMaxWidth(), RoundedCornerShape(24.dp),
         CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
     ) {
-        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                    ?: Icon(
-                        when {
-                            !entry.isDownloaded -> Icons.Filled.Link
-                            entry.isVideo -> Icons.Filled.Movie
-                            entry.isAudio -> Icons.Filled.MusicNote
-                            else -> Icons.Filled.Image
-                        },
-                        null,
-                        tint = colors.primary.copy(alpha = 0.6f),
-                        modifier = Modifier.size(24.dp)
-                    )
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (entry.isDownloaded) entry.fileName else stringResource(R.string.media_link_title),
-                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                    maxLines = 1
-                )
-                Spacer(Modifier.height(4.dp))
-                val locale = LocalConfiguration.current.locales[0]
-                val date = remember(entry.timestamp, locale) { SimpleDateFormat("MMM dd, HH:mm", locale).format(Date(entry.timestamp)) }
-                Text(date, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                val detail = when {
-                    !entry.isDownloaded -> entry.url
-                    entry.sizeBytes > 0 -> String.format(locale, "%.2f MB", entry.sizeBytes / (1024.0 * 1024.0))
-                    else -> stringResource(R.string.unknown_size)
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                        ?: Icon(
+                            when {
+                                !entry.isDownloaded -> Icons.Filled.Link
+                                entry.isVideo -> Icons.Filled.Movie
+                                entry.isAudio -> Icons.Filled.MusicNote
+                                else -> Icons.Filled.Image
+                            },
+                            null,
+                            tint = colors.primary.copy(alpha = 0.6f),
+                            modifier = Modifier.size(24.dp)
+                        )
                 }
-                Text(detail, style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp), color = colors.onSurfaceVariant, maxLines = 1)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        if (entry.isDownloaded) entry.fileName else stringResource(R.string.media_link_title),
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        maxLines = 2
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    val locale = LocalConfiguration.current.locales[0]
+                    val date = remember(entry.timestamp, locale) {
+                        SimpleDateFormat("MMM dd, HH:mm", locale).format(Date(entry.timestamp))
+                    }
+                    Text(date, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                    val detail = when {
+                        missing -> stringResource(R.string.file_missing)
+                        !entry.isDownloaded -> entry.url
+                        entry.sizeBytes > 0 -> String.format(locale, "%.2f MB", entry.sizeBytes / (1024.0 * 1024.0))
+                        else -> stringResource(R.string.unknown_size)
+                    }
+                    Text(
+                        detail,
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                        color = if (missing) colors.error else colors.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                }
             }
-            if (entry.isDownloaded) {
-                IconButton(onOpen) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.open_file), tint = colors.primary) }
-                IconButton(onShare) { Icon(Icons.Filled.Share, stringResource(R.string.share_file), tint = colors.primary) }
-            } else {
-                IconButton(onRefetch) { Icon(Icons.Filled.Refresh, stringResource(R.string.refetch_link), tint = colors.primary) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (entry.isDownloaded && !missing) {
+                    IconButton(onOpen) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.open_file), tint = colors.primary) }
+                    IconButton(onShare) { Icon(Icons.Filled.Share, stringResource(R.string.share_file), tint = colors.primary) }
+                } else {
+                    IconButton(onRefetch) { Icon(Icons.Filled.Refresh, stringResource(R.string.refetch_link), tint = colors.primary) }
+                }
+                IconButton(onDelete) { Icon(Icons.Filled.Delete, stringResource(R.string.delete_record), tint = colors.error) }
             }
-            IconButton(onDelete) { Icon(Icons.Filled.Delete, stringResource(R.string.delete_record), tint = colors.error) }
         }
     }
 }

@@ -31,7 +31,7 @@ Acqua is a media downloader that previews and saves supported media from links.
 - Opt-in browser session extraction, with matching saved cookies attached only to their media host.
 - Media validation that rejects partial, audio-only, or mislabeled responses.
 - Image dimensions, video metadata, thumbnails, and download sizes when available.
-- Download history, a configurable Downloads subfolder, filename-variable chips with an Acqua-default reset, and Android share-sheet support.
+- Searchable and sortable download history with missing-file recovery, a configurable Downloads subfolder, filename previews, and Android sharing.
 - Material 3 interface with adaptive light and dark themes.
 - No ads, analytics, or telemetry.
 
@@ -59,7 +59,7 @@ On Windows, use `gradlew.bat`. APKs are split by CPU architecture so each downlo
 
 | ABI | Typical device | Release APK |
 | :--- | :--- | :--- |
-| `arm64-v8a` | Most modern phones and tablets | `Acqua-<version>-arm64-v8a.apk` |
+| `arm64-v8a` | Most modern phones | `Acqua-<version>-arm64-v8a.apk` |
 | `armeabi-v7a` | Older 32-bit ARM devices | `Acqua-<version>-armeabi-v7a.apk` |
 | `x86_64` | 64-bit x86 emulators/devices | `Acqua-<version>-x86_64.apk` |
 | `x86` | Older 32-bit x86 emulators/devices | `Acqua-<version>-x86.apk` |

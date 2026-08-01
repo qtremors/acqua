@@ -2,6 +2,23 @@
 
 All notable user-visible changes are documented here.
 
+## [0.0.9] - 2026-08-01
+
+### Added
+
+- Search download history by filename, source link, or media type, see category and storage summaries, and sort by newest, oldest, or largest.
+- Detect missing downloaded files, re-fetch their source, open the system Downloads view, and preview filename patterns in Settings.
+
+### Changed
+
+- Move history actions below each record so filenames and large text have more room on phones.
+- Confirm before clearing history and explain that downloaded files remain on the device.
+
+### Fixed
+
+- Preserve existing files on Android 7 through 9 by adding a numeric suffix when a filename already exists.
+- Record the final collision-safe filename in history.
+
 ## [0.0.8] - 2026-08-01
 
 ### Added
