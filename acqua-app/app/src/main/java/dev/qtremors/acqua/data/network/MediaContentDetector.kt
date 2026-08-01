@@ -41,8 +41,16 @@ internal object MediaContentDetector {
     }
 
     private fun hasMp4FileHeader(bytes: ByteArray): Boolean {
-        if (bytes.size < 12 || bytes.asciiAt(4, 4) != "ftyp") return false
-        return bytes.asciiAt(8, 4) !in setOf("avif", "avis", "heic", "heix", "hevc", "mif1")
+        if (bytes.size < 24 || bytes.asciiAt(4, 4) != "ftyp") return false
+        val ftypSize = bytes.unsignedIntAt(0)
+        if (ftypSize !in 16..bytes.size.toLong()) return false
+        if (bytes.asciiAt(8, 4) in setOf("avif", "avis", "heic", "heix", "hevc", "mif1")) return false
+        val nextOffset = ftypSize.toInt()
+        if (nextOffset + 8 > bytes.size) return false
+        val nextSize = bytes.unsignedIntAt(nextOffset)
+        val nextType = bytes.asciiAt(nextOffset + 4, 4)
+        return nextType.all { it.code in 0x20..0x7E } &&
+            (nextSize == 0L || nextSize >= 8L)
     }
 
     private fun detectImageFormat(bytes: ByteArray): DetectedMediaFormat? {
@@ -64,4 +72,10 @@ internal object MediaContentDetector {
 
     private fun ByteArray.asciiAt(offset: Int, length: Int): String =
         String(this, offset, length, Charsets.US_ASCII)
+
+    private fun ByteArray.unsignedIntAt(offset: Int): Long =
+        ((this[offset].toLong() and 0xFF) shl 24) or
+            ((this[offset + 1].toLong() and 0xFF) shl 16) or
+            ((this[offset + 2].toLong() and 0xFF) shl 8) or
+            (this[offset + 3].toLong() and 0xFF)
 }

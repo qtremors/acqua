@@ -40,7 +40,8 @@ class MediaDownloader(
     fun downloadToStream(
         item: ResolvedMedia,
         output: OutputStream,
-        requestCookies: String? = item.requestCookies
+        requestCookies: String? = item.requestCookies,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
     ): Long {
         if (hasEmbeddedByteRange(item.url)) {
             error("A partial browser media segment cannot be saved as a complete file.")
@@ -67,7 +68,16 @@ class MediaDownloader(
             }
 
             output.write(prefix)
-            val bytesWritten = prefix.size.toLong() + stream.copyTo(output)
+            var bytesWritten = prefix.size.toLong()
+            onProgress(bytesWritten, expectedLength)
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val read = stream.read(buffer)
+                if (read <= 0) break
+                output.write(buffer, 0, read)
+                bytesWritten += read
+                onProgress(bytesWritten, expectedLength)
+            }
             if (expectedLength >= 0L && bytesWritten != expectedLength) {
                 error("The media download ended before the complete file was received.")
             }

@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
@@ -67,8 +68,10 @@ import dev.qtremors.acqua.data.network.MediaDownloader
 import dev.qtremors.acqua.domain.DownloadEngine
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.MediaBackend
+import dev.qtremors.acqua.domain.MediaResolutionFailure
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
+import dev.qtremors.acqua.downloader.DownloadQueueState
 import dev.qtremors.acqua.downloader.YtDlpFormatSelector.qualityDimension
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
@@ -126,6 +129,72 @@ fun DownloaderScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(32.dp))
+        if (state.activeDownloadCount > 0 && !state.isSaving) {
+            Card(
+                Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                RoundedCornerShape(20.dp),
+                CardDefaults.cardColors(containerColor = colors.secondaryContainer)
+            ) {
+                Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                    Text(
+                        pluralStringResource(
+                            R.plurals.active_downloads,
+                            state.activeDownloadCount,
+                            state.activeDownloadCount
+                        ),
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+                    )
+                    LinearProgressIndicator(
+                        progress = { (state.downloadProgress / 100f).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                    )
+                    Text(
+                        stringResource(R.string.downloads_continue_in_background),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSecondaryContainer,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    state.downloadQueue.activeItems.take(4).forEachIndexed { index, item ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(R.string.queued_download_number, index + 1),
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                                Text(
+                                    stringResource(
+                                        when (item.state) {
+                                            DownloadQueueState.QUEUED -> R.string.download_queued
+                                            DownloadQueueState.RETRYING -> R.string.download_retrying
+                                            else -> R.string.download_running
+                                        }
+                                    ),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = colors.onSecondaryContainer
+                                )
+                            }
+                            if (item.progress > 0f) {
+                                Text(
+                                    "${item.progress.coerceIn(0f, 100f).toInt()}%",
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                            }
+                            IconButton(onClick = { viewModel.cancelDownload(item.id) }) {
+                                Icon(Icons.Filled.Close, stringResource(R.string.cancel_download))
+                            }
+                        }
+                    }
+                    TextButton(onClick = viewModel::cancelActiveDownload, modifier = Modifier.align(Alignment.End)) {
+                        Text(stringResource(R.string.cancel_download))
+                    }
+                }
+            }
+        }
         if (showLinkEditor) {
             Card(
                 Modifier.fillMaxWidth(), RoundedCornerShape(24.dp),
@@ -180,13 +249,12 @@ fun DownloaderScreen(
                 mediaDownloader = mediaDownloader,
                 useBrowserSessions = useBrowserSessions,
                 onDownloadAll = {
-                    val needsNotification = state.media?.any { it.backend == MediaBackend.YT_DLP } == true
-                    requestDownloadAccess(needsNotification) {
+                    requestDownloadAccess(true) {
                         viewModel.downloadAll(useBrowserSessions, resolveInBrowser)
                     }
                 },
                 onDownloadOne = { item, index, width, height ->
-                    requestDownloadAccess(false) { viewModel.downloadOne(item, index, width, height) }
+                    requestDownloadAccess(true) { viewModel.downloadOne(item, index, width, height) }
                 },
                 onEngineChange = viewModel::setDownloadEngine,
                 onContentTypeChange = viewModel::setDownloadContentType,
@@ -270,6 +338,8 @@ private fun ValidLinkContent(
                 stringResource(
                     if (state.downloadEngine == DownloadEngine.YT_DLP) {
                         R.string.ytdlp_engine_explanation
+                    } else if (state.downloadEngine == DownloadEngine.AUTO) {
+                        R.string.auto_engine_explanation
                     } else {
                         R.string.acqua_engine_explanation
                     }
@@ -278,7 +348,16 @@ private fun ValidLinkContent(
                 color = colors.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 10.dp)
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = state.downloadEngine == DownloadEngine.AUTO,
+                    onClick = { onEngineChange(DownloadEngine.AUTO) },
+                    label = { Text(stringResource(R.string.auto_engine)) },
+                    enabled = !state.isSaving && state.savingItemIndex == null
+                )
                 FilterChip(
                     selected = state.downloadEngine == DownloadEngine.ACQUA,
                     onClick = { onEngineChange(DownloadEngine.ACQUA) },
@@ -309,7 +388,7 @@ private fun ValidLinkContent(
             onEmbedThumbnailChange = onEmbedThumbnailChange
         )
     }
-    if (ytDlpMedia != null && state.isSaving) {
+    if (state.isSaving) {
         Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
             LinearProgressIndicator(
                 progress = { (state.downloadProgress / 100f).coerceIn(0f, 1f) },
@@ -416,7 +495,20 @@ private fun ValidLinkContent(
         ) {
             Column(Modifier.padding(16.dp)) {
                 Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                    Text(stringResource(R.string.could_not_resolve_media), fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(
+                            when (state.resolutionFailure) {
+                                MediaResolutionFailure.INVALID_LINK -> R.string.invalid_link
+                                MediaResolutionFailure.SESSION_REQUIRED,
+                                MediaResolutionFailure.SESSION_EXPIRED -> R.string.browser_session_needed
+                                MediaResolutionFailure.NETWORK -> R.string.network_error
+                                MediaResolutionFailure.ENGINE_REQUIRED,
+                                MediaResolutionFailure.RUNTIME_UNAVAILABLE -> R.string.download_engine_error
+                                else -> R.string.could_not_resolve_media
+                            }
+                        ),
+                        fontWeight = FontWeight.Bold
+                    )
                     Row {
                         IconButton({ onCopyError(error) }) { Icon(Icons.Filled.ContentCopy, stringResource(R.string.copy_error)) }
                         TextButton(onDismissError) { Text(stringResource(R.string.dismiss)) }

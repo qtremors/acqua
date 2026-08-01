@@ -21,11 +21,20 @@
     <string name="download_media">Download media</string>
     <string name="download_audio">Download audio</string>
     <string name="download_engine">Download engine</string>
+    <string name="auto_engine">Auto</string>
+    <string name="auto_engine_explanation">Choose the best available Acqua or yt-dlp path for this link.</string>
+    <string name="browser_session_needed">Browser session needed</string>
+    <string name="network_error">Network error</string>
+    <string name="download_engine_error">Download engine unavailable</string>
     <string name="acqua_engine">Acqua</string>
     <string name="ytdlp_engine">yt-dlp</string>
     <string name="acqua_engine_explanation">Use Acqua to fetch the post’s direct media files, including carousel items.</string>
     <string name="ytdlp_engine_explanation">Use yt-dlp with video, audio, quality, metadata, and artwork options.</string>
     <string name="cancel_download">Cancel download</string>
+    <string name="queued_download_number">Download %1$d</string>
+    <string name="download_queued">Waiting for its turn</string>
+    <string name="download_running">Downloading</string>
+    <string name="download_retrying">Waiting to retry</string>
     <string name="download_channel_name">Media downloads</string>
     <string name="download_notification_title">Downloading with Acqua</string>
     <string name="download_notification_preparing">Preparing media…</string>
@@ -36,6 +45,11 @@
         <item quantity="one">About %1$d second remaining</item>
         <item quantity="other">About %1$d seconds remaining</item>
     </plurals>
+    <plurals name="active_downloads">
+        <item quantity="one">%1$d active download</item>
+        <item quantity="other">%1$d active downloads</item>
+    </plurals>
+    <string name="downloads_continue_in_background">Downloads continue if you leave Acqua.</string>
     <plurals name="files_found">
         <item quantity="one">%1$d file found</item>
         <item quantity="other">%1$d files found</item>

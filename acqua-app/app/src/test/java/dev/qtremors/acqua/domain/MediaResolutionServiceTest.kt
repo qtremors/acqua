@@ -3,7 +3,9 @@ package dev.qtremors.acqua.domain
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 
 class MediaResolutionServiceTest {
     @Test
@@ -160,7 +162,7 @@ class MediaResolutionServiceTest {
     fun `generic pages require browser extraction`() {
         val service = MediaResolutionService(MediaResolver { emptyList() }, inspectMedia = { it })
 
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(MediaResolutionException::class.java) {
             runBlocking { service.resolve("https://example.com/page", false) { _, _ -> emptyList() } }
         }
     }
@@ -232,5 +234,54 @@ class MediaResolutionServiceTest {
         }
 
         assertEquals(listOf(browserItem), result)
+    }
+
+    @Test
+    fun `automatic engine tries yt-dlp for a generic page`() = runBlocking {
+        val processed = ResolvedMedia(
+            "https://example.com/watch/123",
+            MediaKind.VIDEO,
+            backend = MediaBackend.YT_DLP
+        )
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { error("native resolver must not run") },
+            ytDlpResolver = MediaResolver { listOf(processed) },
+            inspectMedia = { error("processed media must not be inspected") }
+        )
+
+        val result = service.resolve(
+            "https://example.com/watch/123",
+            browserSessionsEnabled = false,
+            engine = DownloadEngine.AUTO
+        ) { _, _ -> error("browser must not run") }
+
+        assertEquals(listOf(processed), result)
+    }
+
+    @Test
+    fun `candidate inspection is deduplicated capped and bounded`() = runBlocking {
+        val active = AtomicInteger()
+        val maximumActive = AtomicInteger()
+        val inspected = AtomicInteger()
+        val candidates = (0 until 30).map {
+            ResolvedMedia("https://cdn.test/$it.jpg", MediaKind.IMAGE)
+        } + ResolvedMedia("https://cdn.test/0.jpg", MediaKind.IMAGE)
+        val service = MediaResolutionService(
+            sourceResolver = MediaResolver { candidates },
+            inspectMedia = { item ->
+                inspected.incrementAndGet()
+                val concurrent = active.incrementAndGet()
+                maximumActive.updateAndGet { previous -> maxOf(previous, concurrent) }
+                Thread.sleep(5)
+                active.decrementAndGet()
+                item
+            }
+        )
+
+        val result = service.resolve("https://instagram.com/p/bounded", false) { _, _ -> emptyList() }
+
+        assertEquals(24, inspected.get())
+        assertEquals(24, result.size)
+        assertTrue(maximumActive.get() <= 4)
     }
 }

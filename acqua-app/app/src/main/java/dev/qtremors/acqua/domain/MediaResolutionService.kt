@@ -20,7 +20,10 @@ class MediaResolutionService(
         browserResolver: suspend (url: String, explicitSessionAuthorization: Boolean) -> List<ResolvedMedia>
     ): List<ResolvedMedia> {
         val url = WebLink.normalize(input)
-            ?: throw IllegalArgumentException("Enter a valid HTTP or HTTPS link.")
+            ?: throw MediaResolutionException(
+                MediaResolutionFailure.INVALID_LINK,
+                "Enter a valid HTTP or HTTPS link."
+            )
 
         if (engine == DownloadEngine.YT_DLP ||
             (engine == DownloadEngine.AUTO && WebLink.isYouTubeUrl(url))
@@ -28,13 +31,27 @@ class MediaResolutionService(
             return resolveWithYtDlp(url, browserSessionsEnabled || forceBrowserResolution)
         }
         if (engine == DownloadEngine.ACQUA && WebLink.isYouTubeUrl(url)) {
-            error("YouTube links require the yt-dlp engine.")
+            throw MediaResolutionException(
+                MediaResolutionFailure.ENGINE_REQUIRED,
+                "YouTube links require the yt-dlp engine."
+            )
         }
         if (forceBrowserResolution) {
             return validateAndSelect(url, browserResolver(url, true))
         }
         if (!WebLink.isInstagramMediaUrl(url)) {
-            if (!browserSessionsEnabled) error("Enable browser session extraction to resolve this page.")
+            if (engine == DownloadEngine.AUTO) {
+                runCatching { resolveWithYtDlp(url, browserSessionsEnabled) }
+                    .getOrNull()
+                    ?.takeIf(List<ResolvedMedia>::isNotEmpty)
+                    ?.let { return it }
+            }
+            if (!browserSessionsEnabled) {
+                throw MediaResolutionException(
+                    MediaResolutionFailure.SESSION_REQUIRED,
+                    "Open this page in Acqua Browser or enable browser session extraction."
+                )
+            }
             return validateAndSelect(url, browserResolver(url, false))
         }
 
@@ -99,7 +116,10 @@ class MediaResolutionService(
         url: String,
         allowBrowserSession: Boolean
     ): List<ResolvedMedia> {
-        val resolver = ytDlpResolver ?: error("The yt-dlp runtime is unavailable.")
+        val resolver = ytDlpResolver ?: throw MediaResolutionException(
+            MediaResolutionFailure.RUNTIME_UNAVAILABLE,
+            "The yt-dlp runtime is unavailable."
+        )
         return withContext(Dispatchers.IO) {
             if (resolver is SessionAwareMediaResolver) {
                 resolver.resolve(url, allowBrowserSession)
@@ -113,13 +133,20 @@ class MediaResolutionService(
         sourceUrl: String,
         candidates: List<ResolvedMedia>
     ): List<ResolvedMedia> {
-        val validated = coroutineScope {
-            candidates.map { item -> async(Dispatchers.IO) {
-                if (item.backend == MediaBackend.YT_DLP) item else inspectMedia(item)
-            } }
-                .awaitAll().filterNotNull()
+        val uniqueCandidates = candidates.distinctBy(ResolvedMedia::url).take(MAX_CANDIDATES)
+        val validated = uniqueCandidates.chunked(MAX_CONCURRENT_INSPECTIONS).flatMap { batch ->
+            coroutineScope {
+                batch.map { item -> async(Dispatchers.IO) {
+                    if (item.backend == MediaBackend.YT_DLP) item else inspectMedia(item)
+                } }.awaitAll().filterNotNull()
+            }
         }
-        if (validated.isEmpty()) error("The resolved links did not contain complete downloadable media files.")
+        if (validated.isEmpty()) {
+            throw MediaResolutionException(
+                MediaResolutionFailure.UNSUPPORTED_MEDIA,
+                "The resolved links did not contain complete downloadable media files."
+            )
+        }
         return selectBest(sourceUrl, validated)
     }
 
@@ -135,5 +162,7 @@ class MediaResolutionService(
 
     private companion object {
         const val INSTAGRAM_HIGH_QUALITY_EDGE = 1080
+        const val MAX_CANDIDATES = 24
+        const val MAX_CONCURRENT_INSPECTIONS = 4
     }
 }

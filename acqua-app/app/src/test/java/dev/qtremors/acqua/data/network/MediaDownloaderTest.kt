@@ -6,6 +6,7 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 
@@ -53,6 +54,31 @@ class MediaDownloaderTest {
             assertThrows(IllegalStateException::class.java) {
                 MediaDownloader().fetchBytes(item)
             }
+        }
+    }
+
+    @Test
+    fun `direct download reports final byte progress`() {
+        MockWebServer().use { server ->
+            val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()) + ByteArray(100)
+            server.enqueue(
+                MockResponse()
+                    .setHeader("Content-Type", "image/jpeg")
+                    .setBody(okio.Buffer().write(jpeg))
+            )
+            var downloaded = 0L
+            var total = 0L
+
+            MediaDownloader().downloadToStream(
+                ResolvedMedia(server.url("photo.jpg").toString(), MediaKind.IMAGE),
+                ByteArrayOutputStream()
+            ) { bytesWritten, totalBytes ->
+                downloaded = bytesWritten
+                total = totalBytes
+            }
+
+            assertEquals(jpeg.size.toLong(), downloaded)
+            assertEquals(jpeg.size.toLong(), total)
         }
     }
 }

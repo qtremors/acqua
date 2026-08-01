@@ -8,15 +8,29 @@ class MediaContentDetectorTest {
     @Test
     fun `complete mp4 is detected as video`() {
         val prefix = byteArrayOf(
-            0, 0, 0, 24,
+            0, 0, 0, 16,
             'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(),
-            'i'.code.toByte(), 's'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte()
+            'i'.code.toByte(), 's'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte(),
+            0, 0, 0, 0,
+            0, 0, 0, 8,
+            'm'.code.toByte(), 'd'.code.toByte(), 'a'.code.toByte(), 't'.code.toByte()
         )
 
         assertEquals(
             DetectedMediaFormat.MP4,
             MediaContentDetector.detect("video/mp4", prefix, expectedVideo = true)
         )
+    }
+
+    @Test
+    fun `truncated ftyp box is rejected`() {
+        val prefix = byteArrayOf(
+            0, 0, 0, 32,
+            'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(),
+            'i'.code.toByte(), 's'.code.toByte(), 'o'.code.toByte(), 'm'.code.toByte()
+        )
+
+        assertNull(MediaContentDetector.detect("video/mp4", prefix, expectedVideo = true))
     }
 
     @Test

@@ -2,7 +2,6 @@
 
 | Metadata | Value |
 | :--- | :--- |
-| Current version | 0.0.7 |
 | Minimum Android version | Android 7.0 (API 24) |
 | Target/compile SDK | 37 |
 
@@ -48,15 +47,15 @@ Acqua uses separate identities for local development and production:
 
 | Variant | Label | Application ID | Version name |
 | :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `0.0.7-debug` |
-| Release | Acqua | `dev.qtremors.acqua` | `0.0.7` |
+| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `<version>-debug` |
+| Release | Acqua | `dev.qtremors.acqua` | `<version>` |
 
-Both use version code `7`. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
+Both use the version code derived from the release version by removing its dots. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
 
 APK output names are generated from the variant version and ABI:
 
-- `Acqua-0.0.7-debug-arm64-v8a.apk`
-- `Acqua-0.0.7-arm64-v8a.apk`
+- `Acqua-<version>-debug-arm64-v8a.apk`
+- `Acqua-<version>-arm64-v8a.apk`
 
 Equivalent `armeabi-v7a`, `x86`, and `x86_64` outputs are produced. There is no universal APK; this avoids packaging four complete native processing runtimes into every download. Release builds enable R8 minification and resource shrinking.
 
@@ -109,7 +108,7 @@ BrowserActivity (kept alive)
 | `feature/*/*Screen.kt` | Downloader, browser, history, and settings UI. |
 | `resolver/*` | Source adapters, network extraction fallbacks, and authenticated requests. |
 | `downloader/*Engine.kt` | Processed-media inspection and download requests, cookies, progress, cancellation, and temporary-file cleanup. |
-| `downloader/*DownloadWorker.kt` | Persisted foreground download, notification, media processing, storage import, and rescheduling. |
+| `downloader/*DownloadWorker.kt` | Persisted foreground direct and processed downloads, notifications, retry, and storage import. |
 | `downloader/*DownloadCoordinator.kt` | Enqueues, observes, and cancels foreground download work. |
 | `downloader/*Runtime.kt` | Serialized runtime initialization, execution, updates, and cancellation. |
 | `MediaDownloader.kt` | Source-neutral media validation, preview fetching, and complete-file streaming. |
@@ -141,7 +140,7 @@ Resolution is layered because known sources and generic websites expose media di
 5. Observe document markup, media elements, metadata, performance entries, and network requests.
 6. Strip byte-range fragments and other partial-response parameters from candidates.
 7. Carry the page referrer and relevant domain cookies into validation and download requests.
-8. Validate direct-file candidates before presenting or downloading them.
+8. Deduplicate and cap candidates, validating at most four direct files concurrently.
 9. Report a clean unsupported-media error when no complete file is exposed.
 
 The resolver must never assume that a URL ending in `.jpg` or `.mp4` contains that format. Services frequently return HTML error pages, partial byte ranges, or audio streams under misleading URLs.
@@ -179,13 +178,13 @@ Backup rules exclude both the encrypted session payload and WebView data from cl
 `MediaContentDetector` examines response bytes and metadata before a file is accepted:
 
 - JPEG, PNG, GIF, and WebP are identified by their signatures.
-- MP4 requires a valid `ftyp` box and a complete enough response for safe storage.
+- MP4 requires a structurally complete `ftyp` box followed by another valid ISO media box.
 - HTML, JSON error payloads, audio-only streams, and unsupported formats are rejected.
 - Partial `206` responses and truncated videos are not treated as finished downloads.
 
 Downloads use the same resolved media item shown in preview. This keeps preview dimensions, file size, thumbnail, extension, and saved content aligned.
 
-Processed downloads run as persisted foreground work in an app-cache task directory. The processing engine merges separate streams or converts extracted audio, then `MediaStorage` imports the completed file into Downloads and deletes the temporary task. A notification and the downloader UI expose progress and cancellation. Quality selectors account for video orientation; metadata, chapters, and cover artwork are optional. Runtime updates and downloads share a read/write lock so an update cannot replace the executable during an active job.
+All downloads run as persistent foreground work. Direct carousel items use a controlled queue, while processed downloads use an app-cache task directory. The processing engine merges separate streams or converts extracted audio, then `MediaStorage` imports the completed file into Downloads and deletes the temporary task. Notifications and the downloader UI expose progress and cancellation, and transient network failures use bounded retry. Quality selectors account for video orientation; metadata, chapters, and cover artwork are optional. Runtime updates and downloads share a read/write lock so an update cannot replace the executable during an active job.
 
 When changing extraction logic, test at least:
 

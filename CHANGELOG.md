@@ -2,6 +2,28 @@
 
 All notable user-visible changes are documented here.
 
+## [0.0.8] - 2026-08-01
+
+### Added
+
+- Add automatic engine selection with manual Acqua and yt-dlp overrides.
+- Identify invalid links, session requirements, network failures, unavailable engines, and unsupported media separately.
+- Keep direct, carousel, video, and audio downloads running as persistent foreground work.
+- Show active background download count, aggregate progress, and cancellation after returning to Acqua.
+
+### Changed
+
+- Deduplicate and cap rendered media candidates while limiting validation to four concurrent requests.
+- Require a structurally complete MP4 file-type box and a following media box before accepting video data.
+- Queue direct carousel items in order and retry temporary network interruptions with bounded backoff.
+- Request notification access for every background download rather than processed media only.
+
+### Fixed
+
+- Avoid excessive validation traffic on pages that expose repeated or noisy media candidates.
+- Offer browser recovery only for failures that can reasonably benefit from a browser session.
+- Preserve direct download progress and completion when the downloader screen or app process closes.
+
 ## [0.0.7] - 2026-08-01
 
 ### Added
@@ -22,7 +44,6 @@ All notable user-visible changes are documented here.
 - Preserve available source dates in downloaded media and honor the disabled metadata option for audio downloads.
 - Limit oversized media previews to prevent excessive memory use.
 - Remove abandoned processing files and temporary session cookies after interrupted downloads.
-- Remove em dashes from website and documentation copy.
 
 ## [0.0.6] - 2026-07-19
 

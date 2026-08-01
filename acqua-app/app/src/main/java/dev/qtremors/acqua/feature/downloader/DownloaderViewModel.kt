@@ -9,14 +9,17 @@ import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.domain.MediaBackend
 import dev.qtremors.acqua.domain.DownloadEngine
 import dev.qtremors.acqua.domain.MediaResolutionService
+import dev.qtremors.acqua.domain.MediaResolutionException
+import dev.qtremors.acqua.domain.MediaResolutionFailure
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.platform.storage.MediaStorage
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
+import dev.qtremors.acqua.downloader.DownloadQueueSnapshot
 import dev.qtremors.acqua.downloader.YtDlpDownloadOptions
 import dev.qtremors.acqua.downloader.YtDlpDownloadCoordinator
-import dev.qtremors.acqua.downloader.YtDlpDownloadWorker
+import dev.qtremors.acqua.downloader.DownloadWorkData
 import dev.qtremors.acqua.downloader.YtDlpEngine
 import dev.qtremors.acqua.downloader.YtDlpFormatSelector
 import dev.qtremors.acqua.resolver.instagram.AgeGateException
@@ -30,10 +33,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.io.IOException
 
 enum class LinkValidity { EMPTY, VALID, INVALID }
 
@@ -56,7 +61,10 @@ data class DownloaderUiState(
     val embedThumbnail: Boolean = true,
     val downloadProgress: Float = 0f,
     val downloadEtaSeconds: Long = 0L,
-    val downloadEngine: DownloadEngine = DownloadEngine.ACQUA
+    val downloadEngine: DownloadEngine = DownloadEngine.ACQUA,
+    val activeDownloadCount: Int = 0,
+    val downloadQueue: DownloadQueueSnapshot = DownloadQueueSnapshot(),
+    val resolutionFailure: MediaResolutionFailure? = null
 )
 
 private data class AutomaticRequest(
@@ -89,7 +97,27 @@ class DownloaderViewModel(
     private var downloadJob: Job? = null
     private var itemDownloadJob: Job? = null
     private var lastAutomaticRequest: AutomaticRequest? = null
-    private var activeYtDlpWorkId: UUID? = null
+    private var activeWorkIds: List<UUID> = emptyList()
+
+    init {
+        viewModelScope.launch {
+            ytDlpDownloads.observeQueue().collectLatest { queue ->
+                val active = queue.activeItems
+                if (active.isNotEmpty()) activeWorkIds = active.mapNotNull {
+                    runCatching { UUID.fromString(it.id) }.getOrNull()
+                }
+                mutableState.value = mutableState.value.copy(
+                    activeDownloadCount = queue.activeCount,
+                    downloadQueue = queue,
+                    downloadProgress = if (active.isNotEmpty()) {
+                        queue.aggregateProgress
+                    } else {
+                        mutableState.value.downloadProgress
+                    }
+                )
+            }
+        }
+    }
 
     fun setInitialUrl(url: String) {
         if (mutableState.value.url.isEmpty() && url.isNotBlank()) updateUrl(url)
@@ -100,7 +128,7 @@ class DownloaderViewModel(
         resolutionJob?.cancel()
         downloadJob?.cancel()
         itemDownloadJob?.cancel()
-        activeYtDlpWorkId = null
+        activeWorkIds = emptyList()
         lastAutomaticRequest = null
         mutableState.value = defaultState(
             url = value,
@@ -121,7 +149,7 @@ class DownloaderViewModel(
 
     fun setDownloadEngine(value: DownloadEngine) {
         val snapshot = mutableState.value
-        if (value == DownloadEngine.AUTO || value == snapshot.downloadEngine ||
+        if (value == snapshot.downloadEngine ||
             snapshot.isSaving || snapshot.savingItemIndex != null
         ) return
         ytDlpEngine.cancelAll()
@@ -134,6 +162,7 @@ class DownloaderViewModel(
             media = null,
             saved = false,
             showBrowserAction = false,
+            resolutionFailure = null,
             downloadProgress = 0f,
             downloadEtaSeconds = 0L
         )
@@ -156,8 +185,8 @@ class DownloaderViewModel(
     }
 
     fun cancelActiveDownload() {
-        activeYtDlpWorkId?.let(ytDlpDownloads::cancel)
-        activeYtDlpWorkId = null
+        activeWorkIds.forEach(ytDlpDownloads::cancel)
+        activeWorkIds = emptyList()
         mutableState.value = mutableState.value.copy(
             isSaving = false,
             downloadProgress = 0f,
@@ -165,8 +194,16 @@ class DownloaderViewModel(
         )
     }
 
+    fun cancelDownload(id: String) {
+        runCatching { UUID.fromString(id) }.getOrNull()?.let(ytDlpDownloads::cancel)
+    }
+
     fun dismissError() {
-        mutableState.value = mutableState.value.copy(error = null, showBrowserAction = false)
+        mutableState.value = mutableState.value.copy(
+            error = null,
+            showBrowserAction = false,
+            resolutionFailure = null
+        )
     }
 
     fun resolve(
@@ -199,6 +236,7 @@ class DownloaderViewModel(
                 isResolving = true,
                 media = null,
                 error = null,
+                resolutionFailure = null,
                 saved = false,
                 showBrowserAction = false
             )
@@ -234,7 +272,11 @@ class DownloaderViewModel(
         downloadJob?.cancel()
         downloadJob = viewModelScope.launch {
             val url = WebLink.normalize(mutableState.value.url) ?: return@launch
-            mutableState.value = mutableState.value.copy(error = null, showBrowserAction = false)
+            mutableState.value = mutableState.value.copy(
+                error = null,
+                showBrowserAction = false,
+                resolutionFailure = null
+            )
             val items = mutableState.value.media ?: try {
                 mutableState.value = mutableState.value.copy(isResolving = true)
                 recordLink(url)
@@ -258,38 +300,12 @@ class DownloaderViewModel(
             }
 
             mutableState.value = mutableState.value.copy(isSaving = true, savingIndex = 0)
-            if (items.size == 1 && items.single().backend == MediaBackend.YT_DLP) {
-                observeYtDlpDownload(enqueueYtDlpDownload(items.single(), url))
-                return@launch
+            val workIds = if (items.size == 1 && items.single().backend == MediaBackend.YT_DLP) {
+                listOf(enqueueYtDlpDownload(items.single(), url))
+            } else {
+                items.mapIndexed { index, item -> ytDlpDownloads.enqueueDirect(item, index, url) }
             }
-            val result = try {
-                withContext(Dispatchers.IO) {
-                    items.forEachIndexed { index, item ->
-                        mutableState.value = mutableState.value.copy(savingIndex = index + 1)
-                        storage.save(item, index, url)
-                    }
-                }
-                Result.success(Unit)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                Result.failure(error)
-            }
-            if (result.isFailure) {
-                mutableState.value = mutableState.value.copy(
-                    isSaving = false,
-                    downloadProgress = 0f,
-                    error = result.exceptionOrNull()?.message ?: "Failed to write media"
-                )
-                return@launch
-            }
-            mutableState.value = mutableState.value.copy(
-                isSaving = false,
-                saved = true,
-                downloadProgress = 100f,
-                downloadEtaSeconds = 0L
-            )
-            mutableEvents.send(DownloaderEvent.DownloadComplete)
+            observeDownloads(workIds)
         }
     }
 
@@ -299,29 +315,9 @@ class DownloaderViewModel(
         itemDownloadJob = viewModelScope.launch {
             mutableState.value = mutableState.value.copy(savingItemIndex = index, savedItemIndex = null)
             val sourceUrl = WebLink.normalize(mutableState.value.url).orEmpty()
-            val result = try {
-                withContext(Dispatchers.IO) {
-                    val mediaWithDimensions = if (item.isVideo) item else item.copy(width = width, height = height)
-                    storage.save(mediaWithDimensions, index, sourceUrl)
-                }
-                Result.success(Unit)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                Result.failure(error)
-            }
-            result.onSuccess {
-                mutableState.value = mutableState.value.copy(savingItemIndex = null, savedItemIndex = index)
-                mutableEvents.send(DownloaderEvent.ItemSaved)
-                delay(2000)
-                mutableState.value = mutableState.value.copy(savedItemIndex = null)
-            }
-                .onFailure {
-                    mutableState.value = mutableState.value.copy(savingItemIndex = null)
-                    mutableEvents.send(
-                        DownloaderEvent.ItemSaveFailed(it.message ?: "Failed to save")
-                    )
-                }
+            val mediaWithDimensions = if (item.isVideo) item else item.copy(width = width, height = height)
+            val workId = ytDlpDownloads.enqueueDirect(mediaWithDimensions, index, sourceUrl)
+            observeDownloads(listOf(workId), itemIndex = index)
         }
     }
 
@@ -342,11 +338,21 @@ class DownloaderViewModel(
     }
 
     private fun showResolutionError(error: Exception) {
+        val failure = when (error) {
+            is MediaResolutionException -> error.failure
+            is ExpiredSessionException -> MediaResolutionFailure.SESSION_EXPIRED
+            is AgeGateException -> MediaResolutionFailure.SESSION_REQUIRED
+            is IOException -> MediaResolutionFailure.NETWORK
+            is IllegalArgumentException -> MediaResolutionFailure.INVALID_LINK
+            else -> MediaResolutionFailure.UNKNOWN
+        }
         mutableState.value = mutableState.value.copy(
             isResolving = false,
             error = error.message ?: "An unexpected error occurred",
-            showBrowserAction = error is AgeGateException || error is ExpiredSessionException ||
-                error !is IllegalArgumentException
+            resolutionFailure = failure,
+            showBrowserAction = failure == MediaResolutionFailure.SESSION_REQUIRED ||
+                failure == MediaResolutionFailure.SESSION_EXPIRED ||
+                failure == MediaResolutionFailure.UNSUPPORTED_MEDIA
         )
     }
 
@@ -367,25 +373,64 @@ class DownloaderViewModel(
                 ?: media
         }
         return ytDlpDownloads.enqueue(media, outputMedia, options, sourceUrl).also {
-            activeYtDlpWorkId = it
+            activeWorkIds = listOf(it)
         }
     }
 
-    private suspend fun observeYtDlpDownload(workId: UUID) {
-        val final = ytDlpDownloads.observe(workId)
-            .onEach { info ->
-                if (!info.state.isFinished) {
+    private suspend fun observeDownloads(workIds: List<UUID>, itemIndex: Int? = null) {
+        activeWorkIds = workIds
+        val final = ytDlpDownloads.observe(workIds)
+            .onEach { jobs ->
+                val unfinished = jobs.filterNot { it.state.isFinished }
+                if (unfinished.isNotEmpty()) {
+                    val progress = jobs.map {
+                        if (it.state == WorkInfo.State.SUCCEEDED) 100f
+                        else it.progress.getFloat(DownloadWorkData.KEY_PROGRESS, 0f)
+                    }.average().toFloat()
                     mutableState.value = mutableState.value.copy(
-                        isSaving = true,
-                        downloadProgress = info.progress.getFloat(YtDlpDownloadWorker.KEY_PROGRESS, 0f),
-                        downloadEtaSeconds = info.progress.getLong(YtDlpDownloadWorker.KEY_ETA_SECONDS, 0L)
+                        isSaving = itemIndex == null,
+                        savingItemIndex = itemIndex,
+                        savingIndex = jobs.count { it.state == WorkInfo.State.SUCCEEDED },
+                        downloadProgress = progress,
+                        downloadEtaSeconds = unfinished.maxOfOrNull {
+                            it.progress.getLong(DownloadWorkData.KEY_ETA_SECONDS, 0L)
+                        } ?: 0L
                     )
                 }
             }
-            .first { it.state.isFinished }
-        if (activeYtDlpWorkId == workId) activeYtDlpWorkId = null
-        when (final.state) {
-            WorkInfo.State.SUCCEEDED -> {
+            .first { jobs -> jobs.all { it.state.isFinished } }
+        if (activeWorkIds == workIds) activeWorkIds = emptyList()
+        val failure = final.firstOrNull { it.state == WorkInfo.State.FAILED }
+        when {
+            failure != null -> {
+                val message = failure.outputData.getString(DownloadWorkData.KEY_ERROR)
+                    ?: "The background download failed."
+                mutableState.value = mutableState.value.copy(
+                    isSaving = false,
+                    savingItemIndex = null,
+                    downloadProgress = 0f,
+                    downloadEtaSeconds = 0L,
+                    error = if (itemIndex == null) message else null
+                )
+                if (itemIndex != null) mutableEvents.send(DownloaderEvent.ItemSaveFailed(message))
+            }
+            final.any { it.state == WorkInfo.State.CANCELLED } -> mutableState.value = mutableState.value.copy(
+                isSaving = false,
+                savingItemIndex = null,
+                downloadProgress = 0f,
+                downloadEtaSeconds = 0L
+            )
+            itemIndex != null -> {
+                mutableState.value = mutableState.value.copy(
+                    savingItemIndex = null,
+                    savedItemIndex = itemIndex,
+                    downloadProgress = 100f
+                )
+                mutableEvents.send(DownloaderEvent.ItemSaved)
+                delay(2000)
+                mutableState.value = mutableState.value.copy(savedItemIndex = null)
+            }
+            else -> {
                 mutableState.value = mutableState.value.copy(
                     isSaving = false,
                     saved = true,
@@ -394,19 +439,6 @@ class DownloaderViewModel(
                 )
                 mutableEvents.send(DownloaderEvent.DownloadComplete)
             }
-            WorkInfo.State.FAILED -> mutableState.value = mutableState.value.copy(
-                isSaving = false,
-                downloadProgress = 0f,
-                downloadEtaSeconds = 0L,
-                error = final.outputData.getString(YtDlpDownloadWorker.KEY_ERROR)
-                    ?: "The background download failed."
-            )
-            WorkInfo.State.CANCELLED -> mutableState.value = mutableState.value.copy(
-                isSaving = false,
-                downloadProgress = 0f,
-                downloadEtaSeconds = 0L
-            )
-            else -> Unit
         }
     }
 
@@ -423,7 +455,7 @@ class DownloaderViewModel(
                 else -> LinkValidity.INVALID
             },
             downloadContentType = contentType,
-            downloadEngine = if (WebLink.isYouTubeUrl(url)) DownloadEngine.YT_DLP else DownloadEngine.ACQUA,
+            downloadEngine = DownloadEngine.AUTO,
             maximumVideoHeight = preferences.maximumVideoHeight,
             audioFormat = preferences.audioFormat,
             embedMetadata = preferences.embedMetadata,

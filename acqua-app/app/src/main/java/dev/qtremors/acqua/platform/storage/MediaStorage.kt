@@ -26,7 +26,12 @@ class MediaStorage(
 ) {
     private val appContext = context.applicationContext
 
-    fun save(item: ResolvedMedia, index: Int, sourceUrl: String): Uri {
+    fun save(
+        item: ResolvedMedia,
+        index: Int,
+        sourceUrl: String,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): Uri {
         val settings = settingsRepository.downloadSettings()
         val baseFolder = settingsRepository.sanitizedBaseFolder(settings.baseFolder)
         val category = if (item.isVideo) "Videos" else "Images"
@@ -50,9 +55,19 @@ class MediaStorage(
         }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            saveWithMediaStore(item, sourceUrl, relativePath, fileName, mimeType, requestCookies)
+            saveWithMediaStore(item, sourceUrl, relativePath, fileName, mimeType, requestCookies, onProgress)
         } else {
-            saveLegacy(item, sourceUrl, baseFolder, category, fileName, mimeType, requestCookies, settings.categorizeMedia)
+            saveLegacy(
+                item,
+                sourceUrl,
+                baseFolder,
+                category,
+                fileName,
+                mimeType,
+                requestCookies,
+                settings.categorizeMedia,
+                onProgress
+            )
         }
     }
 
@@ -138,7 +153,8 @@ class MediaStorage(
         relativePath: String,
         fileName: String,
         mimeType: String,
-        requestCookies: String?
+        requestCookies: String?,
+        onProgress: (Long, Long) -> Unit
     ): Uri {
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, fileName)
@@ -153,7 +169,7 @@ class MediaStorage(
 
         return try {
             val bytesDownloaded = resolver.openOutputStream(uri)?.use { output ->
-                mediaDownloader.downloadToStream(item, output, requestCookies)
+                mediaDownloader.downloadToStream(item, output, requestCookies, onProgress)
             } ?: error("Could not open the destination media file.")
 
             values.clear()
@@ -177,7 +193,8 @@ class MediaStorage(
         fileName: String,
         mimeType: String,
         requestCookies: String?,
-        categorizeMedia: Boolean
+        categorizeMedia: Boolean,
+        onProgress: (Long, Long) -> Unit
     ): Uri {
         val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         val targetDirectory = File(downloads, if (categorizeMedia) "$baseFolder/$category" else baseFolder)
@@ -188,7 +205,7 @@ class MediaStorage(
 
         return try {
             val bytesDownloaded = file.outputStream().use { output ->
-                mediaDownloader.downloadToStream(item, output, requestCookies)
+                mediaDownloader.downloadToStream(item, output, requestCookies, onProgress)
             }
             item.sourceTimestampMillis?.let(file::setLastModified)
             val uri = FileProvider.getUriForFile(
