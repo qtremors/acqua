@@ -115,8 +115,10 @@ class DownloaderViewModel(
                     totalBytes = queue.aggregateTotalBytes,
                     downloadProgress = if (active.isNotEmpty()) {
                         queue.aggregateProgress
-                    } else {
+                    } else if (mutableState.value.isSaving || mutableState.value.savingItemIndex != null) {
                         mutableState.value.downloadProgress
+                    } else {
+                        0f
                     }
                 )
             }
@@ -470,7 +472,7 @@ class DownloaderViewModel(
                 )
                 mutableEvents.send(DownloaderEvent.ItemSaved)
                 delay(2000)
-                mutableState.value = mutableState.value.copy(savedItemIndex = null)
+                mutableState.value = mutableState.value.copy(savedItemIndex = null, downloadProgress = 0f)
             }
             else -> {
                 mutableState.value = mutableState.value.copy(
@@ -482,6 +484,8 @@ class DownloaderViewModel(
                     totalBytes = 0L
                 )
                 mutableEvents.send(DownloaderEvent.DownloadComplete)
+                delay(3000)
+                mutableState.value = mutableState.value.copy(saved = false, downloadProgress = 0f)
             }
         }
     }

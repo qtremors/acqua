@@ -2,8 +2,15 @@ package dev.qtremors.acqua.feature
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -153,6 +160,20 @@ fun DashboardScreen(
             }
         }
     ) { padding ->
+        val layoutDirection = LocalLayoutDirection.current
+        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+        val downloaderPadding = remember(padding, imeBottom, layoutDirection) {
+            if (imeBottom > 0.dp) {
+                PaddingValues(
+                    top = padding.calculateTopPadding(),
+                    start = padding.calculateStartPadding(layoutDirection),
+                    end = padding.calculateEndPadding(layoutDirection),
+                    bottom = 0.dp
+                )
+            } else {
+                padding
+            }
+        }
         Box(Modifier.fillMaxSize()) {
             when (overlay) {
                 AboutDestination.ABOUT -> AboutScreen(
@@ -179,7 +200,7 @@ fun DashboardScreen(
                     resolveInBrowser,
                     requestDownloadAccess,
                     onOpenBrowser = { openBrowser(it, false, null) },
-                    modifier = Modifier.fillMaxSize().padding(padding)
+                    modifier = Modifier.fillMaxSize().padding(downloaderPadding)
                 )
                 1 -> BrowserScreen(
                     browserViewModel,

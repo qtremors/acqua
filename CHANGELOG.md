@@ -2,6 +2,27 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.2] - 2026-08-30
+
+### Added
+
+- Send completed download notifications with tap-to-open actions for saved media.
+
+### Changed
+
+- Modernize the Downloader layout with adaptive video and uncropped square photo previews.
+- Compact bottom controls into a full-width link field above a side-by-side engine chip and primary action button.
+- Label download buttons with specific item counts and media types (such as Download all (5), Download video, or Download image).
+- Move active download progress below the preview area and dock bottom controls flush above the keyboard.
+- Streamline the configuration sheet to focus on engine switching and yt-dlp media options.
+- Adopt official Material 3 Expressive components across the Downloader screen.
+
+### Fixed
+
+- Prevent completed downloads from lingering at 100% in the status bar and app interface.
+- Prevent broken video thumbnails in media pickers by restricting cover art embedding to audio files.
+- Prevent text clipping in active download progress cards.
+
 ## [0.1.1] - 2026-08-30
 
 ### Added

@@ -3,12 +3,15 @@ package dev.qtremors.acqua.feature.downloader
 import android.webkit.CookieManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -22,9 +25,11 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -75,7 +80,7 @@ fun MediaPreviewCard(
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val previewWidthPixels = with(density) { configuration.screenWidthDp.dp.roundToPx() }
-    val previewHeightPixels = with(density) { 560.dp.roundToPx() }
+    val previewHeightPixels = with(density) { 220.dp.roundToPx() }
     var failed by remember(previewUrl) { mutableStateOf(false) }
     val cookies = remember(
         previewUrl,
@@ -101,16 +106,29 @@ fun MediaPreviewCard(
         failed = previewUrl != null && loaded == null
         value = loaded
     }
-    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-        val aspectRatio = when {
-            bitmap != null && bitmap!!.height > 0 -> bitmap!!.width.toFloat() / bitmap!!.height
-            item.width > 0 && item.height > 0 -> item.width.toFloat() / item.height
-            else -> 0.75f
+    val isVideo = item.isVideo && !audioPreview
+    val naturalAspect = when {
+        isVideo -> {
+            when {
+                bitmap != null && bitmap!!.height > 0 -> (bitmap!!.width.toFloat() / bitmap!!.height.toFloat()).coerceIn(1.0f, 2.2f)
+                item.width > 0 && item.height > 0 -> (item.width.toFloat() / item.height.toFloat()).coerceIn(1.0f, 2.2f)
+                else -> 16f / 9f
+            }
         }
+        audioPreview -> 16f / 9f
+        else -> 1f
+    }
+
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            Modifier.fillMaxWidth().heightIn(max = 560.dp).aspectRatio(aspectRatio, matchHeightConstraintsFirst = false)
-                .clip(RoundedCornerShape(0.dp))
-                .background(Color.Black.copy(alpha = 0.1f)),
+            Modifier
+                .fillMaxWidth()
+                .then(
+                    if (isVideo) Modifier.heightIn(max = 200.dp).aspectRatio(naturalAspect, matchHeightConstraintsFirst = false)
+                    else Modifier.aspectRatio(1f)
+                )
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)),
             contentAlignment = Alignment.Center
         ) {
             when {
@@ -120,62 +138,34 @@ fun MediaPreviewCard(
                         if (audioPreview) R.string.audio else if (item.isVideo) R.string.video_preview else R.string.image_preview
                     ),
                     Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit
+                    contentScale = if (isVideo) ContentScale.Crop else ContentScale.Fit
                 )
                 previewUrl == null || failed -> Icon(
                     if (audioPreview) Icons.Filled.MusicNote else if (item.isVideo) Icons.Filled.Movie else Icons.Filled.Image,
                     null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(40.dp)
                 )
-                else -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.dp)
+                else -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.5.dp)
             }
-            if (item.isVideo && bitmap != null) {
-                Box(
-                    Modifier.size(42.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.4f)),
-                    contentAlignment = Alignment.Center
+            if (isVideo && bitmap != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.55f),
+                    modifier = Modifier.size(40.dp)
                 ) {
-                    Icon(
-                        if (audioPreview) Icons.Filled.MusicNote else Icons.Filled.PlayArrow,
-                        stringResource(if (audioPreview) R.string.audio else R.string.video),
-                        tint = Color.White
-                    )
-                }
-            }
-            Text(
-                stringResource(
-                    R.string.media_index_type,
-                    index + 1,
-                    stringResource(if (audioPreview) R.string.audio else if (item.isVideo) R.string.video else R.string.photo)
-                ),
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                    .padding(horizontal = 6.dp, vertical = 3.dp)
-            )
-            IconButton(
-                onClick = {
-                    onDownload(
-                        if (item.isVideo) item.width else bitmap?.width ?: item.width,
-                        if (item.isVideo) item.height else bitmap?.height ?: item.height
-                    )
-                },
-                enabled = downloadsEnabled && !isSaved,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).size(32.dp)
-                    .clip(CircleShape).background(
-                        if (isSaved) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
-                        else Color.Black.copy(alpha = 0.5f)
-                    )
-            ) {
-                when {
-                    isSaving -> CircularProgressIndicator(Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                    isSaved -> Icon(Icons.Filled.Check, stringResource(R.string.saved))
-                    else -> Icon(Icons.Filled.Download, stringResource(R.string.download_item), tint = Color.White)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            stringResource(R.string.video),
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
                 }
             }
         }
-        Spacer(Modifier.size(6.dp))
+        Spacer(Modifier.height(8.dp))
         val width = if (item.isVideo) item.width else bitmap?.width ?: item.width
         val height = if (item.isVideo) item.height else bitmap?.height ?: item.height
         val resolution = if (width > 0 && height > 0) "${width}x$height" else ""
@@ -188,17 +178,67 @@ fun MediaPreviewCard(
                 AudioOutputFormat.MP3 -> "MP3"
             })
         } else listOf(resolution, size).filter(String::isNotEmpty)
-        if (details.isNotEmpty()) {
-            Text(
-                details.joinToString("\n"),
-                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                maxLines = 2
-            )
+
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        if (audioPreview) Icons.Filled.MusicNote else if (item.isVideo) Icons.Filled.Movie else Icons.Filled.Image,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Text(
+                        stringResource(
+                            R.string.media_index_type,
+                            index + 1,
+                            stringResource(if (audioPreview) R.string.audio else if (item.isVideo) R.string.video else R.string.photo)
+                        ),
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                if (details.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        details.joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            FilledTonalIconButton(
+                onClick = {
+                    onDownload(
+                        if (item.isVideo) item.width else bitmap?.width ?: item.width,
+                        if (item.isVideo) item.height else bitmap?.height ?: item.height
+                    )
+                },
+                enabled = downloadsEnabled && !isSaved,
+                modifier = Modifier.size(36.dp),
+                shape = CircleShape,
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = if (isSaved) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
+                    contentColor = if (isSaved) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
+                when {
+                    isSaving -> CircularProgressIndicator(Modifier.size(16.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                    isSaved -> Icon(Icons.Filled.Check, stringResource(R.string.saved), Modifier.size(18.dp))
+                    else -> Icon(Icons.Filled.Download, stringResource(R.string.download_item), Modifier.size(18.dp))
+                }
+            }
         }
     }
 }
 
 internal fun ResolvedMedia.isAudioPreview(contentType: DownloadContentType): Boolean =
     backend == MediaBackend.YT_DLP && contentType == DownloadContentType.AUDIO
+
