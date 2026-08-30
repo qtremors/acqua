@@ -2,6 +2,7 @@ package dev.qtremors.acqua.ui.image
 
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.util.Size
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.net.toUri
@@ -28,8 +29,8 @@ class AudioAlbumArtFetcher(
         val targetSize = ThumbnailTargetSize.fromOptions(options)
 
         try {
-            contentUri?.let { uri ->
-                val bitmap = context.contentResolver.loadThumbnail(uri.toUri(), Size(targetSize, targetSize), null)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && contentUri != null) {
+                val bitmap = context.contentResolver.loadThumbnail(contentUri.toUri(), Size(targetSize, targetSize), null)
                 return@withContext DrawableResult(
                     drawable = bitmap.toDrawable(context.resources),
                     isSampled = true,

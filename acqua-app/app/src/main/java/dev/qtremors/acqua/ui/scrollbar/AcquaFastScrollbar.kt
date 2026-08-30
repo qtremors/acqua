@@ -293,8 +293,8 @@ fun AcquaFastScrollbar(
             pendingTarget.tryEmit(scrollbarState.indexForFraction(fraction))
         }
 
-        val dragModifier = Modifier
-            .pointerInput(totalItems) {
+        val dragModifier = if (isInteractive) {
+            Modifier.pointerInput(totalItems) {
                 detectDragGestures(
                     onDragStart = { offset ->
                         isDragging = true
@@ -322,8 +322,7 @@ fun AcquaFastScrollbar(
                     }
                 )
             }
-            .then(
-                if (isInteractive) {
+                .then(
                     Modifier.pointerInput(totalItems) {
                         detectTapGestures(
                             onPress = {
@@ -340,10 +339,10 @@ fun AcquaFastScrollbar(
                             }
                         )
                     }
-                } else {
-                    Modifier
-                }
-            )
+                )
+        } else {
+            Modifier
+        }
 
         Box(
             modifier = Modifier

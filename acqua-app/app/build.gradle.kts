@@ -34,6 +34,7 @@ abstract class GenerateLegalAssetsTask : DefaultTask() {
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
     id("acqua.android.application.conventions")
 }
 
@@ -45,8 +46,8 @@ android {
         applicationId = "dev.qtremors.acqua"
         minSdk = 24
         targetSdk = 37
-        versionCode = 14
-        versionName = "0.1.4"
+        versionCode = 15
+        versionName = "0.1.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -179,6 +180,7 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.material.kolor)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.kotlinx.serialization.json)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

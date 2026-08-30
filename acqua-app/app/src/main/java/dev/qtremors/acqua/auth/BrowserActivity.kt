@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
@@ -39,6 +40,7 @@ import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.data.session.InstagramSessionStore
 import dev.qtremors.acqua.data.session.SavedInstagramSession
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
+import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.feature.downloader.DownloadActivity
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
 import org.json.JSONArray
@@ -64,6 +66,9 @@ class BrowserActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (AppSettingsRepository(this).screenProtectionEnabled()) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
         isAddingLogin = intent.getBooleanExtra(EXTRA_ADD_LOGIN, false)
         loginName = intent.getStringExtra(EXTRA_LOGIN_NAME).orEmpty()
         val requested = intent.getStringExtra(EXTRA_INITIAL_URL)?.let(WebLink::normalize)

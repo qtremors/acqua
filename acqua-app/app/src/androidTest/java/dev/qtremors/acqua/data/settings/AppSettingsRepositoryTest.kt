@@ -20,6 +20,7 @@ class AppSettingsRepositoryTest {
         context.getSharedPreferences(AppSettingsRepository.PREFS_NAME, android.content.Context.MODE_PRIVATE)
             .edit().clear().commit()
         val repository = AppSettingsRepository(context)
+        assertFalse(repository.screenProtectionEnabled())
 
         repository.setFilenamePattern(FilenameFormatter.LEGACY_DEFAULT_PATTERN)
         assertEquals(FilenameFormatter.DEFAULT_PATTERN, repository.downloadSettings().filenamePattern)
@@ -44,6 +45,7 @@ class AppSettingsRepositoryTest {
         repository.setEmbedMetadata(false)
         repository.setEmbedThumbnail(false)
         repository.markYtDlpUpdated(123456789L)
+        repository.setScreenProtectionEnabled(true)
 
         val restoredRepository = AppSettingsRepository(context)
         val restored = restoredRepository.downloadSettings()
@@ -59,5 +61,6 @@ class AppSettingsRepositoryTest {
         assertFalse(restoredMedia.embedMetadata)
         assertFalse(restoredMedia.embedThumbnail)
         assertEquals(123456789L, restoredMedia.lastYtDlpUpdate)
+        assertTrue(restoredRepository.screenProtectionEnabled())
     }
 }

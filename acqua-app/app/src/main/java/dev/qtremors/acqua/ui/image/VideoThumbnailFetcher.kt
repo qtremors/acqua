@@ -1,6 +1,8 @@
 package dev.qtremors.acqua.ui.image
 
+import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import android.os.Build
 import android.util.Size
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.net.toUri
@@ -33,8 +35,8 @@ class VideoThumbnailFetcher(
             val targetSize = ThumbnailTargetSize.fromOptions(options)
 
             try {
-                contentUri?.let { uri ->
-                    val bitmap = context.contentResolver.loadThumbnail(uri.toUri(), Size(targetSize, targetSize), null)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && contentUri != null) {
+                    val bitmap = context.contentResolver.loadThumbnail(contentUri.toUri(), Size(targetSize, targetSize), null)
                     return@withContext DrawableResult(
                         drawable = bitmap.toDrawable(context.resources),
                         isSampled = true,
@@ -54,12 +56,30 @@ class VideoThumbnailFetcher(
                 } else {
                     retriever.setDataSource(file.absolutePath)
                 }
-                val bitmap = retriever.getScaledFrameAtTime(
-                    -1,
-                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
-                    targetSize,
-                    targetSize
-                ) ?: return@withContext null
+                val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    retriever.getScaledFrameAtTime(
+                        -1,
+                        MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                        targetSize,
+                        targetSize
+                    )
+                } else {
+                    retriever.frameAtTime?.let { frame ->
+                        val scale = minOf(
+                            targetSize.toFloat() / frame.width.coerceAtLeast(1),
+                            targetSize.toFloat() / frame.height.coerceAtLeast(1),
+                            1f
+                        )
+                        if (scale >= 1f) frame else Bitmap.createScaledBitmap(
+                            frame,
+                            (frame.width * scale).toInt().coerceAtLeast(1),
+                            (frame.height * scale).toInt().coerceAtLeast(1),
+                            true
+                        ).also { scaled ->
+                            if (scaled !== frame) frame.recycle()
+                        }
+                    }
+                } ?: return@withContext null
 
                 DrawableResult(
                     drawable = bitmap.toDrawable(context.resources),

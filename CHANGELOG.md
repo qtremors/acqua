@@ -2,6 +2,25 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.5] - 2026-08-30
+
+### Added
+
+- Add a minimal, expressive onboarding experience guiding new users through feature highlights, notification permissions, storage destination, and appearance setup.
+- Add an atomic backup and restore engine with SHA256 integrity verification, schema validation, and automatic reverse rollback on failure.
+- Add Backup and Restore management section in Settings with export and restore confirmation previews.
+- Add in-app self-updater for release builds fetching latest GitHub releases, architecture-matched APKs, real-time download progress, and direct installation.
+
+### Fixed
+
+- Include app, download, browser-session, and media-processing preferences in settings backups while preserving them when restoring older backups.
+- Add an opt-in screen-protection toggle for browser, resolver, downloader, and main app surfaces, disabled by default.
+- Load history image, video, and audio thumbnails through the bounded Coil pipeline on every supported Android version.
+- Select the correct updater APK on 32-bit x86 devices and keep denied notification permission state accurate during onboarding.
+- Validate downloaded updates before installation, reject incompatible APK assets, and continue installation after permission is granted.
+- Keep existing users out of first-run onboarding, refresh visible settings after restore, and clearly label values that a backup will restore, reset, or leave unchanged.
+- Prevent the hidden History scrollbar from intercepting edge gestures and apply saved appearance settings to browser-launched downloads.
+
 ## [0.1.4] - 2026-08-30
 
 ### Added

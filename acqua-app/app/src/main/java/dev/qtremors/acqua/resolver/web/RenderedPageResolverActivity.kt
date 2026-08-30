@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
@@ -30,6 +31,7 @@ import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.data.session.InstagramSessionStore
 import dev.qtremors.acqua.data.session.SavedInstagramSession
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
+import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
@@ -56,6 +58,9 @@ class RenderedPageResolverActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (AppSettingsRepository(this).screenProtectionEnabled()) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
 
         val targetUrl = intent.getStringExtra(EXTRA_URL)?.let(WebLink::normalize)
         if (targetUrl == null) {

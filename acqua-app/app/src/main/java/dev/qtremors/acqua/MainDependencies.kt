@@ -36,4 +36,7 @@ class MainDependencies(context: Context) {
     )
     val fileActions = FileActions(context)
     val themePreferences = dev.qtremors.acqua.ui.theme.ThemePreferences(context)
+    val onboardingPreferences = dev.qtremors.acqua.data.onboarding.OnboardingPreferences(context)
+    val backupManager = dev.qtremors.acqua.data.backup.PreferencesBackupManager(context)
+    val appUpdater = dev.qtremors.acqua.data.updater.AppUpdater(context)
 }

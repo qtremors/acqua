@@ -70,6 +70,8 @@ fun DashboardScreen(
     urlHandoff: String?,
     browserRevision: Int,
     downloadRequestRevision: Int,
+    backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager? = null,
+    appUpdater: dev.qtremors.acqua.data.updater.AppUpdater? = null,
     currentThemeState: dev.qtremors.acqua.ui.theme.ThemeState = dev.qtremors.acqua.ui.theme.ThemeState(),
     onThemeChange: (dev.qtremors.acqua.ui.theme.ThemeState) -> Unit = {},
     onUrlHandoffConsumed: () -> Unit,
@@ -179,6 +181,7 @@ fun DashboardScreen(
         Box(Modifier.fillMaxSize()) {
             when (overlay) {
                 AboutDestination.ABOUT -> AboutScreen(
+                    appUpdater = appUpdater,
                     onOpenNotices = { overlay = AboutDestination.NOTICES },
                     onOpenLicense = { overlay = AboutDestination.LICENSE },
                     modifier = Modifier.fillMaxSize().padding(padding)
@@ -212,7 +215,6 @@ fun DashboardScreen(
                 )
                 2 -> HistoryScreen(
                     historyViewModel,
-                    mediaDownloader,
                     fileActions,
                     active = true,
                     onRefetch = { downloaderViewModel.updateUrl(it); tab = 0 },
@@ -220,6 +222,7 @@ fun DashboardScreen(
                 )
                 else -> SettingsScreen(
                     settingsViewModel,
+                    backupManager = backupManager,
                     themeState = currentThemeState,
                     onThemeChange = onThemeChange,
                     onOpenAbout = { overlay = AboutDestination.ABOUT },

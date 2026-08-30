@@ -1,3 +1,13 @@
+# Acqua - Tasks
+
+> **Project:** Acqua
+>
+> **Version:** 0.1.5
+>
+> **Last Updated:** 2026-08-30
+
+---
+
 ### UI / UX Tasks
 
 - [ ] **COMPOSE-0001 - Restore User Workflow State** `[High]`

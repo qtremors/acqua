@@ -21,7 +21,7 @@ class AboutScreenTest {
     @Test
     fun aboutScreenRendersBrandAndBuildInformation() {
         composeRule.setContent {
-            AcquaTheme(dynamicColor = false) {
+            AcquaTheme {
                 AboutScreen(onOpenNotices = {})
             }
         }

@@ -45,6 +45,7 @@ import dev.qtremors.acqua.resolver.instagram.ExpiredSessionException
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
 import dev.qtremors.acqua.ui.theme.AcquaTheme
 import dev.qtremors.acqua.ui.theme.ThemeState
+import dev.qtremors.acqua.ui.security.SecureWindowEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -63,10 +64,13 @@ class MainActivity : ComponentActivity() {
         if (granted) action?.invoke()
     }
     private var pendingNotificationAction: (() -> Unit)? = null
+    private var pendingNotificationResult: ((Boolean) -> Unit)? = null
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             pendingNotificationAction?.invoke()
             pendingNotificationAction = null
+            pendingNotificationResult?.invoke(granted)
+            pendingNotificationResult = null
         }
 
     private val browserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -115,6 +119,7 @@ class MainActivity : ComponentActivity() {
                 traceStartupSection("Acqua.splashPreferencePreload") {
                     withTimeoutOrNull(2000L) {
                         dependencies.themePreferences.themeState.first()
+                        dependencies.onboardingPreferences.onboardingState.first()
                     }
                 }
             } finally {
@@ -130,6 +135,9 @@ class MainActivity : ComponentActivity() {
                 val themeState by dependencies.themePreferences.themeState.collectAsStateWithLifecycle(
                     initialValue = ThemeState()
                 )
+                val onboardingState by dependencies.onboardingPreferences.onboardingState.collectAsStateWithLifecycle(
+                    initialValue = dev.qtremors.acqua.data.onboarding.OnboardingState()
+                )
                 val coroutineScope = rememberCoroutineScope()
 
                 AcquaTheme(themeState = themeState) {
@@ -137,65 +145,125 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
-                        val downloader: DownloaderViewModel = viewModel(
+                        val onboardingViewModel: dev.qtremors.acqua.feature.onboarding.OnboardingViewModel = viewModel(
                             factory = remember {
                                 ViewModelFactory {
-                                    DownloaderViewModel(
-                                        dependencies.history,
-                                        dependencies.resolution,
-                                        dependencies.mediaStorage,
-                                        dependencies.settings,
-                                        dependencies.ytDlpEngine,
-                                        dependencies.ytDlpDownloads
+                                    dev.qtremors.acqua.feature.onboarding.OnboardingViewModel(
+                                        dependencies.onboardingPreferences,
+                                        dependencies.backupManager
                                     )
                                 }
                             }
                         )
-                        val browser: BrowserViewModel = viewModel(
-                            factory = remember {
-                                ViewModelFactory {
-                                    BrowserViewModel(
-                                        dependencies.settings,
-                                        dependencies.savedWebsites,
-                                        dependencies.browserData,
-                                        dependencies.instagramSessions,
-                                        dependencies.instagramResolver
-                                    )
+
+                        androidx.compose.runtime.LaunchedEffect(Unit) {
+                            val hasNotif = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                ContextCompat.checkSelfPermission(
+                                    this@MainActivity,
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) == PackageManager.PERMISSION_GRANTED
+                            } else true
+                            onboardingViewModel.updatePermissionState(
+                                hasStoragePermission = true,
+                                hasNotificationPermission = hasNotif,
+                                notificationPermissionRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                            )
+                        }
+
+                        if (!onboardingState.isCompleted) {
+                            val onboardingUiState by onboardingViewModel.state.collectAsStateWithLifecycle()
+                            dev.qtremors.acqua.feature.onboarding.ui.OnboardingScreen(
+                                state = onboardingUiState,
+                                currentThemeState = themeState,
+                                onThemeChange = { newState ->
+                                    coroutineScope.launch {
+                                        dependencies.themePreferences.saveThemeState(newState)
+                                    }
+                                },
+                                onNext = onboardingViewModel::next,
+                                onBack = onboardingViewModel::back,
+                                onStepSelected = onboardingViewModel::setStep,
+                                onRequestNotificationPermission = {
+                                    requestNotificationPermission { granted ->
+                                        onboardingViewModel.handleNotificationPermissionResult()
+                                        onboardingViewModel.updatePermissionState(
+                                            hasStoragePermission = true,
+                                            hasNotificationPermission = granted,
+                                            notificationPermissionRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                                        )
+                                    }
+                                },
+                                restoreState = onboardingUiState.restoreState,
+                                onChooseRestoreBackup = onboardingViewModel::previewBackup,
+                                onApplyRestoreBackup = onboardingViewModel::applyRestoreBackup,
+                                onDismissRestoreBackup = onboardingViewModel::dismissRestoreBackup,
+                                onRestartApp = ::restartApp
+                            )
+                        } else {
+                            val downloader: DownloaderViewModel = viewModel(
+                                factory = remember {
+                                    ViewModelFactory {
+                                        DownloaderViewModel(
+                                            dependencies.history,
+                                            dependencies.resolution,
+                                            dependencies.mediaStorage,
+                                            dependencies.settings,
+                                            dependencies.ytDlpEngine,
+                                            dependencies.ytDlpDownloads
+                                        )
+                                    }
                                 }
-                            }
-                        )
-                        val history: HistoryViewModel = viewModel(
-                            factory = remember { ViewModelFactory { HistoryViewModel(dependencies.history) } }
-                        )
-                        val settings: SettingsViewModel = viewModel(
-                            factory = remember {
-                                ViewModelFactory {
-                                    SettingsViewModel(dependencies.settings, dependencies.ytDlpMaintenance)
+                            )
+                            val browser: BrowserViewModel = viewModel(
+                                factory = remember {
+                                    ViewModelFactory {
+                                        BrowserViewModel(
+                                            dependencies.settings,
+                                            dependencies.savedWebsites,
+                                            dependencies.browserData,
+                                            dependencies.instagramSessions,
+                                            dependencies.instagramResolver
+                                        )
+                                    }
                                 }
-                            }
-                        )
-                        DashboardScreen(
-                            downloader,
-                            browser,
-                            history,
-                            settings,
-                            dependencies.mediaDownloader,
-                            dependencies.fileActions,
-                            initialUrl,
-                            browserResolutionCoordinator.urlHandoff,
-                            browserResolutionCoordinator.browserRevision,
-                            browserResolutionCoordinator.downloadRequestRevision,
-                            currentThemeState = themeState,
-                            onThemeChange = { newState ->
-                                coroutineScope.launch {
-                                    dependencies.themePreferences.saveThemeState(newState)
+                            )
+                            val history: HistoryViewModel = viewModel(
+                                factory = remember { ViewModelFactory { HistoryViewModel(dependencies.history) } }
+                            )
+                            val settings: SettingsViewModel = viewModel(
+                                factory = remember {
+                                    ViewModelFactory {
+                                        SettingsViewModel(dependencies.settings, dependencies.ytDlpMaintenance)
+                                    }
                                 }
-                            },
-                            onUrlHandoffConsumed = browserResolutionCoordinator::consumeUrlHandoff,
-                            resolveInBrowser = ::resolveInBrowser,
-                            requestDownloadAccess = ::runWithDownloadPermissions,
-                            openBrowser = ::openBrowser
-                        )
+                            )
+                            val settingsState by settings.state.collectAsStateWithLifecycle()
+                            SecureWindowEffect(enabled = settingsState.screenProtectionEnabled)
+                            DashboardScreen(
+                                downloader,
+                                browser,
+                                history,
+                                settings,
+                                dependencies.mediaDownloader,
+                                dependencies.fileActions,
+                                initialUrl,
+                                browserResolutionCoordinator.urlHandoff,
+                                browserResolutionCoordinator.browserRevision,
+                                browserResolutionCoordinator.downloadRequestRevision,
+                                backupManager = dependencies.backupManager,
+                                appUpdater = dependencies.appUpdater,
+                                currentThemeState = themeState,
+                                onThemeChange = { newState ->
+                                    coroutineScope.launch {
+                                        dependencies.themePreferences.saveThemeState(newState)
+                                    }
+                                },
+                                onUrlHandoffConsumed = browserResolutionCoordinator::consumeUrlHandoff,
+                                resolveInBrowser = ::resolveInBrowser,
+                                requestDownloadAccess = ::runWithDownloadPermissions,
+                                openBrowser = ::openBrowser
+                            )
+                        }
                     }
                 }
             }
@@ -288,6 +356,18 @@ class MainActivity : ComponentActivity() {
             pendingNotificationAction = action
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else action()
+    }
+
+    private fun requestNotificationPermission(onResult: (Boolean) -> Unit) {
+        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            onResult(true)
+        } else {
+            pendingNotificationResult = onResult
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 
     private fun restartApp() {

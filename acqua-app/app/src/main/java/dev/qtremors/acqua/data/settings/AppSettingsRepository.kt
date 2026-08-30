@@ -6,6 +6,10 @@ import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.domain.DownloadEngine
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 data class DownloadSettings(
     val baseFolder: String,
@@ -30,6 +34,21 @@ class AppSettingsRepository(context: Context) {
     fun setUseBrowserSessions(enabled: Boolean) {
         preferences.edit { putBoolean(KEY_USE_BROWSER_SESSIONS, enabled) }
     }
+
+    fun screenProtectionEnabled(): Boolean = preferences.getBoolean(KEY_SCREEN_PROTECTION, false)
+
+    fun setScreenProtectionEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_SCREEN_PROTECTION, enabled) }
+    }
+
+    fun screenProtectionEnabledFlow(): Flow<Boolean> = callbackFlow {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_SCREEN_PROTECTION) trySend(screenProtectionEnabled())
+        }
+        trySend(screenProtectionEnabled())
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
 
     fun downloadSettings(): DownloadSettings = DownloadSettings(
         baseFolder = preferences.getString(KEY_BASE_FOLDER, DEFAULT_BASE_FOLDER).orEmpty()
@@ -118,6 +137,7 @@ class AppSettingsRepository(context: Context) {
     companion object {
         const val PREFS_NAME = "acqua_prefs"
         const val KEY_USE_BROWSER_SESSIONS = "acqua_use_session_cookies"
+        const val KEY_SCREEN_PROTECTION = "acqua_screen_protection"
         private const val KEY_BASE_FOLDER = "acqua_base_folder"
         private const val KEY_CATEGORIZE_MEDIA = "acqua_categorize_media"
         private const val KEY_FILENAME_PATTERN = "acqua_filename_format"

@@ -132,7 +132,7 @@ class AcquaAndroidApplicationConventionsPlugin : Plugin<Project> {
                 appBuildFile.set(layout.projectDirectory.file("build.gradle.kts"))
             }
 
-            if (rootProject.tasks.findByName("checkProductionStrings") == null) {
+            val checkProductionStrings = if (rootProject.tasks.findByName("checkProductionStrings") == null) {
                 rootProject.tasks.register("checkProductionStrings", CheckProductionStringsTask::class.java) {
                     group = "verification"
                     description = "Flags obvious hardcoded production UI strings across production Android sources."
@@ -148,12 +148,19 @@ class AcquaAndroidApplicationConventionsPlugin : Plugin<Project> {
                         }
                     )
                 }
-            }
+            } else rootProject.tasks.named("checkProductionStrings")
 
-            tasks.register("verifyAcquaBuildConventions") {
+            val verifyAcquaBuildConventions = tasks.register("verifyAcquaBuildConventions") {
                 group = "verification"
                 description = "Runs Acqua build convention checks used for release readiness."
-                dependsOn(verifyVersionCatalogFreshness, verifyReleaseVersionMetadata)
+                dependsOn(
+                    verifyVersionCatalogFreshness,
+                    verifyReleaseVersionMetadata,
+                    checkProductionStrings
+                )
+            }
+            tasks.matching { it.name == "check" }.configureEach {
+                dependsOn(verifyAcquaBuildConventions)
             }
         }
     }

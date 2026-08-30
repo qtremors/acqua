@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.VideoSettings
 import androidx.compose.material3.CircularProgressIndicator
@@ -69,6 +70,7 @@ import java.util.Date
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
+    backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager? = null,
     themeState: ThemeState = ThemeState(),
     onThemeChange: (ThemeState) -> Unit = {},
     onOpenAbout: () -> Unit,
@@ -131,6 +133,16 @@ fun SettingsScreen(
                     onCheckedChange = { vibrations ->
                         onThemeChange(themeState.copy(vibrationsEnabled = vibrations))
                     }
+                )
+            }
+        }
+
+        // Section 0.5: Backup and Restore
+        if (backupManager != null) {
+            item {
+                BackupRestoreSection(
+                    backupManager = backupManager,
+                    onRestoreCompleted = viewModel::reload
                 )
             }
         }
@@ -355,7 +367,22 @@ fun SettingsScreen(
             }
         }
 
-        // Section 4: Browser Engine
+        // Section 4: Privacy and Security
+        item {
+            SettingsSection(title = stringResource(R.string.privacy_and_security)) {
+                SettingsSwitchRow(
+                    index = 0,
+                    count = 1,
+                    title = stringResource(R.string.screen_protection),
+                    description = stringResource(R.string.screen_protection_description),
+                    checked = state.screenProtectionEnabled,
+                    leadingIcon = Icons.Filled.Security,
+                    onCheckedChange = viewModel::setScreenProtectionEnabled
+                )
+            }
+        }
+
+        // Section 5: Browser Engine
         item {
             SettingsSection(title = stringResource(R.string.browser_engine)) {
                 SettingsCardContainer(index = 0, count = 1) {
@@ -401,7 +428,7 @@ fun SettingsScreen(
             }
         }
 
-        // Section 5: About
+        // Section 6: About
         item {
             SettingsSection(title = stringResource(R.string.about_section_title)) {
                 SettingsActionRow(
