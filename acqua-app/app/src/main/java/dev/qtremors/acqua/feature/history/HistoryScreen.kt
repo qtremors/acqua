@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -27,9 +28,9 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,6 +64,8 @@ import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.platform.FileActions
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
+import dev.qtremors.acqua.ui.scrollbar.AcquaFastScrollbar
+import dev.qtremors.acqua.ui.scrollbar.LazyListScrollbarState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -131,18 +134,33 @@ fun HistoryScreen(
                 HistoryEmptyState(state.emptyReason)
             }
         } else {
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(visibleEntries, key = HistoryEntry::id) { entry ->
-                    HistoryRow(
-                        entry,
-                        mediaDownloader,
-                        missing = entry.id in state.missingEntryIds,
-                        onOpen = { context.performHaptic(HapticSignal.CLICK); fileActions.open(entry.fileUri, entry.mimeType) },
-                        onShare = { context.performHaptic(HapticSignal.CLICK); fileActions.share(entry.fileUri, entry.mimeType) },
-                        onDelete = { context.performHaptic(HapticSignal.CLICK); viewModel.delete(entry.id) },
-                        onRefetch = { context.performHaptic(HapticSignal.CLICK); onRefetch(entry.url) }
-                    )
+            val listState = rememberLazyListState()
+            val scrollbarState = remember(listState) { LazyListScrollbarState(listState) }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(visibleEntries, key = HistoryEntry::id) { entry ->
+                        HistoryRow(
+                            entry,
+                            mediaDownloader,
+                            missing = entry.id in state.missingEntryIds,
+                            onOpen = { context.performHaptic(HapticSignal.CLICK); fileActions.open(entry.fileUri, entry.mimeType) },
+                            onShare = { context.performHaptic(HapticSignal.CLICK); fileActions.share(entry.fileUri, entry.mimeType) },
+                            onDelete = { context.performHaptic(HapticSignal.CLICK); viewModel.delete(entry.id) },
+                            onRefetch = { context.performHaptic(HapticSignal.CLICK); onRefetch(entry.url) }
+                        )
+                    }
                 }
+                AcquaFastScrollbar(
+                    scrollbarState = scrollbarState,
+                    labelForIndex = { index ->
+                        visibleEntries.getOrNull(index)?.fileName?.take(15) ?: ""
+                    },
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                )
             }
         }
         Spacer(Modifier.height(16.dp))

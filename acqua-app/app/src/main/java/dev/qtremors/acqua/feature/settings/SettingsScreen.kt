@@ -52,17 +52,25 @@ import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.YtDlpFailure
 import dev.qtremors.acqua.downloader.YtDlpUpdateStatus
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Vibration
 import dev.qtremors.acqua.platform.WebViewUpdateManager
 import dev.qtremors.acqua.ui.components.SettingsActionRow
 import dev.qtremors.acqua.ui.components.SettingsCardContainer
 import dev.qtremors.acqua.ui.components.SettingsSection
 import dev.qtremors.acqua.ui.components.SettingsSwitchRow
+import dev.qtremors.acqua.ui.settings.AccentColorSelector
+import dev.qtremors.acqua.ui.settings.ThemeModeSelector
+import dev.qtremors.acqua.ui.theme.ThemePreset
+import dev.qtremors.acqua.ui.theme.ThemeState
 import java.text.DateFormat
 import java.util.Date
 
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
+    themeState: ThemeState = ThemeState(),
+    onThemeChange: (ThemeState) -> Unit = {},
     onOpenAbout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -83,6 +91,48 @@ fun SettingsScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
             )
+        }
+
+        // Section 0: Appearance
+        item {
+            SettingsSection(title = stringResource(R.string.appearance)) {
+                SettingsCardContainer(index = 0, count = 3) {
+                    ThemeModeSelector(
+                        currentMode = themeState.themeMode,
+                        onModeSelected = { newMode ->
+                            onThemeChange(themeState.copy(themeMode = newMode))
+                        }
+                    )
+                    AccentColorSelector(
+                        currentAccent = themeState.accentColor,
+                        onAccentSelected = { newAccent ->
+                            onThemeChange(themeState.copy(accentColor = newAccent, themePreset = ThemePreset.NONE))
+                        }
+                    )
+                }
+                SettingsSwitchRow(
+                    index = 1,
+                    count = 3,
+                    title = stringResource(R.string.harmonize_colors),
+                    description = stringResource(R.string.harmonize_colors_description),
+                    checked = themeState.harmonizeColors,
+                    leadingIcon = Icons.Filled.Palette,
+                    onCheckedChange = { harmonize ->
+                        onThemeChange(themeState.copy(harmonizeColors = harmonize))
+                    }
+                )
+                SettingsSwitchRow(
+                    index = 2,
+                    count = 3,
+                    title = stringResource(R.string.vibrations),
+                    description = stringResource(R.string.vibrations_description),
+                    checked = themeState.vibrationsEnabled,
+                    leadingIcon = Icons.Filled.Vibration,
+                    onCheckedChange = { vibrations ->
+                        onThemeChange(themeState.copy(vibrationsEnabled = vibrations))
+                    }
+                )
+            }
         }
 
         // Section 1: Downloads and Storage

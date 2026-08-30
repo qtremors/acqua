@@ -70,6 +70,8 @@ fun DashboardScreen(
     urlHandoff: String?,
     browserRevision: Int,
     downloadRequestRevision: Int,
+    currentThemeState: dev.qtremors.acqua.ui.theme.ThemeState = dev.qtremors.acqua.ui.theme.ThemeState(),
+    onThemeChange: (dev.qtremors.acqua.ui.theme.ThemeState) -> Unit = {},
     onUrlHandoffConsumed: () -> Unit,
     resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
     requestDownloadAccess: (needsNotification: Boolean, action: () -> Unit) -> Unit,
@@ -218,6 +220,8 @@ fun DashboardScreen(
                 )
                 else -> SettingsScreen(
                     settingsViewModel,
+                    themeState = currentThemeState,
+                    onThemeChange = onThemeChange,
                     onOpenAbout = { overlay = AboutDestination.ABOUT },
                     modifier = Modifier.fillMaxSize().padding(padding)
                 )

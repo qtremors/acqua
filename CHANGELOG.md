@@ -2,6 +2,16 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.4] - 2026-08-30
+
+### Added
+
+- Introduce dynamic Material 3 tonal palette generation, OLED pure black theme, custom presets, and expressive color selectors in Settings.
+- Add AndroidX Core Splash Screen with smooth startup transition and preloaded preference state.
+- Add fast scrollbar with fluid motion stretch and index label tooltip for media lists.
+- Add background memory cache eviction and secure window protection lifecycle support.
+- Add high-performance video, audio artwork, GIF, and SVG thumbnail pipeline powered by Coil.
+
 ## [0.1.3] - 2026-08-30
 
 ### Changed

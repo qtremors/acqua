@@ -35,4 +35,5 @@ class MainDependencies(context: Context) {
         inspectMedia = mediaDownloader::validateAndResolveMetadata
     )
     val fileActions = FileActions(context)
+    val themePreferences = dev.qtremors.acqua.ui.theme.ThemePreferences(context)
 }

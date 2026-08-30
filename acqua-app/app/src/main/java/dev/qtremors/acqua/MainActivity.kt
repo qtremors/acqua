@@ -2,17 +2,33 @@ package dev.qtremors.acqua
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlarmManager
+import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
+import android.os.StrictMode
+import android.os.Trace
 import android.webkit.CookieManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.qtremors.acqua.auth.BrowserActivity
 import dev.qtremors.acqua.domain.ResolvedMedia
@@ -28,8 +44,13 @@ import dev.qtremors.acqua.feature.settings.SettingsViewModel
 import dev.qtremors.acqua.resolver.instagram.ExpiredSessionException
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
 import dev.qtremors.acqua.ui.theme.AcquaTheme
+import dev.qtremors.acqua.ui.theme.ThemeState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.system.exitProcess
 
 class MainActivity : ComponentActivity() {
     private val dependencies by lazy { MainDependencies(applicationContext) }
@@ -76,59 +97,107 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val initialUrl = incomingUrl(intent)
-        setContent {
-            AcquaTheme {
-                val downloader: DownloaderViewModel = viewModel(
-                    factory = remember { ViewModelFactory {
-                        DownloaderViewModel(
-                            dependencies.history,
-                            dependencies.resolution,
-                            dependencies.mediaStorage,
-                            dependencies.settings,
-                            dependencies.ytDlpEngine,
-                            dependencies.ytDlpDownloads
-                        )
-                    } }
-                )
-                val browser: BrowserViewModel = viewModel(
-                    factory = remember { ViewModelFactory {
-                        BrowserViewModel(
-                            dependencies.settings,
-                            dependencies.savedWebsites,
-                            dependencies.browserData,
-                            dependencies.instagramSessions,
-                            dependencies.instagramResolver
-                        )
-                    } }
-                )
-                val history: HistoryViewModel = viewModel(
-                    factory = remember { ViewModelFactory { HistoryViewModel(dependencies.history) } }
-                )
-                val settings: SettingsViewModel = viewModel(
-                    factory = remember {
-                        ViewModelFactory {
-                            SettingsViewModel(dependencies.settings, dependencies.ytDlpMaintenance)
-                        }
+        val appLaunchContext = (application as? AcquaApp)
+            ?.appSessionTracker
+            ?.onMainActivityCreated(hasSavedInstanceState = savedInstanceState != null)
+        installDebugStrictMode()
+        val splashScreen = traceStartupSection("Acqua.installSplashScreen") {
+            installSplashScreen()
+        }
+        traceStartupSection("Acqua.activityOnCreate") {
+            super.onCreate(savedInstanceState)
+        }
+
+        enableEdgeToEdge()
+        var keepSplashScreen = true
+        lifecycleScope.launch {
+            try {
+                traceStartupSection("Acqua.splashPreferencePreload") {
+                    withTimeoutOrNull(2000L) {
+                        dependencies.themePreferences.themeState.first()
                     }
+                }
+            } finally {
+                keepSplashScreen = false
+            }
+        }
+        splashScreen.setKeepOnScreenCondition { keepSplashScreen }
+
+        val initialUrl = incomingUrl(intent)
+
+        traceStartupSection("Acqua.setContent") {
+            setContent {
+                val themeState by dependencies.themePreferences.themeState.collectAsStateWithLifecycle(
+                    initialValue = ThemeState()
                 )
-                DashboardScreen(
-                    downloader,
-                    browser,
-                    history,
-                    settings,
-                    dependencies.mediaDownloader,
-                    dependencies.fileActions,
-                    initialUrl,
-                    browserResolutionCoordinator.urlHandoff,
-                    browserResolutionCoordinator.browserRevision,
-                    browserResolutionCoordinator.downloadRequestRevision,
-                    onUrlHandoffConsumed = browserResolutionCoordinator::consumeUrlHandoff,
-                    resolveInBrowser = ::resolveInBrowser,
-                    requestDownloadAccess = ::runWithDownloadPermissions,
-                    openBrowser = ::openBrowser
-                )
+                val coroutineScope = rememberCoroutineScope()
+
+                AcquaTheme(themeState = themeState) {
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
+                    ) {
+                        val downloader: DownloaderViewModel = viewModel(
+                            factory = remember {
+                                ViewModelFactory {
+                                    DownloaderViewModel(
+                                        dependencies.history,
+                                        dependencies.resolution,
+                                        dependencies.mediaStorage,
+                                        dependencies.settings,
+                                        dependencies.ytDlpEngine,
+                                        dependencies.ytDlpDownloads
+                                    )
+                                }
+                            }
+                        )
+                        val browser: BrowserViewModel = viewModel(
+                            factory = remember {
+                                ViewModelFactory {
+                                    BrowserViewModel(
+                                        dependencies.settings,
+                                        dependencies.savedWebsites,
+                                        dependencies.browserData,
+                                        dependencies.instagramSessions,
+                                        dependencies.instagramResolver
+                                    )
+                                }
+                            }
+                        )
+                        val history: HistoryViewModel = viewModel(
+                            factory = remember { ViewModelFactory { HistoryViewModel(dependencies.history) } }
+                        )
+                        val settings: SettingsViewModel = viewModel(
+                            factory = remember {
+                                ViewModelFactory {
+                                    SettingsViewModel(dependencies.settings, dependencies.ytDlpMaintenance)
+                                }
+                            }
+                        )
+                        DashboardScreen(
+                            downloader,
+                            browser,
+                            history,
+                            settings,
+                            dependencies.mediaDownloader,
+                            dependencies.fileActions,
+                            initialUrl,
+                            browserResolutionCoordinator.urlHandoff,
+                            browserResolutionCoordinator.browserRevision,
+                            browserResolutionCoordinator.downloadRequestRevision,
+                            currentThemeState = themeState,
+                            onThemeChange = { newState ->
+                                coroutineScope.launch {
+                                    dependencies.themePreferences.saveThemeState(newState)
+                                }
+                            },
+                            onUrlHandoffConsumed = browserResolutionCoordinator::consumeUrlHandoff,
+                            resolveInBrowser = ::resolveInBrowser,
+                            requestDownloadAccess = ::runWithDownloadPermissions,
+                            openBrowser = ::openBrowser
+                        )
+                    }
+                }
             }
         }
     }
@@ -219,5 +288,59 @@ class MainActivity : ComponentActivity() {
             pendingNotificationAction = action
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else action()
+    }
+
+    private fun restartApp() {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        }
+        if (launchIntent != null) {
+            val pendingIntent = PendingIntent.getActivity(
+                this,
+                0,
+                launchIntent,
+                PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.set(
+                AlarmManager.RTC,
+                System.currentTimeMillis() + 250L,
+                pendingIntent
+            )
+            finishAffinity()
+            Process.killProcess(Process.myPid())
+            exitProcess(0)
+        } else {
+            recreate()
+        }
+    }
+
+    private fun installDebugStrictMode() {
+        if (!BuildConfig.DEBUG) return
+
+        StrictMode.setThreadPolicy(
+            StrictMode.ThreadPolicy.Builder()
+                .detectDiskReads()
+                .detectDiskWrites()
+                .detectNetwork()
+                .penaltyLog()
+                .build()
+        )
+        StrictMode.setVmPolicy(
+            StrictMode.VmPolicy.Builder()
+                .detectLeakedClosableObjects()
+                .detectActivityLeaks()
+                .penaltyLog()
+                .build()
+        )
+    }
+
+    private inline fun <T> traceStartupSection(name: String, block: () -> T): T {
+        Trace.beginSection(name)
+        return try {
+            block()
+        } finally {
+            Trace.endSection()
+        }
     }
 }
