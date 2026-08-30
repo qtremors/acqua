@@ -1,5 +1,6 @@
 package dev.qtremors.acqua.feature.settings
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -15,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
@@ -32,8 +34,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -41,6 +45,10 @@ import dev.qtremors.acqua.R
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.YtDlpFailure
+import dev.qtremors.acqua.downloader.YtDlpUpdateStatus
+import dev.qtremors.acqua.platform.WebViewUpdateManager
+import java.text.DateFormat
+import java.util.Date
 
 @Composable
 fun SettingsScreen(
@@ -50,6 +58,8 @@ fun SettingsScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val colors = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    val webViewProvider = remember { WebViewUpdateManager.currentProvider(context) }
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)
     ) {
@@ -211,6 +221,17 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant
                 )
+                if (state.lastYtDlpUpdate > 0L) {
+                    val checkedAt = remember(state.lastYtDlpUpdate) {
+                        DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                            .format(Date(state.lastYtDlpUpdate))
+                    }
+                    Text(
+                        stringResource(R.string.ytdlp_last_checked, checkedAt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant
+                    )
+                }
                 OutlinedButton(
                     onClick = { viewModel.updateYtDlp() },
                     enabled = !state.isUpdatingYtDlp,
@@ -231,6 +252,62 @@ fun SettingsScreen(
                         YtDlpFailure.UNKNOWN -> R.string.ytdlp_error_unknown
                     }
                     Text(stringResource(message), color = colors.error, style = MaterialTheme.typography.bodySmall)
+                }
+                state.ytDlpUpdateStatus?.let { status ->
+                    Text(
+                        stringResource(
+                            when (status) {
+                                YtDlpUpdateStatus.UPDATED -> R.string.ytdlp_updated
+                                YtDlpUpdateStatus.ALREADY_CURRENT -> R.string.ytdlp_already_current
+                            }
+                        ),
+                        color = colors.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Text(
+            stringResource(R.string.browser_engine),
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = colors.primary),
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Text(
+                    webViewProvider?.label ?: stringResource(R.string.webview_provider_unknown),
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    stringResource(
+                        R.string.webview_version,
+                        webViewProvider?.versionName ?: stringResource(R.string.unknown)
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant
+                )
+                Text(
+                    stringResource(R.string.webview_update_explanation),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                OutlinedButton(
+                    onClick = {
+                        if (!WebViewUpdateManager.openUpdatePage(context, webViewProvider?.packageName)) {
+                            Toast.makeText(context, R.string.webview_update_unavailable, Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.check_webview_updates))
                 }
             }
         }

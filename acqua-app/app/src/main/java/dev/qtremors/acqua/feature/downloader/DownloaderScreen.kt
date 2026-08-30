@@ -5,9 +5,12 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.text.format.Formatter
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +25,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -42,7 +47,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -54,10 +58,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
@@ -66,6 +74,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.network.MediaDownloader
+import dev.qtremors.acqua.data.network.MediaPreviewCache
 import dev.qtremors.acqua.domain.DownloadEngine
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.MediaBackend
@@ -76,6 +85,9 @@ import dev.qtremors.acqua.downloader.DownloadQueueState
 import dev.qtremors.acqua.downloader.YtDlpFormatSelector.qualityDimension
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
 @Composable
 fun DownloaderScreen(
@@ -95,18 +107,8 @@ fun DownloaderScreen(
     val state by viewModel.state.collectAsState()
     val currentOnMediaSaved by rememberUpdatedState(onMediaSaved)
     val colors = MaterialTheme.colorScheme
+    val previewCache = remember(mediaDownloader) { MediaPreviewCache(context, mediaDownloader) }
 
-    LaunchedEffect(
-        state.url,
-        state.downloadEngine,
-        sessionsInitialized,
-        useBrowserSessions,
-        browserRequestRevision
-    ) {
-        if (sessionsInitialized) {
-            viewModel.resolve(useBrowserSessions, browserRequestRevision, resolveInBrowser)
-        }
-    }
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
@@ -126,90 +128,20 @@ fun DownloaderScreen(
     }
 
     Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Spacer(Modifier.height(32.dp))
-        if (state.activeDownloadCount > 0 && !state.isSaving) {
-            Card(
-                Modifier.fillMaxWidth().padding(bottom = 20.dp),
-                RoundedCornerShape(20.dp),
-                CardDefaults.cardColors(containerColor = colors.secondaryContainer)
-            ) {
-                Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                    Text(
-                        pluralStringResource(
-                            R.plurals.active_downloads,
-                            state.activeDownloadCount,
-                            state.activeDownloadCount
-                        ),
-                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                    )
-                    LinearProgressIndicator(
-                        progress = { (state.downloadProgress / 100f).coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-                    )
-                    Text(
-                        stringResource(R.string.downloads_continue_in_background),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSecondaryContainer,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    state.downloadQueue.activeItems.take(4).forEachIndexed { index, item ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    stringResource(R.string.queued_download_number, index + 1),
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                )
-                                Text(
-                                    stringResource(
-                                        when (item.state) {
-                                            DownloadQueueState.QUEUED -> R.string.download_queued
-                                            DownloadQueueState.RETRYING -> R.string.download_retrying
-                                            else -> R.string.download_running
-                                        }
-                                    ),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = colors.onSecondaryContainer
-                                )
-                                downloadProgressDetails(
-                                    item.downloadedBytes,
-                                    item.totalBytes,
-                                    item.etaSeconds
-                                ).takeIf(String::isNotEmpty)?.let { details ->
-                                    Text(
-                                        details,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = colors.onSecondaryContainer
-                                    )
-                                }
-                            }
-                            if (item.progress > 0f) {
-                                Text(
-                                    "${item.progress.coerceIn(0f, 100f).toInt()}%",
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                            }
-                            IconButton(onClick = { viewModel.cancelDownload(item.id) }) {
-                                Icon(Icons.Filled.Close, stringResource(R.string.cancel_download))
-                            }
-                        }
-                    }
-                    TextButton(onClick = viewModel::cancelActiveDownload, modifier = Modifier.align(Alignment.End)) {
-                        Text(stringResource(R.string.cancel_download))
-                    }
-                }
-            }
+        if (state.activeDownloadCount > 0) {
+            CompactDownloadStatus(
+                state = state,
+                onCancel = viewModel::cancelActiveDownload,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp)
+            )
         }
         if (showLinkEditor) {
             Card(
-                Modifier.fillMaxWidth(), RoundedCornerShape(24.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp), RoundedCornerShape(24.dp),
                 CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
             ) {
                 Column(Modifier.padding(24.dp)) {
@@ -248,18 +180,22 @@ fun DownloaderScreen(
             LinkValidity.EMPTY -> LinkMessageCard(
                 icon = { Icon(Icons.Filled.Download, stringResource(R.string.ready), Modifier.size(30.dp)) },
                 title = stringResource(R.string.ready_to_download),
-                message = stringResource(R.string.supported_link_guidance)
+                message = stringResource(R.string.supported_link_guidance),
+                modifier = Modifier.padding(horizontal = 20.dp)
             )
             LinkValidity.INVALID -> LinkMessageCard(
                 error = true,
                 icon = { Icon(Icons.Filled.Warning, stringResource(R.string.invalid), Modifier.size(30.dp)) },
                 title = stringResource(R.string.invalid_link),
-                message = stringResource(R.string.valid_link_guidance)
+                message = stringResource(R.string.valid_link_guidance),
+                modifier = Modifier.padding(horizontal = 20.dp)
             )
             LinkValidity.VALID -> ValidLinkContent(
                 state = state,
-                mediaDownloader = mediaDownloader,
+                previewCache = previewCache,
                 useBrowserSessions = useBrowserSessions,
+                canResolve = sessionsInitialized,
+                onResolve = { viewModel.resolve(useBrowserSessions, browserRequestRevision, resolveInBrowser) },
                 onDownloadAll = {
                     requestDownloadAccess(true) {
                         viewModel.downloadAll(useBrowserSessions, resolveInBrowser)
@@ -274,7 +210,6 @@ fun DownloaderScreen(
                 onAudioFormatChange = viewModel::setAudioFormat,
                 onEmbedMetadataChange = viewModel::setEmbedMetadata,
                 onEmbedThumbnailChange = viewModel::setEmbedThumbnail,
-                onCancelDownload = viewModel::cancelActiveDownload,
                 onDismissError = viewModel::dismissError,
                 onCopyError = { error ->
                     (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
@@ -292,11 +227,12 @@ private fun LinkMessageCard(
     error: Boolean = false,
     icon: @Composable () -> Unit,
     title: String,
-    message: String
+    message: String,
+    modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
     Card(
-        Modifier.fillMaxWidth(), RoundedCornerShape(24.dp),
+        modifier.fillMaxWidth(), RoundedCornerShape(24.dp),
         CardDefaults.cardColors(containerColor = colors.surfaceContainerLow)
     ) {
         Column(
@@ -320,8 +256,10 @@ private fun LinkMessageCard(
 @Composable
 private fun ValidLinkContent(
     state: DownloaderUiState,
-    mediaDownloader: MediaDownloader,
+    previewCache: MediaPreviewCache,
     useBrowserSessions: Boolean,
+    canResolve: Boolean,
+    onResolve: () -> Unit,
     onDownloadAll: () -> Unit,
     onDownloadOne: (ResolvedMedia, Int, Int, Int) -> Unit,
     onEngineChange: (DownloadEngine) -> Unit,
@@ -330,14 +268,13 @@ private fun ValidLinkContent(
     onAudioFormatChange: (AudioOutputFormat) -> Unit,
     onEmbedMetadataChange: (Boolean) -> Unit,
     onEmbedThumbnailChange: (Boolean) -> Unit,
-    onCancelDownload: () -> Unit,
     onDismissError: () -> Unit,
     onCopyError: (String) -> Unit,
     onOpenBrowser: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     Card(
-        Modifier.fillMaxWidth().padding(top = 12.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
         RoundedCornerShape(24.dp),
         CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
     ) {
@@ -377,11 +314,8 @@ private fun ValidLinkContent(
             }
         }
     }
-    AnimatedVisibility(state.isResolving, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxWidth()) {
-        LinearProgressIndicator(Modifier.fillMaxWidth().height(8.dp))
-    }
     val ytDlpMedia = state.media?.singleOrNull()?.takeIf { it.backend == MediaBackend.YT_DLP }
-    if (ytDlpMedia != null) {
+    if (state.downloadEngine == DownloadEngine.YT_DLP) {
         YtDlpDownloadControls(
             state = state,
             media = ytDlpMedia,
@@ -392,42 +326,42 @@ private fun ValidLinkContent(
             onEmbedThumbnailChange = onEmbedThumbnailChange
         )
     }
-    if (state.isSaving) {
-        Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-            LinearProgressIndicator(
-                progress = { (state.downloadProgress / 100f).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(8.dp)
-            )
-            val details = downloadProgressDetails(
-                state.downloadedBytes,
-                state.totalBytes,
-                state.downloadEtaSeconds
-            )
-            if (details.isNotEmpty()) {
+    if (state.media == null) {
+        Card(
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp),
+            RoundedCornerShape(24.dp),
+            CardDefaults.cardColors(containerColor = colors.primaryContainer)
+        ) {
+            Column(Modifier.padding(20.dp)) {
                 Text(
-                    details,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp)
+                    stringResource(R.string.fetch_preview_explanation),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.onPrimaryContainer
                 )
-            }
-            TextButton(
-                onClick = onCancelDownload,
-                modifier = Modifier.align(Alignment.End)
-            ) {
-                Text(stringResource(R.string.cancel_download))
+                Button(
+                    onClick = onResolve,
+                    enabled = canResolve && !state.isResolving,
+                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(52.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    if (state.isResolving) {
+                        CircularProgressIndicator(Modifier.size(20.dp), color = colors.onPrimary, strokeWidth = 2.dp)
+                        Spacer(Modifier.size(10.dp))
+                    }
+                    Text(stringResource(R.string.fetch_preview), fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
-    Card(
-        Modifier.fillMaxWidth().padding(top = 12.dp), RoundedCornerShape(24.dp),
+    if (state.media != null) Card(
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp), RoundedCornerShape(24.dp),
         CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
     ) {
         Button(
             onClick = onDownloadAll,
             modifier = Modifier.fillMaxWidth().padding(24.dp).height(52.dp),
             enabled = !state.isResolving && !state.isSaving && !state.saved &&
-                state.savingItemIndex == null && state.media != null,
+                state.savingItemIndex == null,
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
         ) {
@@ -464,11 +398,8 @@ private fun ValidLinkContent(
         }
     }
     state.media?.let { media ->
-        Card(
-            Modifier.fillMaxWidth().padding(top = 16.dp), RoundedCornerShape(24.dp),
-            CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
-        ) {
-            Column(Modifier.padding(20.dp)) {
+        Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            Column(Modifier.padding(horizontal = 20.dp)) {
                 Text(
                     if (media.size > 1) pluralStringResource(
                         R.plurals.files_found,
@@ -477,18 +408,43 @@ private fun ValidLinkContent(
                     ) else stringResource(R.string.preview),
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                 )
-                Spacer(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    media.forEachIndexed { index, item ->
+                Spacer(Modifier.height(10.dp))
+            }
+            val pagerState = rememberPagerState(pageCount = { media.size })
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { index ->
+                    val item = media[index]
                         MediaPreviewCard(
-                            item, index, useBrowserSessions, mediaDownloader,
+                            item, index, useBrowserSessions, previewCache,
                             contentType = state.downloadContentType,
                             audioFormat = state.audioFormat,
                             isSaving = state.savingItemIndex == index,
                             isSaved = state.savedItemIndex == index,
-                            downloadsEnabled = item.backend == MediaBackend.DIRECT &&
-                                !state.isSaving && state.savingItemIndex == null,
-                            onDownload = { width, height -> onDownloadOne(item, index, width, height) }
+                            downloadsEnabled = !state.isSaving && state.savingItemIndex == null,
+                            onDownload = { width, height -> onDownloadOne(item, index, width, height) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+            }
+            if (media.size > 1) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (media.size <= MAX_PREVIEW_DOTS) {
+                        media.indices.forEach { page ->
+                            Box(
+                                Modifier.padding(horizontal = 3.dp)
+                                    .size(if (pagerState.currentPage == page) 18.dp else 6.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (pagerState.currentPage == page) colors.primary else colors.outlineVariant
+                                    )
+                            )
+                        }
+                    } else {
+                        Text(
+                            stringResource(R.string.preview_page_count, pagerState.currentPage + 1, media.size),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.onSurfaceVariant
                         )
                     }
                 }
@@ -497,7 +453,7 @@ private fun ValidLinkContent(
     }
     state.error?.let { error ->
         Card(
-            Modifier.fillMaxWidth().padding(top = 16.dp), RoundedCornerShape(18.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp), RoundedCornerShape(18.dp),
             CardDefaults.cardColors(containerColor = colors.errorContainer)
         ) {
             Column(Modifier.padding(16.dp)) {
@@ -526,7 +482,7 @@ private fun ValidLinkContent(
                     Button(onOpenBrowser, Modifier.fillMaxWidth().padding(top = 12.dp)) {
                         Icon(Icons.Filled.Lock, stringResource(R.string.open_browser))
                         Spacer(Modifier.size(8.dp))
-                        Text(stringResource(R.string.open_in_browser))
+                        Text(stringResource(R.string.use_browser))
                     }
                 }
             }
@@ -562,9 +518,108 @@ private fun downloadProgressDetails(
 }
 
 @Composable
+private fun CompactDownloadStatus(
+    state: DownloaderUiState,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val colors = MaterialTheme.colorScheme
+    val activeItem = state.downloadQueue.activeItems.firstOrNull()
+    val status = activeItem?.let {
+        stringResource(
+            when (it.state) {
+                DownloadQueueState.QUEUED -> R.string.download_queued
+                DownloadQueueState.RETRYING -> R.string.download_retrying
+                else -> R.string.download_running
+            }
+        )
+    } ?: stringResource(R.string.download_running)
+    val details = downloadProgressDetails(
+        state.downloadedBytes,
+        state.totalBytes,
+        state.downloadEtaSeconds
+    )
+    Card(
+        modifier.fillMaxWidth(),
+        RoundedCornerShape(20.dp),
+        CardDefaults.cardColors(containerColor = colors.secondaryContainer)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                WavyCircularProgress(
+                    progress = (state.downloadProgress / 100f).coerceIn(0f, 1f),
+                    modifier = Modifier.size(40.dp)
+                )
+                Text(
+                    "${state.downloadProgress.coerceIn(0f, 100f).toInt()}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(
+                    pluralStringResource(
+                        R.plurals.active_downloads,
+                        state.activeDownloadCount,
+                        state.activeDownloadCount
+                    ),
+                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    listOf(status, details).filter(String::isNotEmpty).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSecondaryContainer
+                )
+            }
+            IconButton(onClick = onCancel) {
+                Icon(Icons.Filled.Close, stringResource(R.string.cancel_download))
+            }
+        }
+    }
+}
+
+@Composable
+private fun WavyCircularProgress(progress: Float, modifier: Modifier = Modifier) {
+    val color = MaterialTheme.colorScheme.primary
+    val transition = rememberInfiniteTransition(label = "download wave")
+    val rotation by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(2200, easing = LinearEasing)),
+        label = "download wave rotation"
+    )
+    Canvas(modifier) {
+        val stroke = 2.5.dp.toPx()
+        val centerRadius = (size.minDimension - stroke * 3f) / 2f
+        drawCircle(
+            color = color.copy(alpha = 0.16f),
+            radius = centerRadius,
+            style = Stroke(stroke)
+        )
+        val sweep = if (progress > 0f) progress.coerceAtLeast(0.04f) * 2f * PI.toFloat() else 2f * PI.toFloat()
+        val samples = 72
+        val path = Path()
+        for (step in 0..samples) {
+            val fraction = step / samples.toFloat()
+            val angle = -PI.toFloat() / 2f + Math.toRadians(rotation.toDouble()).toFloat() + sweep * fraction
+            val ripple = sin(fraction * 12f * PI.toFloat()) * stroke * 0.65f
+            val radius = centerRadius + ripple
+            val x = center.x + cos(angle) * radius
+            val y = center.y + sin(angle) * radius
+            if (step == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(color = color, path = path, style = Stroke(stroke, cap = StrokeCap.Round))
+    }
+}
+
+private const val MAX_PREVIEW_DOTS = 7
+
+@Composable
 private fun YtDlpDownloadControls(
     state: DownloaderUiState,
-    media: ResolvedMedia,
+    media: ResolvedMedia?,
     onContentTypeChange: (DownloadContentType) -> Unit,
     onVideoHeightChange: (Int) -> Unit,
     onAudioFormatChange: (AudioOutputFormat) -> Unit,
@@ -572,19 +627,25 @@ private fun YtDlpDownloadControls(
     onEmbedThumbnailChange: (Boolean) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    val availableHeights = media.formats.asSequence()
+    val availableHeights = media?.formats.orEmpty().asSequence()
         .filter { it.hasVideo && it.qualityDimension > 0 }
         .map { it.qualityDimension }
         .distinct()
         .sortedDescending()
         .toList()
+        .ifEmpty { listOf(2160, 1440, 1080, 720, 480, 360) }
     Card(
-        Modifier.fillMaxWidth().padding(top = 12.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         RoundedCornerShape(24.dp),
         CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
     ) {
         Column(Modifier.padding(20.dp)) {
-            media.title?.let {
+            Text(
+                stringResource(R.string.download_options),
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
+            )
+            Spacer(Modifier.height(10.dp))
+            media?.title?.let {
                 Text(it, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
                 media.username?.let { author ->
                     Text(author, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)

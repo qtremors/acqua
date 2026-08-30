@@ -17,6 +17,7 @@ class MediaResolutionService(
         browserSessionsEnabled: Boolean,
         forceBrowserResolution: Boolean = false,
         engine: DownloadEngine = DownloadEngine.ACQUA,
+        allowBrowserFallback: Boolean = false,
         browserResolver: suspend (url: String, explicitSessionAuthorization: Boolean) -> List<ResolvedMedia>
     ): List<ResolvedMedia> {
         val url = WebLink.normalize(input)
@@ -38,10 +39,10 @@ class MediaResolutionService(
             return validateAndSelect(url, browserResolver(url, true))
         }
         if (!WebLink.isInstagramMediaUrl(url)) {
-            if (!browserSessionsEnabled) {
+            if (!allowBrowserFallback) {
                 throw MediaResolutionException(
                     MediaResolutionFailure.SESSION_REQUIRED,
-                    "Open this page in Acqua Browser or enable browser session extraction."
+                    "This page needs browser extraction. Use the browser option to continue."
                 )
             }
             return validateAndSelect(url, browserResolver(url, false))
@@ -59,7 +60,7 @@ class MediaResolutionService(
             error
         }
 
-        if (!browserSessionsEnabled) throw sourceFailure
+        if (!allowBrowserFallback) throw sourceFailure
         return try {
             validateAndSelect(url, browserResolver(url, false))
         } catch (error: CancellationException) {

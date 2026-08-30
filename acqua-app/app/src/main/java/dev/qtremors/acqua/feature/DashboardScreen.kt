@@ -85,13 +85,6 @@ fun DashboardScreen(
     LaunchedEffect(urlHandoff) {
         urlHandoff?.let { url ->
             downloaderViewModel.updateUrl(url)
-            if (browserState.initialized) {
-                downloaderViewModel.resolve(
-                    browserState.useSessions,
-                    downloadRequestRevision,
-                    resolveInBrowser
-                )
-            }
             tab = 0
             onUrlHandoffConsumed()
         }

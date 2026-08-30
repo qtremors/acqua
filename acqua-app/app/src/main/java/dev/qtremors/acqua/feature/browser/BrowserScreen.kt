@@ -7,6 +7,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,12 +28,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -54,11 +59,13 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.session.SavedWebsite
+import dev.qtremors.acqua.domain.BrowserDestination
 import dev.qtremors.acqua.domain.WebLink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -76,6 +83,11 @@ fun BrowserScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showManageDialog by remember { mutableStateOf(false) }
     var editingWebsite by remember { mutableStateOf<SavedWebsite?>(null) }
+    var browserInput by remember { mutableStateOf("") }
+    val openInput = {
+        BrowserDestination.fromInput(browserInput)?.let(onOpenWebsite)
+        Unit
+    }
 
     if (showAddDialog) WebsiteDialog(
         title = R.string.save_website,
@@ -109,6 +121,49 @@ fun BrowserScreen(
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             modifier = Modifier.padding(vertical = 16.dp)
         )
+        Card(
+            Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            RoundedCornerShape(24.dp),
+            CardDefaults.cardColors(containerColor = colors.primaryContainer)
+        ) {
+            Column(Modifier.padding(18.dp)) {
+                Text(
+                    stringResource(R.string.browse_the_web),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = colors.onPrimaryContainer
+                )
+                Text(
+                    stringResource(R.string.browser_address_guidance),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onPrimaryContainer,
+                    modifier = Modifier.padding(top = 3.dp, bottom = 12.dp)
+                )
+                OutlinedTextField(
+                    value = browserInput,
+                    onValueChange = { browserInput = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text(stringResource(R.string.search_or_enter_website)) },
+                    leadingIcon = { Icon(Icons.Filled.Search, null) },
+                    trailingIcon = {
+                        IconButton(onClick = openInput, enabled = browserInput.isNotBlank()) {
+                            Icon(Icons.Filled.Public, stringResource(R.string.go))
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(18.dp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { openInput() })
+                )
+                Button(
+                    onClick = openInput,
+                    enabled = browserInput.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp).height(48.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(stringResource(R.string.open_browser))
+                }
+            }
+        }
         Text(
             stringResource(R.string.browser_extraction),
             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, color = colors.primary),

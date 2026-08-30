@@ -1,6 +1,5 @@
 package dev.qtremors.acqua.feature.downloader
 
-import android.graphics.BitmapFactory
 import android.webkit.CookieManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -9,9 +8,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -40,13 +40,14 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.qtremors.acqua.R
-import dev.qtremors.acqua.data.network.MediaDownloader
+import dev.qtremors.acqua.data.network.MediaPreviewCache
 import dev.qtremors.acqua.domain.MediaBackend
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
@@ -60,16 +61,21 @@ fun MediaPreviewCard(
     item: ResolvedMedia,
     index: Int,
     useBrowserSessions: Boolean,
-    mediaDownloader: MediaDownloader,
+    previewCache: MediaPreviewCache,
     contentType: DownloadContentType,
     audioFormat: AudioOutputFormat,
     isSaving: Boolean,
     isSaved: Boolean,
     downloadsEnabled: Boolean,
-    onDownload: (width: Int, height: Int) -> Unit
+    onDownload: (width: Int, height: Int) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val audioPreview = item.isAudioPreview(contentType)
     val previewUrl = item.previewUrl
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val previewWidthPixels = with(density) { configuration.screenWidthDp.dp.roundToPx() }
+    val previewHeightPixels = with(density) { 560.dp.roundToPx() }
     var failed by remember(previewUrl) { mutableStateOf(false) }
     val cookies = remember(
         previewUrl,
@@ -84,22 +90,26 @@ fun MediaPreviewCard(
             else -> CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
         }
     }
-    val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies) {
-        value = if (previewUrl == null) null else withContext(Dispatchers.IO) {
-            runCatching {
-                val bytes = mediaDownloader.fetchBytes(item.copy(url = previewUrl, requestCookies = cookies))
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-            }.onFailure { failed = true }.getOrNull()
+    val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies, previewWidthPixels, previewHeightPixels) {
+        val loaded = if (previewUrl == null) null else withContext(Dispatchers.IO) {
+            previewCache.loadBitmap(
+                item.copy(url = previewUrl, requestCookies = cookies),
+                previewWidthPixels,
+                previewHeightPixels
+            )?.asImageBitmap()
         }
+        failed = previewUrl != null && loaded == null
+        value = loaded
     }
-    Column(Modifier.width(150.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
         val aspectRatio = when {
             bitmap != null && bitmap!!.height > 0 -> bitmap!!.width.toFloat() / bitmap!!.height
             item.width > 0 && item.height > 0 -> item.width.toFloat() / item.height
             else -> 0.75f
         }
         Box(
-            Modifier.width(150.dp).aspectRatio(aspectRatio).clip(RoundedCornerShape(24.dp))
+            Modifier.fillMaxWidth().heightIn(max = 560.dp).aspectRatio(aspectRatio, matchHeightConstraintsFirst = false)
+                .clip(RoundedCornerShape(0.dp))
                 .background(Color.Black.copy(alpha = 0.1f)),
             contentAlignment = Alignment.Center
         ) {
@@ -169,7 +179,7 @@ fun MediaPreviewCard(
         val width = if (item.isVideo) item.width else bitmap?.width ?: item.width
         val height = if (item.isVideo) item.height else bitmap?.height ?: item.height
         val resolution = if (width > 0 && height > 0) "${width}x$height" else ""
-        val locale = LocalConfiguration.current.locales[0]
+        val locale = configuration.locales[0]
         val size = item.fileSize?.let { String.format(locale, "%.1f MB", it / (1024.0 * 1024.0)) }.orEmpty()
         val details = if (audioPreview) {
             listOf(when (audioFormat) {

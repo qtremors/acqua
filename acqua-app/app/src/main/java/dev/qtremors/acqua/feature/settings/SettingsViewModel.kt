@@ -8,6 +8,7 @@ import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.YtDlpMaintenance
 import dev.qtremors.acqua.downloader.YtDlpFailure
+import dev.qtremors.acqua.downloader.YtDlpUpdateStatus
 import dev.qtremors.acqua.downloader.toYtDlpFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +25,8 @@ data class SettingsUiState(
     val embedThumbnail: Boolean = true,
     val autoUpdateYtDlp: Boolean = true,
     val ytDlpVersion: String? = null,
+    val lastYtDlpUpdate: Long = 0L,
+    val ytDlpUpdateStatus: YtDlpUpdateStatus? = null,
     val isUpdatingYtDlp: Boolean = false,
     val ytDlpUpdateError: YtDlpFailure? = null
 )
@@ -43,7 +46,8 @@ class SettingsViewModel(
                     audioFormat = media.audioFormat,
                     embedMetadata = media.embedMetadata,
                     embedThumbnail = media.embedThumbnail,
-                    autoUpdateYtDlp = media.autoUpdateYtDlp
+                    autoUpdateYtDlp = media.autoUpdateYtDlp,
+                    lastYtDlpUpdate = media.lastYtDlpUpdate
                 )
             }
         }
@@ -103,12 +107,18 @@ class SettingsViewModel(
     fun updateYtDlp(force: Boolean = true) {
         if (mutableState.value.isUpdatingYtDlp) return
         viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(isUpdatingYtDlp = true, ytDlpUpdateError = null)
+            mutableState.value = mutableState.value.copy(
+                isUpdatingYtDlp = true,
+                ytDlpUpdateError = null,
+                ytDlpUpdateStatus = null
+            )
             try {
-                val version = maintenance.update(force)
+                val result = maintenance.update(force)
                 mutableState.value = mutableState.value.copy(
                     isUpdatingYtDlp = false,
-                    ytDlpVersion = version
+                    ytDlpVersion = result.version,
+                    lastYtDlpUpdate = result.lastCheckedAt,
+                    ytDlpUpdateStatus = result.updateStatus
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled

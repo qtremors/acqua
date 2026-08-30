@@ -86,11 +86,16 @@
         <item quantity="other">%1$d files found</item>
     </plurals>
     <string name="preview">Preview</string>
+    <string name="preview_page_count">%1$d / %2$d</string>
+    <string name="fetch_preview">Fetch preview</string>
+    <string name="fetch_preview_explanation">Choose what you want first. Acqua will inspect the link only when you fetch the preview.</string>
+    <string name="download_options">Download options</string>
     <string name="could_not_resolve_media">Could not resolve media</string>
     <string name="copy_error">Copy error</string>
     <string name="dismiss">Dismiss</string>
     <string name="open_browser">Open browser</string>
     <string name="open_in_browser">Open in browser</string>
+    <string name="use_browser">Use browser</string>
     <string name="invalid">Invalid</string>
     <string name="invalid_link">Invalid link</string>
     <string name="valid_link_guidance">Enter a complete HTTP or HTTPS website link.</string>
@@ -175,8 +180,8 @@
     <string name="warning">Warning</string>
     <string name="browse_responsibly">Browse responsibly</string>
     <string name="browser_safety_guidance">Only sign in to websites you trust and download content you are allowed to access. Acqua never stores your password.</string>
-    <string name="use_browser_sessions">Use browser sessions for extraction</string>
-    <string name="browser_sessions_explanation">Allow browser-based page resolution and matching saved cookies for media requests.</string>
+    <string name="use_browser_sessions">Use saved browser sessions</string>
+    <string name="browser_sessions_explanation">Allow yt-dlp and media requests to use matching saved cookies. This never opens Browser automatically.</string>
     <string name="saved_websites">Saved websites</string>
     <string name="save_website_guidance">Tap + to save a website name and URL.</string>
     <string name="open_website_guidance">Tap a bookmark to open it. Touch and hold to edit its name or link.</string>
@@ -184,12 +189,12 @@
 
     <string name="downloads_and_filenames">Downloads &amp; filenames</string>
     <string name="downloads_subfolder">Downloads subfolder</string>
-    <string name="categorize_media">Categorize by media type</string>
-    <string name="category_explanation">Save to Images/, Videos/, and Audio/ subdirectories</string>
+    <string name="categorize_media">Organize into media folders</string>
+    <string name="category_explanation">Save downloads in Images/, Videos/, and Audio/ folders inside your selected subfolder.</string>
     <string name="filename_pattern">Filename format pattern</string>
     <string name="filename_variables_guidance">Tap a variable below to add or remove it.</string>
     <string name="filename_preview">Example: %1$s</string>
-    <string name="reset_filename_pattern">Reset to Acqua default</string>
+    <string name="reset_filename_pattern">Reset filename pattern</string>
     <string name="media_processing">Video, audio &amp; metadata</string>
     <string name="default_video_quality">Default video quality</string>
     <string name="default_audio_format">Default audio format</string>
@@ -205,17 +210,32 @@
     <string name="unknown">unknown</string>
     <string name="update_ytdlp">Update yt-dlp now</string>
     <string name="updating_ytdlp">Updating yt-dlp…</string>
+    <string name="ytdlp_last_checked">Last checked: %1$s</string>
+    <string name="ytdlp_updated">yt-dlp was updated successfully.</string>
+    <string name="ytdlp_already_current">yt-dlp is already up to date.</string>
     <string name="ytdlp_error_runtime">The yt-dlp runtime could not start. Restart Acqua or reinstall this APK.</string>
     <string name="ytdlp_error_network">Could not reach the yt-dlp update service. Check your connection and try again.</string>
     <string name="ytdlp_error_storage">Acqua could not prepare yt-dlp storage. Free some space and try again.</string>
     <string name="ytdlp_error_update_service">The yt-dlp update service returned an unsupported response. Try again later.</string>
     <string name="ytdlp_error_unknown">yt-dlp could not be updated. Restart Acqua and try again.</string>
+    <string name="browser_engine">Browser engine</string>
+    <string name="webview_provider_unknown">System WebView provider</string>
+    <string name="webview_version">Version %1$s</string>
+    <string name="webview_update_explanation">Acqua Browser uses your device WebView provider. Your app store or device system installs its updates.</string>
+    <string name="check_webview_updates">Check for WebView updates</string>
+    <string name="webview_update_unavailable">No WebView update page or system settings page could be opened.</string>
 
     <string name="resolving_media">Resolving media</string>
     <string name="go">Go</string>
     <string name="close">Close</string>
     <string name="enter_website">Enter a website</string>
+    <string name="search_or_enter_website">Search or enter website</string>
+    <string name="browse_the_web">Browse the web</string>
+    <string name="browser_address_guidance">Open a website or search privately with DuckDuckGo.</string>
     <string name="refresh">Refresh</string>
+    <string name="stop">Stop loading</string>
+    <string name="forward">Forward</string>
+    <string name="home">Home</string>
     <string name="go_to_acqua">Go to Acqua</string>
     <string name="browser_controls">Acqua browser controls</string>
     <string name="cannot_open_link">This link cannot be opened in Acqua.</string>

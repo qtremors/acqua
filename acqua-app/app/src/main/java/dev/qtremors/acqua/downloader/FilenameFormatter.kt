@@ -5,7 +5,8 @@ import java.util.Date
 import java.util.Locale
 
 object FilenameFormatter {
-    const val DEFAULT_PATTERN = "acqua_{username}_{resolution}_{date}_{time}_{index}"
+    const val DEFAULT_PATTERN = "{title}_{username}_{resolution}_{date}_{time}_{index}"
+    const val LEGACY_DEFAULT_PATTERN = "acqua_{username}_{resolution}_{date}_{time}_{index}"
 
     val variables = listOf("{title}", "{username}", "{resolution}", "{date}", "{time}", "{index}")
 
@@ -39,7 +40,7 @@ object FilenameFormatter {
 
         while (name.contains("__")) name = name.replace("__", "_")
         name = name.trim('_', ' ', '.')
-        if (name.isEmpty()) name = "acqua_${date}_${time}_${index + 1}"
+        if (name.isEmpty()) name = "download_${date}_${time}_${index + 1}"
 
         return "$name.$safeExtension"
     }

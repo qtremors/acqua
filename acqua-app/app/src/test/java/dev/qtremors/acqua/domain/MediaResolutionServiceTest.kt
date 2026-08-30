@@ -159,12 +159,34 @@ class MediaResolutionServiceTest {
     }
 
     @Test
+    fun `browser sessions do not automatically launch browser extraction`() {
+        var browserCalled = false
+        val service = MediaResolutionService(MediaResolver { emptyList() }, inspectMedia = { it })
+
+        val error = assertThrows(MediaResolutionException::class.java) {
+            runBlocking {
+                service.resolve("https://example.com/page", browserSessionsEnabled = true) { _, _ ->
+                    browserCalled = true
+                    emptyList()
+                }
+            }
+        }
+
+        assertEquals(MediaResolutionFailure.SESSION_REQUIRED, error.failure)
+        assertEquals(false, browserCalled)
+    }
+
+    @Test
     fun `browser resolver is used after known source failure`() = runBlocking {
         val browserItem = ResolvedMedia("https://cdn.test/video.mp4", MediaKind.VIDEO)
         var explicitlyAuthorized = true
         val service = MediaResolutionService(MediaResolver { error("network unavailable") }, inspectMedia = { it })
 
-        val result = service.resolve("https://instagram.com/p/abc", true) { _, explicitAuthorization ->
+        val result = service.resolve(
+            "https://instagram.com/p/abc",
+            browserSessionsEnabled = true,
+            allowBrowserFallback = true
+        ) { _, explicitAuthorization ->
             explicitlyAuthorized = explicitAuthorization
             listOf(browserItem)
         }
@@ -220,7 +242,11 @@ class MediaResolutionServiceTest {
             inspectMedia = { it.takeIf { candidate -> candidate.url == browserItem.url } }
         )
 
-        val result = service.resolve("https://instagram.com/reel/private", true) { _, _ ->
+        val result = service.resolve(
+            "https://instagram.com/reel/private",
+            browserSessionsEnabled = true,
+            allowBrowserFallback = true
+        ) { _, _ ->
             listOf(browserItem)
         }
 

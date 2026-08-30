@@ -8,6 +8,8 @@ import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.File
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 class MediaDownloader(
@@ -143,6 +145,48 @@ class MediaDownloader(
             body.byteStream().readLimited(MAX_PREVIEW_BYTES)
         }
 
+    fun fetchPreviewToFile(
+        item: ResolvedMedia,
+        target: File,
+        maxBytes: Long = DEFAULT_CACHED_PREVIEW_BYTES
+    ): File {
+        require(maxBytes > 0L) { "The preview size limit must be positive." }
+        if (target.isFile && target.length() in 1..maxBytes) return target
+        if (target.exists()) check(target.delete()) { "Could not replace the invalid cached preview." }
+        val directory = target.parentFile ?: error("The preview cache target has no parent directory.")
+        check(directory.mkdirs() || directory.isDirectory) { "Could not prepare the preview cache." }
+        val temporary = File(directory, "${target.name}.${UUID.randomUUID()}.tmp")
+        try {
+            client.newCall(buildRequest(item.url, item.referer, item.requestCookies)).execute().use { response ->
+                if (!response.isSuccessful) error("Failed to fetch media preview (HTTP ${response.code}).")
+                val body = response.body ?: error("The media preview response was empty.")
+                if (body.contentLength() > maxBytes) error("The media preview is too large to cache safely.")
+                body.byteStream().use { input ->
+                    temporary.outputStream().use { output ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        var total = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            total += read
+                            if (total > maxBytes) error("The media preview is too large to cache safely.")
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+            }
+            check(temporary.length() > 0L) { "The media preview response was empty." }
+            if (!temporary.renameTo(target)) {
+                if (target.isFile) temporary.delete()
+                else error("Could not commit the cached media preview.")
+            }
+            return target
+        } catch (error: Exception) {
+            temporary.delete()
+            throw error
+        }
+    }
+
     private fun hasEmbeddedByteRange(url: String): Boolean =
         url.contains("bytestart=", ignoreCase = true) ||
             url.contains("byteend=", ignoreCase = true)
@@ -174,6 +218,7 @@ class MediaDownloader(
 
     private companion object {
         const val MAX_PREVIEW_BYTES = 16L * 1024L * 1024L
+        const val DEFAULT_CACHED_PREVIEW_BYTES = 8L * 1024L * 1024L
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)

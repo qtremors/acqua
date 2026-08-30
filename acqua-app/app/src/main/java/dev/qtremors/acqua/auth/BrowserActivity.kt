@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
@@ -26,13 +27,13 @@ import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ProgressBar
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import dev.qtremors.acqua.R
+import dev.qtremors.acqua.domain.BrowserDestination
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.data.session.InstagramSessionStore
@@ -50,10 +51,13 @@ class BrowserActivity : ComponentActivity() {
     private lateinit var webView: WebView
     private lateinit var addressBar: EditText
     private lateinit var progressBar: ProgressBar
+    private lateinit var backButton: ImageButton
+    private lateinit var forwardButton: ImageButton
+    private lateinit var reloadButton: ImageButton
     private var currentUrl: String? = null
     private var isAddingLogin = false
     private var loginName = ""
-    private var addressHeader: View? = null
+    private var pageLoading = false
     private var downloadRequestPending = false
     private val livePageMediaCollector = LivePageMediaCollector()
 
@@ -80,12 +84,7 @@ class BrowserActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(BACKGROUND)
         }
-        val showAddressHeader = savedInstanceState?.getBoolean(STATE_HAS_ADDRESS_HEADER)
-            ?: (requested == null)
-        if (showAddressHeader) {
-            addressHeader = createHeader()
-            content.addView(addressHeader, LinearLayout.LayoutParams.MATCH_PARENT, 64.dp)
-        }
+        content.addView(createHeader(), LinearLayout.LayoutParams.MATCH_PARENT, 112.dp)
         progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             progressTintList = ColorStateList.valueOf(PRIMARY)
@@ -110,6 +109,8 @@ class BrowserActivity : ComponentActivity() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
                     progressBar.progress = newProgress
                     progressBar.visibility = if (newProgress >= 100) View.GONE else View.VISIBLE
+                    pageLoading = newProgress < 100
+                    updateNavigationControls()
                     view?.url?.takeIf(::isBrowsablePage)?.let { currentUrl = it }
                 }
 
@@ -129,18 +130,6 @@ class BrowserActivity : ComponentActivity() {
         container.addView(webView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         content.addView(container, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(content, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-        root.addView(
-            createBrowserFloatingControls(
-                context = this,
-                parent = root,
-                onRefresh = { if (currentUrl == null) showStartPage() else webView.reload() },
-                onDownload = ::downloadCurrentPage,
-                onReturnToAcqua = ::finishBrowser
-            ),
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.START or Gravity.TOP
-            }
-        )
         setContentView(root)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -153,9 +142,10 @@ class BrowserActivity : ComponentActivity() {
         if (restored) {
             currentUrl = savedInstanceState?.getString(STATE_CURRENT_URL)
                 ?: webView.url?.takeIf(::isBrowsablePage)
-            if (::addressBar.isInitialized) addressBar.setText(currentUrl.orEmpty())
+            addressBar.setText(currentUrl.orEmpty())
+            webView.post(::updateNavigationControls)
         } else if (requested != null) {
-            if (::addressBar.isInitialized) addressBar.setText(requested)
+            addressBar.setText(requested)
             loadInitialPage(requested)
         } else {
             showStartPage()
@@ -163,41 +153,69 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun createHeader(): View = LinearLayout(this).apply {
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(6.dp, 0, 8.dp, 0)
+        orientation = LinearLayout.VERTICAL
         setBackgroundColor(SURFACE)
 
-        addView(iconButton(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.close)) {
-            closeBrowser()
-        }, LinearLayout.LayoutParams(52.dp, 52.dp))
+        addView(LinearLayout(context).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(4.dp, 4.dp, 4.dp, 2.dp)
+            addView(iconButton(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.close)) {
+                closeBrowser()
+            }, LinearLayout.LayoutParams(48.dp, 52.dp))
 
-        addressBar = EditText(context).apply {
-            hint = getString(R.string.enter_website)
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.rgb(160, 174, 184))
-            setSingleLine(true)
-            textSize = 14f
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
-            imeOptions = EditorInfo.IME_ACTION_GO
-            backgroundTintList = ColorStateList.valueOf(Color.rgb(105, 124, 136))
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_GO) {
-                    navigateToInput()
-                    true
-                } else false
+            addressBar = EditText(context).apply {
+                hint = getString(R.string.search_or_enter_website)
+                setTextColor(Color.WHITE)
+                setHintTextColor(Color.rgb(160, 174, 184))
+                setSingleLine(true)
+                textSize = 14f
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
+                imeOptions = EditorInfo.IME_ACTION_GO
+                background = GradientDrawable().apply {
+                    setColor(ADDRESS_SURFACE)
+                    cornerRadius = 24.dp.toFloat()
+                }
+                setPadding(16.dp, 0, 12.dp, 0)
+                setSelectAllOnFocus(true)
+                setOnFocusChangeListener { _, focused ->
+                    if (!focused) setText(currentUrl.orEmpty())
+                }
+                setOnEditorActionListener { _, actionId, _ ->
+                    if (actionId == EditorInfo.IME_ACTION_GO) {
+                        navigateToInput()
+                        true
+                    } else false
+                }
             }
-        }
-        addView(addressBar, LinearLayout.LayoutParams(0, 52.dp, 1f))
+            addView(addressBar, LinearLayout.LayoutParams(0, 48.dp, 1f))
+            reloadButton = iconButton(R.drawable.browser_refresh, getString(R.string.refresh)) {
+                if (pageLoading) webView.stopLoading()
+                else if (currentUrl == null) showStartPage()
+                else webView.reload()
+            }
+            addView(reloadButton, LinearLayout.LayoutParams(48.dp, 52.dp))
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 58.dp))
 
-        addView(TextView(context).apply {
-            text = getString(R.string.go)
-            setTextColor(PRIMARY)
-            textSize = 14f
+        addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER
-            setPadding(10.dp, 0, 10.dp, 0)
-            setOnClickListener { navigateToInput() }
-        }, LinearLayout.LayoutParams(52.dp, 52.dp))
+            backButton = navigationButton(R.drawable.browser_back, getString(R.string.back)) {
+                if (webView.canGoBack()) webView.goBack()
+            }
+            forwardButton = navigationButton(R.drawable.browser_forward, getString(R.string.forward)) {
+                if (webView.canGoForward()) webView.goForward()
+            }
+            addView(backButton, weightedNavigationParams())
+            addView(forwardButton, weightedNavigationParams())
+            addView(navigationButton(R.drawable.browser_home, getString(R.string.home)) { showStartPage() }, weightedNavigationParams())
+            addView(navigationButton(R.drawable.browser_download, getString(R.string.download)) { downloadCurrentPage() }, weightedNavigationParams())
+            addView(navigationButton(android.R.drawable.ic_menu_revert, getString(R.string.go_to_acqua)) { finishBrowser() }, weightedNavigationParams())
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 54.dp))
     }
+
+    private fun weightedNavigationParams() = LinearLayout.LayoutParams(0, 52.dp, 1f)
+
+    private fun navigationButton(icon: Int, description: String, action: () -> Unit) =
+        iconButton(icon, description, action).apply { setPadding(14.dp, 14.dp, 14.dp, 14.dp) }
 
     private fun iconButton(icon: Int, description: String, action: () -> Unit) = ImageButton(this).apply {
         setImageResource(icon)
@@ -208,12 +226,24 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun navigateToInput() {
-        val normalized = WebLink.normalize(addressBar.text.toString())
-        if (normalized == null) {
-            Toast.makeText(this, R.string.enter_valid_website, Toast.LENGTH_SHORT).show()
+        val destination = BrowserDestination.fromInput(addressBar.text.toString())
+        if (destination == null) {
             return
         }
-        loadInitialPage(normalized)
+        addressBar.clearFocus()
+        loadInitialPage(destination)
+    }
+
+    private fun updateNavigationControls() {
+        if (!::webView.isInitialized || !::backButton.isInitialized) return
+        backButton.isEnabled = webView.canGoBack()
+        backButton.alpha = if (backButton.isEnabled) 1f else 0.35f
+        forwardButton.isEnabled = webView.canGoForward()
+        forwardButton.alpha = if (forwardButton.isEnabled) 1f else 0.35f
+        reloadButton.setImageResource(
+            if (pageLoading) android.R.drawable.ic_menu_close_clear_cancel else R.drawable.browser_refresh
+        )
+        reloadButton.contentDescription = getString(if (pageLoading) R.string.stop else R.string.refresh)
     }
 
     private fun loadInitialPage(url: String) {
@@ -269,20 +299,23 @@ class BrowserActivity : ComponentActivity() {
             if (favicon != null) url?.let {
                 savedWebsites.updateIcon(it, favicon)
             }
+            pageLoading = true
+            updateNavigationControls()
             url?.takeIf { isBrowsablePage(it) }?.let {
                 currentUrl = it
-                if (::addressBar.isInitialized) addressBar.setText(it)
-                addressHeader?.visibility = View.GONE
+                if (!addressBar.hasFocus()) addressBar.setText(it)
             }
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
             progressBar.visibility = View.GONE
+            pageLoading = false
+            updateNavigationControls()
             url?.let { finishedUrl ->
                 if (isBrowsablePage(finishedUrl)) {
                     currentUrl = finishedUrl
-                    if (::addressBar.isInitialized) addressBar.setText(finishedUrl)
+                    if (!addressBar.hasFocus()) addressBar.setText(finishedUrl)
                     savedWebsites.record(finishedUrl)
                     saveKnownPlatformSession(finishedUrl, view.settings.userAgentString.orEmpty())
                     CookieManager.getInstance().flush()
@@ -294,6 +327,8 @@ class BrowserActivity : ComponentActivity() {
             super.onReceivedError(view, request, error)
             if (request.isForMainFrame) {
                 progressBar.visibility = View.GONE
+                pageLoading = false
+                updateNavigationControls()
                 Toast.makeText(
                     this@BrowserActivity,
                     getString(R.string.page_failed_to_load, error.description),
@@ -323,7 +358,7 @@ class BrowserActivity : ComponentActivity() {
 
     private fun showStartPage() {
         currentUrl = null
-        if (::addressBar.isInitialized) addressBar.setText("")
+        if (!addressBar.hasFocus()) addressBar.setText("")
         webView.loadDataWithBaseURL(
             "https://acqua.local/",
             """
@@ -428,7 +463,6 @@ class BrowserActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_CURRENT_URL, currentUrl)
-        outState.putBoolean(STATE_HAS_ADDRESS_HEADER, addressHeader != null)
         if (::webView.isInitialized) webView.saveState(outState)
     }
 
@@ -456,11 +490,11 @@ class BrowserActivity : ComponentActivity() {
         const val EXTRA_ADD_LOGIN = "browser_add_login"
         const val EXTRA_LOGIN_NAME = "browser_login_name"
         private const val STATE_CURRENT_URL = "browser_current_page_url"
-        private const val STATE_HAS_ADDRESS_HEADER = "browser_has_address_header"
         private const val INSTAGRAM_ORIGIN = "https://www.instagram.com"
         private const val DOWNLOAD_EXTRACTION_INTERVAL_MS = 500L
         private val BACKGROUND = Color.rgb(12, 16, 20)
         private val SURFACE = Color.rgb(36, 43, 48)
+        private val ADDRESS_SURFACE = Color.rgb(19, 25, 30)
         private val PRIMARY = Color.rgb(129, 216, 255)
     }
 }

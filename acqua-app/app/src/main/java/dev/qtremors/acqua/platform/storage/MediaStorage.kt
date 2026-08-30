@@ -15,6 +15,7 @@ import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.data.network.MediaDownloader
 import dev.qtremors.acqua.domain.ResolvedMedia
+import dev.qtremors.acqua.domain.MediaKind
 import java.io.File
 import java.util.UUID
 
@@ -34,14 +35,26 @@ class MediaStorage(
     ): Uri {
         val settings = settingsRepository.downloadSettings()
         val baseFolder = settingsRepository.sanitizedBaseFolder(settings.baseFolder)
-        val category = if (item.isVideo) "Videos" else "Images"
+        val category = when (item.kind) {
+            MediaKind.VIDEO -> "Videos"
+            MediaKind.AUDIO -> "Audio"
+            MediaKind.IMAGE -> "Images"
+        }
         val relativePath = buildString {
             append("Download/")
             append(baseFolder)
             if (settings.categorizeMedia) append("/$category")
         }
-        val extension = item.fileExtension ?: if (item.isVideo) "mp4" else "jpg"
-        val mimeType = item.mimeType ?: if (item.isVideo) "video/mp4" else "image/jpeg"
+        val extension = item.fileExtension ?: when (item.kind) {
+            MediaKind.VIDEO -> "mp4"
+            MediaKind.AUDIO -> "m4a"
+            MediaKind.IMAGE -> "jpg"
+        }
+        val mimeType = item.mimeType ?: when (item.kind) {
+            MediaKind.VIDEO -> "video/mp4"
+            MediaKind.AUDIO -> "audio/mp4"
+            MediaKind.IMAGE -> "image/jpeg"
+        }
         val fileName = FilenameFormatter.format(
             settings.filenamePattern,
             item.username,

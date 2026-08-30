@@ -2,6 +2,29 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.1] - 2026-08-30
+
+### Added
+
+- Let users choose video or audio output, quality, format, metadata, and artwork before Acqua fetches a link preview.
+- Remember the last download engine and media configuration for the next link.
+- Add website and DuckDuckGo search entry from the Browser tab.
+- Cache image previews in bounded private temporary storage and decode them at screen size for memory-safe large carousels.
+- Show the active WebView provider and version in Settings with a shortcut to check for updates.
+
+### Changed
+
+- Use yt-dlp as the default video and audio download engine while keeping Acqua available for direct media extraction.
+- Expand media previews into an edge-to-edge swipeable carousel and replace large progress panels with a compact circular wave indicator.
+- Give Acqua Browser a persistent address bar with back, forward, home, refresh or stop, media download, and return controls.
+- Keep shared and pasted links in download configuration, and offer browser recovery only after resolution or download failures.
+- Make optional Images, Videos, and Audio folder organization explicit, and remove the Acqua prefix from default filenames.
+- Report whether yt-dlp was updated or already current, together with the last successful update check.
+
+### Fixed
+
+- Enable individual yt-dlp preview downloads and route them through the configured yt-dlp processing options.
+
 ## [0.1.0] - 2026-08-01
 
 ### Added
