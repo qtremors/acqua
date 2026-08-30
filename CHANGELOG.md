@@ -2,6 +2,15 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.3] - 2026-08-30
+
+### Changed
+
+- Redesign the Settings, About, and Open Source Notices screens with Material 3 Expressive grouped segmented lists and unified design tokens.
+- Upgrade Android Gradle Plugin, Kotlin, and Compose toolchains, adding automated build convention and production string verification gates.
+- Display live GitHub repository and release statistics on the project website with improved mobile resolution support and zero horizontal overflow.
+- Add comprehensive Credits and acknowledgements section to the project website and documentation.
+
 ## [0.1.2] - 2026-08-30
 
 ### Added

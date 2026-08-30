@@ -36,6 +36,8 @@
     <string name="notices_license">License</string>
     <string name="notices_full_document">Complete third-party notices</string>
     <string name="notices_full_document_description">Read the copy bundled with this app.</string>
+    <string name="licenses_section_libraries">Runtime libraries &amp; components</string>
+    <string name="engine_settings_title">Download engine</string>
     <string name="legal_document_unavailable">This bundled legal document could not be loaded.</string>
     <string name="paste_media_link">Paste a media link</string>
     <string name="media_link">Media link</string>

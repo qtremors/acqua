@@ -34,6 +34,7 @@ abstract class GenerateLegalAssetsTask : DefaultTask() {
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    id("acqua.android.application.conventions")
 }
 
 android {
@@ -44,8 +45,8 @@ android {
         applicationId = "dev.qtremors.acqua"
         minSdk = 24
         targetSdk = 37
-        versionCode = 12
-        versionName = "0.1.2"
+        versionCode = 13
+        versionName = "0.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -95,6 +96,7 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             resValue("string", "application_label", "Acqua Debug")
+            enableUnitTestCoverage = true
         }
         release {
             if (hasReleaseSigning) {
@@ -120,6 +122,9 @@ android {
     }
     packaging {
         jniLibs.useLegacyPackaging = true
+    }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -155,6 +160,11 @@ kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
     }
+}
+
+composeCompiler {
+    reportsDestination = layout.buildDirectory.dir("compose_compiler/reports")
+    metricsDestination = layout.buildDirectory.dir("compose_compiler/metrics")
 }
 
 dependencies {
