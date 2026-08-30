@@ -1,27 +1,25 @@
 package dev.qtremors.acqua.feature.about
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import dev.qtremors.acqua.R
+import dev.qtremors.acqua.ui.components.SettingsActionRow
+import dev.qtremors.acqua.ui.components.SettingsSection
 
 @Composable
 fun OpenSourceNoticesScreen(modifier: Modifier = Modifier) {
@@ -56,56 +56,55 @@ fun OpenSourceNoticesScreen(modifier: Modifier = Modifier) {
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         item {
+            Text(
+                stringResource(R.string.about_open_source_notices),
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            )
             Text(
                 stringResource(R.string.notices_introduction),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp)
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
             )
         }
-        items(AcquaOpenSourceComponents.all, key = OpenSourceComponent::name) { component ->
-            OpenSourceComponentCard(
-                component = component,
-                onOpenSource = { uriHandler.openUri(component.sourceUrl) },
-                onOpenLicense = { uriHandler.openUri(component.licenseUrl) }
-            )
-        }
+
         item {
-            Card(
-                modifier = Modifier.fillMaxWidth()
-                    .clickable { showCompleteNotice = true },
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Filled.Balance,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer
+            SettingsSection(title = stringResource(R.string.licenses_section_libraries)) {
+                AcquaOpenSourceComponents.all.forEachIndexed { index, component ->
+                    SettingsActionRow(
+                        index = index,
+                        count = AcquaOpenSourceComponents.all.size,
+                        title = component.name,
+                        description = "${component.purpose} • ${component.license}",
+                        leadingIcon = Icons.Filled.Code,
+                        trailingIcon = Icons.AutoMirrored.Filled.OpenInNew,
+                        onClick = { uriHandler.openUri(component.sourceUrl) }
                     )
-                    Column(Modifier.weight(1f).padding(horizontal = 14.dp)) {
-                        Text(
-                            stringResource(R.string.notices_full_document),
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-                        )
-                        Text(
-                            stringResource(R.string.notices_full_document_description),
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                    Icon(Icons.Filled.Balance, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }
         }
+
+        item {
+            SettingsSection(title = stringResource(R.string.notices_full_document)) {
+                SettingsActionRow(
+                    index = 0,
+                    count = 1,
+                    title = stringResource(R.string.notices_full_document),
+                    description = stringResource(R.string.notices_full_document_description),
+                    leadingIcon = Icons.Filled.Balance,
+                    trailingIcon = Icons.Filled.Description,
+                    onClick = { showCompleteNotice = true }
+                )
+            }
+        }
+
+        item { Spacer(Modifier.height(12.dp)) }
     }
 }
 
@@ -121,25 +120,35 @@ fun LegalDocumentScreen(
         Column(
             modifier = modifier
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 24.dp)
+                .padding(horizontal = 16.dp, vertical = 20.dp)
         ) {
+            Text(
+                title,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
+            )
             introduction?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 20.dp)
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
                 )
             }
-            Text(
-                title,
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                modifier = Modifier.padding(bottom = 14.dp)
-            )
-            Text(
-                document ?: stringResource(R.string.legal_document_unavailable),
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-            )
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainer
+                )
+            ) {
+                Text(
+                    document ?: stringResource(R.string.legal_document_unavailable),
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
         }
     }
 }
@@ -183,68 +192,5 @@ private fun rememberLegalDocument(assetName: String): String? {
         runCatching {
             context.assets.open(assetName).bufferedReader().use { it.readText() }
         }.getOrNull()
-    }
-}
-
-@Composable
-private fun OpenSourceComponentCard(
-    component: OpenSourceComponent,
-    onOpenSource: () -> Unit,
-    onOpenLicense: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-        )
-    ) {
-        Column(Modifier.fillMaxWidth().padding(18.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Filled.Code,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    component.name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.padding(start = 12.dp)
-                )
-            }
-            Text(
-                component.purpose,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 10.dp)
-            )
-            Text(
-                component.license,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(top = 8.dp)
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(onClick = onOpenSource) {
-                    Text(stringResource(R.string.notices_source))
-                    Icon(
-                        Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp).padding(start = 3.dp)
-                    )
-                }
-                TextButton(onClick = onOpenLicense) {
-                    Text(stringResource(R.string.notices_license))
-                    Icon(
-                        Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp).padding(start = 3.dp)
-                    )
-                }
-            }
-        }
     }
 }

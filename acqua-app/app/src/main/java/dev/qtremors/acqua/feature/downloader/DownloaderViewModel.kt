@@ -63,7 +63,7 @@ data class DownloaderUiState(
     val downloadEtaSeconds: Long = 0L,
     val downloadedBytes: Long = 0L,
     val totalBytes: Long = 0L,
-    val downloadEngine: DownloadEngine = DownloadEngine.ACQUA,
+    val downloadEngine: DownloadEngine = DownloadEngine.YT_DLP,
     val activeDownloadCount: Int = 0,
     val downloadQueue: DownloadQueueSnapshot = DownloadQueueSnapshot(),
     val resolutionFailure: MediaResolutionFailure? = null
@@ -115,8 +115,10 @@ class DownloaderViewModel(
                     totalBytes = queue.aggregateTotalBytes,
                     downloadProgress = if (active.isNotEmpty()) {
                         queue.aggregateProgress
-                    } else {
+                    } else if (mutableState.value.isSaving || mutableState.value.savingItemIndex != null) {
                         mutableState.value.downloadProgress
+                    } else {
+                        0f
                     }
                 )
             }
@@ -136,18 +138,27 @@ class DownloaderViewModel(
         lastAutomaticRequest = null
         mutableState.value = defaultState(
             url = value,
-            contentType = if (WebLink.isYouTubeMusicUrl(value)) DownloadContentType.AUDIO else DownloadContentType.VIDEO
+            contentType = if (WebLink.isYouTubeMusicUrl(value)) DownloadContentType.AUDIO else null
         )
     }
 
     fun seedResolvedMedia(url: String, media: List<ResolvedMedia>) {
         updateUrl(url)
         if (media.isNotEmpty()) {
-            mutableState.value = mutableState.value.copy(media = media, isResolving = false)
+            mutableState.value = mutableState.value.copy(
+                media = media,
+                isResolving = false,
+                downloadEngine = if (media.all { it.backend == MediaBackend.DIRECT }) {
+                    DownloadEngine.ACQUA
+                } else {
+                    DownloadEngine.YT_DLP
+                }
+            )
         }
     }
 
     fun setDownloadContentType(value: DownloadContentType) {
+        settings.setLastDownloadContentType(value)
         mutableState.value = mutableState.value.copy(downloadContentType = value)
     }
 
@@ -159,6 +170,7 @@ class DownloaderViewModel(
         ytDlpEngine.cancelAll()
         resolutionJob?.cancel()
         lastAutomaticRequest = null
+        settings.setLastDownloadEngine(value)
         mutableState.value = snapshot.copy(
             downloadEngine = value,
             isResolving = false,
@@ -175,18 +187,23 @@ class DownloaderViewModel(
     }
 
     fun setMaximumVideoHeight(value: Int) {
-        mutableState.value = mutableState.value.copy(maximumVideoHeight = value.coerceAtLeast(0))
+        val sanitized = value.coerceAtLeast(0)
+        settings.setMaximumVideoHeight(sanitized)
+        mutableState.value = mutableState.value.copy(maximumVideoHeight = sanitized)
     }
 
     fun setAudioFormat(value: AudioOutputFormat) {
+        settings.setAudioFormat(value)
         mutableState.value = mutableState.value.copy(audioFormat = value)
     }
 
     fun setEmbedMetadata(enabled: Boolean) {
+        settings.setEmbedMetadata(enabled)
         mutableState.value = mutableState.value.copy(embedMetadata = enabled)
     }
 
     fun setEmbedThumbnail(enabled: Boolean) {
+        settings.setEmbedThumbnail(enabled)
         mutableState.value = mutableState.value.copy(embedThumbnail = enabled)
     }
 
@@ -254,7 +271,7 @@ class DownloaderViewModel(
                     browserSessionsEnabled,
                     false,
                     snapshot.downloadEngine,
-                    browserResolver
+                    browserResolver = browserResolver
                 )
                 mutableState.value = mutableState.value.copy(
                     isResolving = false,
@@ -293,7 +310,7 @@ class DownloaderViewModel(
                     browserSessionsEnabled,
                     false,
                     mutableState.value.downloadEngine,
-                    browserResolver
+                    browserResolver = browserResolver
                 ).also {
                     mutableState.value = mutableState.value.copy(
                         isResolving = false,
@@ -324,7 +341,11 @@ class DownloaderViewModel(
             mutableState.value = mutableState.value.copy(savingItemIndex = index, savedItemIndex = null)
             val sourceUrl = WebLink.normalize(mutableState.value.url).orEmpty()
             val mediaWithDimensions = if (item.isVideo) item else item.copy(width = width, height = height)
-            val workId = ytDlpDownloads.enqueueDirect(mediaWithDimensions, index, sourceUrl)
+            val workId = if (item.backend == MediaBackend.YT_DLP) {
+                enqueueYtDlpDownload(mediaWithDimensions, sourceUrl)
+            } else {
+                ytDlpDownloads.enqueueDirect(mediaWithDimensions, index, sourceUrl)
+            }
             observeDownloads(listOf(workId), itemIndex = index)
         }
     }
@@ -358,9 +379,7 @@ class DownloaderViewModel(
             isResolving = false,
             error = error.message ?: "An unexpected error occurred",
             resolutionFailure = failure,
-            showBrowserAction = failure == MediaResolutionFailure.SESSION_REQUIRED ||
-                failure == MediaResolutionFailure.SESSION_EXPIRED ||
-                failure == MediaResolutionFailure.UNSUPPORTED_MEDIA
+            showBrowserAction = failure != MediaResolutionFailure.INVALID_LINK
         )
     }
 
@@ -430,7 +449,8 @@ class DownloaderViewModel(
                     downloadEtaSeconds = 0L,
                     downloadedBytes = 0L,
                     totalBytes = 0L,
-                    error = if (itemIndex == null) message else null
+                    error = message,
+                    showBrowserAction = WebLink.normalize(mutableState.value.url) != null
                 )
                 if (itemIndex != null) mutableEvents.send(DownloaderEvent.ItemSaveFailed(message))
             }
@@ -452,7 +472,7 @@ class DownloaderViewModel(
                 )
                 mutableEvents.send(DownloaderEvent.ItemSaved)
                 delay(2000)
-                mutableState.value = mutableState.value.copy(savedItemIndex = null)
+                mutableState.value = mutableState.value.copy(savedItemIndex = null, downloadProgress = 0f)
             }
             else -> {
                 mutableState.value = mutableState.value.copy(
@@ -464,13 +484,15 @@ class DownloaderViewModel(
                     totalBytes = 0L
                 )
                 mutableEvents.send(DownloaderEvent.DownloadComplete)
+                delay(3000)
+                mutableState.value = mutableState.value.copy(saved = false, downloadProgress = 0f)
             }
         }
     }
 
     private fun defaultState(
         url: String = "",
-        contentType: DownloadContentType = DownloadContentType.VIDEO
+        contentType: DownloadContentType? = null
     ): DownloaderUiState {
         val preferences = settings.mediaProcessingSettings()
         return DownloaderUiState(
@@ -480,8 +502,8 @@ class DownloaderViewModel(
                 WebLink.normalize(url) != null -> LinkValidity.VALID
                 else -> LinkValidity.INVALID
             },
-            downloadContentType = contentType,
-            downloadEngine = DownloadEngine.ACQUA,
+            downloadContentType = contentType ?: settings.lastDownloadContentType() ?: DownloadContentType.VIDEO,
+            downloadEngine = settings.lastDownloadEngine(),
             maximumVideoHeight = preferences.maximumVideoHeight,
             audioFormat = preferences.audioFormat,
             embedMetadata = preferences.embedMetadata,

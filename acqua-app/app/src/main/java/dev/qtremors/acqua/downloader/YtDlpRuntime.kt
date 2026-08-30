@@ -42,12 +42,11 @@ object YtDlpRuntime {
 
     fun cancel(processId: String): Boolean = YoutubeDL.getInstance().destroyProcessById(processId)
 
-    fun update(context: Context): YoutubeDL.UpdateStatus? = lifecycleLock.write {
+    fun update(context: Context): YtDlpUpdateStatus = lifecycleLock.write {
         initialize(context)
-        YoutubeDL.getInstance().updateYoutubeDL(
-            context.applicationContext,
-            YoutubeDL.UpdateChannel.STABLE
-        )
+        YoutubeDL.getInstance()
+            .updateYoutubeDL(context.applicationContext, YoutubeDL.UpdateChannel.STABLE)
+            .toAcquaUpdateStatus()
     }
 
     fun version(context: Context): String? = lifecycleLock.read {
@@ -61,4 +60,14 @@ object YtDlpRuntime {
     }
 
     private const val TAG = "YtDlpRuntime"
+}
+
+enum class YtDlpUpdateStatus {
+    UPDATED,
+    ALREADY_CURRENT
+}
+
+internal fun YoutubeDL.UpdateStatus?.toAcquaUpdateStatus(): YtDlpUpdateStatus = when (this) {
+    YoutubeDL.UpdateStatus.DONE -> YtDlpUpdateStatus.UPDATED
+    YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE, null -> YtDlpUpdateStatus.ALREADY_CURRENT
 }

@@ -21,10 +21,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.qtremors.acqua.MainDependencies
 import dev.qtremors.acqua.R
@@ -34,6 +36,7 @@ import dev.qtremors.acqua.feature.ViewModelFactory
 import dev.qtremors.acqua.resolver.instagram.ExpiredSessionException
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
 import dev.qtremors.acqua.ui.theme.AcquaTheme
+import dev.qtremors.acqua.ui.security.SecureWindowEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -93,9 +96,14 @@ class DownloadActivity : ComponentActivity() {
                 explicitBrowserSessionAuthorized = true
             )
         }
+        val screenProtectionEnabled = dependencies.settings.screenProtectionEnabled()
 
         setContent {
-            AcquaTheme {
+            val themeState by dependencies.themePreferences.themeState.collectAsStateWithLifecycle(
+                initialValue = dev.qtremors.acqua.ui.theme.ThemeState()
+            )
+            AcquaTheme(themeState = themeState) {
+                SecureWindowEffect(enabled = screenProtectionEnabled)
                 val downloader: DownloaderViewModel = viewModel(
                     factory = remember {
                         ViewModelFactory {

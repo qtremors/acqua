@@ -9,6 +9,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.nio.file.Files
 
 class MediaDownloaderTest {
     @Test
@@ -53,6 +54,50 @@ class MediaDownloaderTest {
 
             assertThrows(IllegalStateException::class.java) {
                 MediaDownloader().fetchBytes(item)
+            }
+        }
+    }
+
+    @Test
+    fun `preview is streamed to a bounded cache file`() {
+        MockWebServer().use { server ->
+            val payload = byteArrayOf(1, 2, 3, 4)
+            server.enqueue(MockResponse().setBody(okio.Buffer().write(payload)))
+            val directory = Files.createTempDirectory("acqua-preview-test").toFile()
+            val target = java.io.File(directory, "preview")
+            try {
+                MediaDownloader().fetchPreviewToFile(
+                    ResolvedMedia(server.url("preview.jpg").toString(), MediaKind.IMAGE),
+                    target,
+                    maxBytes = payload.size.toLong()
+                )
+
+                assertArrayEquals(payload, target.readBytes())
+            } finally {
+                target.delete()
+                directory.delete()
+            }
+        }
+    }
+
+    @Test
+    fun `cache stream rejects a response beyond its configured limit`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("12345"))
+            val directory = Files.createTempDirectory("acqua-preview-limit-test").toFile()
+            val target = java.io.File(directory, "preview")
+            try {
+                assertThrows(IllegalStateException::class.java) {
+                    MediaDownloader().fetchPreviewToFile(
+                        ResolvedMedia(server.url("preview.jpg").toString(), MediaKind.IMAGE),
+                        target,
+                        maxBytes = 4L
+                    )
+                }
+                assertEquals(false, target.exists())
+            } finally {
+                directory.listFiles()?.forEach(java.io.File::delete)
+                directory.delete()
             }
         }
     }

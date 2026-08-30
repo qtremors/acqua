@@ -7,6 +7,22 @@ import java.util.Date
 
 class FilenameFormatterTest {
     @Test
+    fun `default filename does not add an Acqua prefix`() {
+        val name = FilenameFormatter.format(
+            pattern = FilenameFormatter.DEFAULT_PATTERN,
+            username = "creator",
+            width = 1080,
+            height = 1920,
+            index = 0,
+            fileExtension = "jpg",
+            now = Date(0)
+        )
+
+        assertEquals(false, name.startsWith("acqua_", ignoreCase = true))
+        assertTrue(name.startsWith("creator_1080x1920_"))
+    }
+
+    @Test
     fun `preserves the detected file extension`() {
         val name = FilenameFormatter.format(
             pattern = "acqua_{username}_{index}",

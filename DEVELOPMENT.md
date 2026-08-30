@@ -1,320 +1,454 @@
-# Acqua Development Guide
+# Acqua - Developer Documentation
 
-| Metadata | Value |
-| :--- | :--- |
-| Minimum Android version | Android 7.0 (API 24) |
-| Target/compile SDK | 37 |
+> Architecture, implementation notes, conventions, and verification guidance for Acqua development.
 
-This document describes Acqua's architecture, authenticated extraction flow, development setup, tests, and release process.
+**Version:** 0.1.2 | **Last Updated:** 2026-08-30
+**Scope:** Internal development, media downloader architecture, UI paradigms, testing, and release maintenance.
 
-## Contents
+---
 
-1. [Development setup](#development-setup)
-2. [Build variants](#build-variants)
-3. [Architecture](#architecture)
-4. [Media resolution](#media-resolution)
-5. [Authenticated sessions](#authenticated-sessions)
-6. [Validation and downloads](#validation-and-downloads)
-7. [Storage and history](#storage-and-history)
-8. [Testing](#testing)
-9. [Release signing](#release-signing)
-10. [Release checklist](#release-checklist)
-11. [Troubleshooting](#troubleshooting)
+## Table of Contents
 
-## Development setup
+- [Architecture Overview](#architecture-overview)
+- [Key Architectural Decisions](#key-architectural-decisions)
+- [Technology Stack](#technology-stack)
+- [Project Structure](#project-structure)
+- [Runtime Flow](#runtime-flow)
+- [Core Concepts](#core-concepts)
+- [Navigation & State](#navigation--state)
+- [Dual Download Engines](#dual-download-engines)
+- [In-App Browser & Live Session Lifecycle](#in-app-browser--live-session-lifecycle)
+- [Authenticated Sessions & Keystore Security](#authenticated-sessions--keystore-security)
+- [Storage, Filename Formatter & History Database](#storage-filename-formatter--history-database)
+- [UI & Design System](#ui--design-system)
+- [Feature Deep Dive](#feature-deep-dive)
+- [Naming Conventions](#naming-conventions)
+- [Configuration](#configuration)
+- [Security & Privacy Practices](#security--privacy-practices)
+- [Error Handling](#error-handling)
+- [Testing Suite](#testing-suite)
+- [Build & Release Engineering](#build--release-engineering)
+- [Intended Changes & Anomalies](#intended-changes--anomalies)
+- [Project Auditing & Quality Standards](#project-auditing--quality-standards)
+- [Troubleshooting](#troubleshooting)
+- [Maintenance Notes](#maintenance-notes)
+- [Feedback](#feedback)
 
-### Requirements
+---
 
-- Android Studio with JDK 11 or newer
-- Android SDK 37
-- Git
-- An Android 7.0+ device or emulator
+## Architecture Overview
 
-Clone the repository, open `acqua-app` in Android Studio, and allow Gradle sync to finish.
+Acqua is built with clean MVVM architecture, unidirectional data flow (UDF), Kotlin Coroutines, StateFlow-backed UI state, and decoupled media extraction engines.
 
-Command-line builds:
-
-```bash
-cd acqua-app
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
+```mermaid
+graph TD
+    A["Pasted URL / Shared Link / Browser Handoff"] -->|intent or text| B["MainActivity / DashboardScreen"]
+    B -->|URL submission| C["DownloaderViewModel"]
+    C -->|inspection request| D["MediaDownloader Coordinator"]
+    D -->|direct extraction| E["Instagram Direct Extractor"]
+    D -->|engine delegation| F["YtDlpDownloader Engine"]
+    D -->|session cookies| G["SessionManager + Android Keystore"]
+    E --> H["ResolvedMedia Preview"]
+    F --> H
+    H -->|display options| I["DownloaderScreen Compose UI"]
+    I -->|enqueue download| J["DownloadExecutionService / Queue"]
+    J -->|HTTP stream| K["OkHttp Network Client"]
+    J -->|process execution| L["YtDlp Process Runner + FFmpeg"]
+    K --> M["MediaFileWriter + Category Folders"]
+    L --> M
+    M --> N["DownloadHistoryStore Database"]
+    M --> O["Android Download Notification"]
 ```
 
-On Windows, replace `./gradlew` with `gradlew.bat`.
+---
 
-## Build variants
+## Key Architectural Decisions
 
-Acqua uses separate identities for local development and production:
+| Decision | Rationale |
+| :--- | :--- |
+| **Decoupled Dual Engines** | Acqua provides a native fast-path extractor for direct carousel and photo posts alongside a full-featured `yt-dlp` runtime for complex video, audio extraction, format conversion, and metadata embedding. |
+| **Persistent In-App Browser** | The browser runs in a dedicated full-screen overlay above the main dashboard. Downloading from a live page or returning preserves navigation history, active sessions, and DOM state without reload overhead. |
+| **Hardware-Backed Session Security** | Cookies and session state copied for background network requests are encrypted at rest using AES-256-GCM keys managed by the Android Keystore. |
+| **Material 3 Expressive System** | Settings and info screens use `SegmentedListItem` with dynamic outer/inner corner radius calculation (`expressiveSegmentedShapes`), providing modern Android presentation. |
+| **Composite Build-Logic Verification** | Enforces strict release metadata checks, production string validation, and version catalog freshness via an isolated Gradle build-logic convention plugin. |
+| **Zero Telemetry by Design** | No analytics, ad SDKs, or remote tracking libraries are included. Network traffic is strictly limited to user-initiated preview and media download streams. |
+| **Categorized Media Bucketing** | Automatically routes downloaded files into organized `Images/`, `Videos/`, and `Audio/` subfolders based on verified MIME types. |
+| **Searchable Local History Store** | Persists completed download metadata, hashes, and file paths locally to enable instant search, sharing, and re-download recovery if a file is moved. |
 
-| Variant | Label | Application ID | Version name |
-| :--- | :--- | :--- | :--- |
-| Debug | Acqua Debug | `dev.qtremors.acqua.debug` | `<version>-debug` |
-| Release | Acqua | `dev.qtremors.acqua` | `<version>` |
+---
 
-Both use the version code derived from the release version by removing its dots. The distinct application IDs allow both variants to be installed on the same device without sharing app data or sessions.
+## Technology Stack
 
-APK output names are generated from the variant version and ABI:
+| Area | Technology |
+| :--- | :--- |
+| **Language & Toolchain** | Kotlin 2.4.10, Java 21 Gradle daemon, JVM 11 bytecode target, Gradle 9.5.0, Android Gradle Plugin 9.3.1 |
+| **Android Platform** | compileSdk/targetSdk 37, minSdk 24 (Android 7.0+), AndroidX Core KTX, Activity Compose, Lifecycle Runtime |
+| **UI & Styling** | Jetpack Compose BOM 2026.08.00, Material 3 1.5.0-alpha26, Material 3 Adaptive 1.3.0, Material Icons Extended |
+| **Networking & HTTP** | OkHttp 4.12.0, Kotlin Coroutines, Flow |
+| **Media Extraction & Processing** | youtubedl-android, yt-dlp, FFmpeg native runtimes, QuickJS-Android, Python runtime |
+| **Security & Storage** | Android Keystore (AES-GCM), SharedPreferences/DataStore, Storage Access Framework |
+| **Testing** | JUnit 4, AndroidX Test, Robolectric, Kotlinx Coroutines Test, Turbine |
 
-- `Acqua-Debug-<version>-arm64-v8a.apk`
-- `Acqua-Debug-<version>.apk`
-- `Acqua-<version>-arm64-v8a.apk`
-- `Acqua-<version>.apk`
+Versions are centralized in [`acqua-app/gradle/libs.versions.toml`](file:///X:/Github/acqua/acqua-app/gradle/libs.versions.toml).
 
-Equivalent `armeabi-v7a`, `x86`, and `x86_64` outputs are produced. The APK without an ABI suffix is universal and bundles all four native processing runtimes. Release builds enable R8 minification and resource shrinking.
+---
 
-Variant configuration lives in `acqua-app/app/build.gradle.kts`. Each build type generates the `application_label` string consumed by the manifest, keeping the debug and release labels distinct while preserving a valid Android resource ID for system launchers.
+## Project Structure
 
-The Gradle version is also exposed to the in-app About page through `BuildConfig`. README release badges resolve the current published tag through Shields.io, and the website queries GitHub's latest-release API at runtime. Their static fallback copy intentionally contains no release number, so a new release does not require documentation-only version edits.
+```text
+acqua/
+├── assets/                                      # Repository branding and SVG logos
+├── docs/                                        # Static project documentation website
+│   ├── index.html                               # Landing page, live GitHub counters, Bento grid, Credits, FAQ
+│   ├── styles.css                               # Responsive styling, typography, mobile viewport fixes
+│   └── scripts.js                               # Live GitHub stars/downloads fetcher with cubic easing
+├── acqua-app/
+│   ├── build-logic/                             # Convention plugins and verification tasks
+│   │   └── src/main/kotlin/
+│   │       └── AcquaAndroidApplicationConventionsPlugin.kt
+│   ├── gradle/
+│   │   └── libs.versions.toml                   # Centralized version catalog
+│   ├── app/
+│   │   ├── src/main/java/dev/qtremors/acqua/
+│   │   │   ├── MainActivity.kt                  # Main entry point and URL intent receiver
+│   │   │   ├── data/                            # Network downloader, cookie storage, history persistence
+│   │   │   │   ├── network/                     # MediaDownloader, OkHttp clients, URL resolvers
+│   │   │   │   └── repository/                  # AppSettingsRepository, DownloadHistoryStore
+│   │   │   ├── domain/                          # Media item entities, formats, resolutions
+│   │   │   ├── downloader/                      # Direct extractor, yt-dlp bridge, filename formatter
+│   │   │   ├── feature/
+│   │   │   │   ├── DashboardScreen.kt           # Primary bottom navigation shell
+│   │   │   │   ├── downloader/                  # Downloader screen, preview cards, quality sheet
+│   │   │   │   ├── browser/                     # In-app browser, bookmark manager, floating controls
+│   │   │   │   ├── history/                     # Download history, filters, sharing, search
+│   │   │   │   ├── settings/                    # Settings screen and preference viewmodels
+│   │   │   │   └── about/                       # About screen, Open Source notices, legal dialogs
+│   │   │   └── ui/
+│   │   │       ├── theme/                       # Color.kt, Shape.kt (ExpressiveShapes), Spacing.kt, Theme.kt
+│   │   │       └── components/                  # SettingsSection, SettingsListItem, Segmented cards
+│   │   └── src/test/java/                       # Comprehensive unit test suites
+├── CHANGELOG.md                                 # User-visible version changelog
+├── DEVELOPMENT.md                               # Architecture & development guide (This Document)
+├── LICENSE.md                                   # GNU General Public License v3 or later
+├── PRIVACY.md                                   # User-facing privacy policy
+├── TASKS.md                                     # Prioritized task queue
+└── THIRD_PARTY_NOTICES.md                       # Runtime component licensing and credits
+```
 
-## Release signing
+---
 
-Official Acqua releases use the same signing certificate as Arcile. Release signing is optional for local verification and automatic when all four signing values are available. Create `acqua-app/signing.properties` with:
+## Runtime Flow
+
+1. **Launch & URL Ingestion:** `MainActivity` initializes the Compose runtime, sets up window insets, and checks for incoming `ACTION_SEND` or `ACTION_VIEW` intents. Incoming URLs are sanitized and handed off directly to `DownloaderViewModel`.
+2. **Pre-Resolution & Inspection:** When a link is entered, `MediaDownloader` dispatches the request to the matching engine. It extracts title, author, duration, thumbnail image, available video resolutions, and audio streams without downloading full files.
+3. **Configuration & Options:** The user reviews preview cards in `DownloaderScreen`. Quality options (e.g. 1080p vs 720p, Original vs MP3, metadata embed) are selected via the options sheet.
+4. **Queueing & Foreground Service:** Tapping **Download** enqueues the request. A foreground service with persistent notification tracking manages the active downloads, reporting byte progress, speed, and ETA.
+5. **Validation & Finalization:** The downloaded stream is verified for MIME integrity, formatted according to the active filename template (e.g. `{title} - {author}`), and written to the selected subfolder (`Images/`, `Videos/`, `Audio/`).
+6. **Notification & History Indexing:** Upon completion, a high-priority system notification with tap-to-open and share actions is posted, and the item is indexed in `DownloadHistoryStore`.
+
+---
+
+## Core Concepts
+
+### Download Engines
+
+- **Acqua Direct Extractor:** Fast, zero-overhead HTTP client tailored for direct media links and multi-item carousels.
+- **yt-dlp Engine:** Python-based extraction runtime capable of stream demuxing, video/audio transcoding, chapter marking, and cover artwork injection.
+- **Engine Selection:** The user can toggle between Acqua and yt-dlp directly on the download bar or configure automatic fallback.
+
+### Filename Templating Engine
+
+Acqua supports customizable filename formatting via `FilenameFormatter`:
+
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `{title}` | Title of the media item | `Scenic Sunset` |
+| `{author}` | Uploader or channel name | `nature_captures` |
+| `{id}` | Unique video/post ID | `C_4x9LmZ1` |
+| `{date}` | Publication timestamp (YYYYMMDD) | `20260830` |
+| `{ext}` | Normalized output extension | `mp4` |
+
+---
+
+## Navigation & State
+
+Acqua uses single-activity architecture with stateful composable screens managed by `DashboardScreen`:
+
+- **Navigation Tabs:** Fixed bottom navigation with 4 destinations:
+  - `Downloader`: Link entry, preview carousel, download progress, and configuration sheet.
+  - `Browser`: In-app browser with bookmarks and floating download controller.
+  - `History`: Filterable, searchable download archive with missing-file recovery.
+  - `Settings`: Grouped configuration for subfolders, filenames, media quality, and engine updates.
+- **Overlay Navigation:** Sub-destinations (About, Open Source Notices, Legal Documents) render as nested screens with back-handler integration.
+
+---
+
+## Dual Download Engines
+
+Acqua encapsulates its extraction strategies behind the `MediaDownloader` domain interface:
+
+1. **Inspection Phase:** Inspects URL patterns to select the optimal extractor.
+2. **Session Injection:** If authenticated browser sessions are enabled, matching cookies for the target host are securely injected.
+3. **Execution Routing:**
+   - Single direct URLs run over pure OkHttp coroutine streams.
+   - Complex multi-format or conversion requests run through `YtDlpDownloader`, streaming output logs for progress parsing.
+4. **Failure Recovery:** If direct extraction fails with restricted content, Acqua prompts the user to open the link in the built-in browser to authenticate.
+
+---
+
+## In-App Browser & Live Session Lifecycle
+
+- **Persistent Surface:** The browser activity runs above the dashboard stack. Opening a download from a page does not destroy or reload the browser.
+- **Floating Controls:** A draggable pill overlay provides quick actions: Refresh, Download from Current URL, and Return to Acqua.
+- **Bookmark Management:** Bookmarks save custom titles, URLs, and favicons, supporting touch-and-hold editing and fast one-tap navigation.
+
+---
+
+## Authenticated Sessions & Keystore Security
+
+- **Credential Isolation:** Login happens strictly within Android WebView. Acqua never requests or captures user passwords.
+- **Hardware-Backed Encryption:** Saved cookie jars used for background extraction are encrypted using AES-256-GCM keys backed by the Android Keystore.
+- **Granular Data Management:** The **Manage Website Data** screen allows users to delete cookies, cache, local storage, and HTTP authentication records per domain or wipe all shared data with one tap.
+
+---
+
+## Storage, Filename Formatter & History Database
+
+### Category Subfolder Bucketing
+When **Organize into media folders** is enabled:
+- Images are saved to `Downloads/<Subfolder>/Images/`
+- Videos are saved to `Downloads/<Subfolder>/Videos/`
+- Audio tracks are saved to `Downloads/<Subfolder>/Audio/`
+
+### Download History Store
+- Uses a local SQLite database caching file path, size, URL, media type, thumbnail path, and completion timestamp.
+- Detects deleted or moved files in shared storage and provides a **Download again** action.
+
+---
+
+## UI & Design System
+
+Acqua implements **Material 3 Expressive** design tokens and grouped list presentation:
+
+### 1. Shape Tokens (`ui/theme/Shape.kt`)
+- `ExpressiveShapes`: Semantic corner scales (`extraSmall = 4.dp`, `small = 8.dp`, `medium = 16.dp`, `large = 24.dp`, `extraLarge = 28.dp`).
+- `expressiveSegmentedShapes(index, count)`: Computes 24dp outer corners and 4dp inner segment corners for modern Android grouped lists.
+
+### 2. Spacing Tokens (`ui/theme/Spacing.kt`)
+- `LocalSpacing` provides centralized coordinates (`screenGutter = 16.dp`, `cardPadding = 16.dp`, `segmentedGap = 2.dp`).
+
+### 3. Grouped UI Primitives (`ui/components/`)
+- `SettingsSection`: Semantic bold section header with 2dp item gaps.
+- `SettingsSwitchRow`: Accessible `SegmentedListItem` switch row with merged switch semantics (`Role.Switch`).
+- `SettingsActionRow`: Accessible clickable `SegmentedListItem` with trailing indicators.
+- `SettingsCardContainer`: Expressive container card matching outer corner radii.
+
+---
+
+## Feature Deep Dive
+
+### 1. Downloader (`feature/downloader`)
+- Owns URL input parsing, preview cards, quality sheet, and active download progress.
+
+### 2. Browser (`feature/browser`)
+- Owns WebView container, bookmark manager, floating action pill, and cookie session extraction.
+
+### 3. History (`feature/history`)
+- Owns search filtering, category tabs (All, Photos, Videos, Audio, Links), file sharing, and history clearing.
+
+### 4. Settings (`feature/settings`)
+- Owns downloads subfolder, category organization toggle, filename template builder, media quality selectors, yt-dlp auto-updater, and WebView provider diagnostics.
+
+### 5. About (`feature/about`)
+- Owns app information, device diagnostics, version copy action, privacy policy, and open-source licenses catalog.
+
+---
+
+## Naming Conventions
+
+### Directory & File Names
+- **Compose Screens:** PascalCase with `Screen` suffix (e.g. `SettingsScreen.kt`).
+- **Composables:** PascalCase without suffix (e.g. `SettingsSection.kt`).
+- **ViewModels:** PascalCase with `ViewModel` suffix (e.g. `DownloaderViewModel.kt`).
+- **Repositories & Stores:** PascalCase with `Repository` or `Store` suffix (e.g. `AppSettingsRepository.kt`).
+
+### Method Signatures
+
+| Prefix | Intent | Example |
+| :--- | :--- | :--- |
+| `load` | Read state / data | `loadHistory()` |
+| `set` | Update preference value | `setBaseFolder(folder)` |
+| `on` | Event callbacks | `onOpenAbout` |
+| `toggle` | Flip boolean state | `toggleFilenameVariable(var)` |
+| `clear` | Reset stored data | `clearHistory()` |
+| `update` | Modify state or dependency | `updateYtDlp()` |
+| `format` | Convert data for display | `formatFileSize(bytes)` |
+| `is` / `has` | Boolean checks | `isUpdatingYtDlp()` |
+
+---
+
+## Configuration
+
+### Compilation Metrics
+
+| Attribute | Configuration Value |
+| :--- | :--- |
+| **Namespace** | `dev.qtremors.acqua` |
+| **Compile SDK** | 37 |
+| **Target SDK** | 37 |
+| **Min SDK** | 24 (Android 7.0+) |
+| **Version Code** | 15 |
+| **Version Name** | 0.1.5 |
+| **Java Target** | JVM 11 |
+| **Gradle Version** | 9.5.0 |
+| **Gradle JVM** | JDK 21 |
+| **Kotlin Version** | 2.4.10 |
+| **AGP Version** | 9.3.1 |
+| **Compose BOM** | 2026.08.00 |
+
+### Manifest Permissions
+
+```xml
+<uses-permission android:name="android.permission.INTERNET" />
+<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+<uses-permission android:name="android.permission.VIBRATE" />
+<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+```
+
+---
+
+## Security & Privacy Practices
+
+1. **Hardware-Backed Keystore:** Extraction cookies are encrypted with AES-256-GCM via Android Keystore.
+2. **Credential Isolation:** Passwords and login sessions are never stored in plain text or telemetry.
+3. **Scoped Network Access:** Network connections are only initiated for user-requested previews, downloads, and yt-dlp updates.
+4. **No Telemetry:** Acqua contains zero analytics, ad SDKs, or user tracking services.
+5. **Local Storage Cleanup:** Users can wipe all browser data, cookies, and cache at any time.
+
+---
+
+## Error Handling
+
+- **ViewModels:** Catch repository exceptions and map them to typed UI state (`YtDlpFailure`, `DownloadError`).
+- **Network Resilience:** Automatic retry on transient network failures.
+- **Cancellation Safety:** Coroutine flows catch and rethrow `CancellationException` to ensure proper job cancellation.
+
+---
+
+## Testing Suite
+
+Acqua uses JVM unit tests, Robolectric tests, and build-logic verification gates.
+
+### Verification Commands
+
+```bash
+# Run all unit tests:
+./gradlew testDebugUnitTest
+
+# Validate production string assets (checks for non-resource text):
+./gradlew checkProductionStrings
+
+# Verify build conventions and release metadata:
+./gradlew :app:verifyAcquaBuildConventions
+
+# Complete release verification gate:
+./gradlew checkProductionStrings :app:verifyAcquaBuildConventions :app:testDebugUnitTest
+```
+
+---
+
+## Build & Release Engineering
+
+### Build Commands
+
+```bash
+# Build universal and ABI-specific debug APKs:
+./gradlew :app:assembleDebug
+
+# Build minified release APKs:
+./gradlew :app:assembleRelease
+```
+
+On Windows, use `gradlew.bat`.
+
+### Output Artifacts
+
+| Variant / ABI | Release Output Path | Purpose |
+| :--- | :--- | :--- |
+| Universal | `app/build/outputs/apk/release/Acqua-<version>.apk` | Bundles all four native architectures |
+| `arm64-v8a` | `app/build/outputs/apk/release/Acqua-<version>-arm64-v8a.apk` | 64-bit modern ARM devices |
+| `armeabi-v7a` | `app/build/outputs/apk/release/Acqua-<version>-armeabi-v7a.apk` | 32-bit legacy ARM devices |
+| `x86_64` | `app/build/outputs/apk/release/Acqua-<version>-x86_64.apk` | 64-bit emulators and Intel devices |
+| `x86` | `app/build/outputs/apk/release/Acqua-<version>-x86.apk` | 32-bit emulators |
+
+### Release Signing
+
+Configure `acqua-app/signing.properties` (or `local.properties`):
 
 ```properties
 signing.storeFile=/absolute/path/to/acqua-release.jks
-signing.storePassword=your-store-password
-signing.keyAlias=your-key-alias
-signing.keyPassword=your-key-password
+signing.storePassword=your_store_password
+signing.keyAlias=your_key_alias
+signing.keyPassword=your_key_password
 ```
 
-If `signing.properties` is absent, the build also checks `acqua-app/local.properties`. Both files and common keystore formats are ignored by Git. Never commit signing passwords or keystore files.
-
-With complete signing values, every release APK, including the universal package, is signed with the configured key. Without them, Gradle still produces unsigned release APKs suitable for local build verification. Debug APKs always use the Android debug key and the separate `dev.qtremors.acqua.debug` application ID.
-
-Before publishing, verify the certificate and application ID rather than relying only on the filename:
+Verify the signed release APK:
 
 ```bash
 apksigner verify --verbose --print-certs app/build/outputs/apk/release/Acqua-<version>-arm64-v8a.apk
-aapt dump badging app/build/outputs/apk/release/Acqua-<version>-arm64-v8a.apk
 ```
 
-## Architecture
+---
 
-Acqua is a Compose-based Android application with a main dashboard activity, a persistent shared-browser activity, a dedicated download activity, and a temporary rendered-page resolver activity.
+## Intended Changes & Anomalies
 
-```text
-Shared link / pasted URL
-          |
-          v
-   MainActivity (Android boundary)
-          |
-          v
-   Feature ViewModels + Compose screens
-          |
-          +---- source adapters ----> direct or processed media
-          |
-          +---- browser extraction -> RenderedPageResolverActivity
-                                             |
-                                             v
-                                      shared WebView profile
-                                             |
-                                             v
-                                      candidate media URLs
-                                             |
-                                             v
-                                    validation and download
+| Aspect | Custom Implementation | Design Rationale |
+| :--- | :--- | :--- |
+| **Separate Application IDs** | `dev.qtremors.acqua.debug` for Debug, `dev.qtremors.acqua` for Release. | Allows side-by-side installation without data or session collision. |
+| **Persistent Browser Layer** | Browser activity runs in an overlay above the main dashboard. | Preserves active WebView DOM state and cookies during downloads. |
+| **Decoupled Dual Extractor** | Fast direct HTTP client + yt-dlp runtime. | Maximizes download speed for simple posts while retaining support for complex media. |
 
-BrowserActivity (kept alive)
-          |
-          +---- current URL -------> DownloadActivity
-                                             |
-                                             +---- extraction -> RenderedPageResolverActivity
-                                             +---- preview and storage
-                                             |
-                                             v
-                                  finish back to the same WebView
-```
+---
 
-### Key files
+## Project Auditing & Quality Standards
 
-| File | Responsibility |
-| :--- | :--- |
-| `MainActivity.kt` | Permission and activity-result launchers at the Android boundary. |
-| `DashboardScreen.kt` | Top-level feature navigation. |
-| `feature/*/*ViewModel.kt` | Lifecycle-aware state and feature orchestration. |
-| `feature/*/*Screen.kt` | Downloader, browser, history, and settings UI. |
-| `resolver/*` | Source adapters, network extraction fallbacks, and authenticated requests. |
-| `downloader/*Engine.kt` | Processed-media inspection and download requests, cookies, progress, cancellation, and temporary-file cleanup. |
-| `downloader/*DownloadWorker.kt` | Persisted foreground direct and processed downloads, notifications, retry, and storage import. |
-| `downloader/*DownloadCoordinator.kt` | Enqueues, observes, and cancels foreground download work. |
-| `downloader/*Runtime.kt` | Serialized runtime initialization, execution, updates, and cancellation. |
-| `MediaDownloader.kt` | Source-neutral media validation, preview fetching, and complete-file streaming. |
-| `ResolvedMedia.kt` | Resolved-media model with kind, MIME type, and file extension. |
-| `MediaResolver.kt` | Resolver contract shared by source adapters. |
-| `MediaResolutionService.kt` | Source selection, browser fallback, validation, and result selection. |
-| `MediaStorage.kt` | MediaStore and legacy FileProvider-backed download storage. |
-| `HistoryRepository.kt` | History schema, migration, and persistence. |
-| `AppSettingsRepository.kt` | Typed download and browser-extraction preferences. |
-| `MediaContentDetector.kt` | Content sniffing and structural validation for supported image and MP4 responses. |
-| `BrowserActivity.kt` | Shared browser UI, login persistence, and full-screen floating page controls. |
-| `DownloadActivity.kt` | Browser-launched extraction, preview, permission, and save flow that leaves the live browser underneath. |
-| `SavedWebsiteRepository.kt` | Saved website and favicon persistence. |
-| `BrowserDataManager.kt` | Selected-origin and full browser-data clearing. |
-| `WebLink.kt` | Generic HTTP(S) normalization, shared-text extraction, and known-source detection. |
-| `RenderedPageResolverActivity.kt` | Temporary WebView that observes a submitted page and returns media candidates. |
-| `session/*` | Session persistence and Android Keystore protection for reusable extraction cookies. |
+When reviewing code changes, ensure:
+1. **Resource Strings:** All user-facing strings must be localized in `strings.xml` to pass `checkProductionStrings`.
+2. **Convention Adherence:** Build configuration and version catalog must pass `:app:verifyAcquaBuildConventions`.
+3. **Design Consistency:** All settings and about rows must use `SettingsSection` and `SegmentedListItem` primitives.
+4. **Memory Safety:** Image previews in carousels must be bounded in temporary storage and decoded at screen size.
+5. **Zero Telemetry:** No analytics or tracking code may be introduced.
 
-The UI remains source-agnostic. Source-specific extraction stays in resolver components, while validation, storage, history, settings, and session persistence use source-neutral models and repositories. Stateful services are constructed per application boundary rather than exposed as global Kotlin objects. Keep each Kotlin source file below 700 lines; split by responsibility before it reaches that limit.
-
-## Media resolution
-
-Resolution is layered because known sources and generic websites expose media differently.
-
-1. Normalize any valid HTTP or HTTPS URL.
-2. Ask matching source adapters for direct or selectable media formats.
-3. Prefer an already-resolved 1080p result; otherwise compare available candidates and choose the larger valid video.
-4. Load other pages in the rendered-page resolver when automatic browser sessions are enabled or the user explicitly downloads from the live browser.
-5. Observe document markup, media elements, metadata, performance entries, and network requests.
-6. Strip byte-range fragments and other partial-response parameters from candidates.
-7. Carry the page referrer and relevant domain cookies into validation and download requests.
-8. Deduplicate and cap candidates, validating at most four direct files concurrently.
-9. Report a clean unsupported-media error when no complete file is exposed.
-
-The resolver must never assume that a URL ending in `.jpg` or `.mp4` contains that format. Services frequently return HTML error pages, partial byte ranges, or audio streams under misleading URLs.
-
-## Authenticated sessions
-
-### Browser flow
-
-`BrowserActivity` provides one address bar and one shared WebView profile for all websites. Credentials are submitted directly to the loaded website; Acqua does not receive or store passwords. Download launches `DownloadActivity` above the browser instead of finishing it, preserving the live page, scroll position, navigation history, forms, session storage, and transient JavaScript state during normal operation. `WebView.saveState()` and `restoreState()` provide best-effort URL and history restoration after activity or process recreation.
-
-WebView keeps cookies and site storage in the application sandbox. The user can add a named website bookmark before opening the browser; `SavedWebsiteRepository` stores its display name, origin, and cached favicon for the Browser tab. `BrowserDataManager` only coordinates data clearing. Cookies reused by network adapters are copied into an encrypted session store protected by AES-GCM and Android Keystore.
-
-The **Use browser sessions for extraction** preference is opt-in. When disabled, network adapters do not proactively reuse saved session cookies. An explicit Download action in the browser authorizes the dedicated download flow to use the shared WebView session for that media while leaving the preference disabled.
-
-Backup rules exclude both the encrypted session payload and WebView data from cloud backup and device transfer.
-
-### Resolver flow
-
-`RenderedPageResolverActivity` creates a temporary WebView using the same cookie profile, visits the submitted URL, and returns media candidates to the calling main or download activity. Existing encrypted adapter cookies are migrated into WebView when required.
-
-**Manage Website Data** can clear selected origins or all browser data. Selected clearing expires addressable cookies, deletes origin storage, removes the bookmark and favicon, and clears matching encrypted adapter sessions. Full clearing additionally removes all WebView cookies and storage, shared cache, form data, HTTP authentication, registry metadata, and encrypted adapter sessions. Debug and release builds maintain independent browser data because their application IDs and storage sandboxes differ.
-
-### Security boundaries
-
-- Never log cookies, authorization headers, session payloads, or full authenticated responses.
-- Never persist passwords.
-- Keep session preferences excluded from backup and device transfer.
-- Accept only HTTP(S) top-level navigation and keep file/content access disabled.
-- Do not override SSL errors or disguise WebView as another client.
-- Do not weaken certificate validation or WebView safe-browsing behavior.
-- Do not add automation intended to bypass access controls, challenges, rate limits, or account protections.
-
-## Validation and downloads
-
-`MediaContentDetector` examines response bytes and metadata before a file is accepted:
-
-- JPEG, PNG, GIF, and WebP are identified by their signatures.
-- MP4 requires a structurally complete `ftyp` box followed by another valid ISO media box.
-- HTML, JSON error payloads, audio-only streams, and unsupported formats are rejected.
-- Partial `206` responses and truncated videos are not treated as finished downloads.
-
-Downloads use the same resolved media item shown in preview. This keeps preview dimensions, file size, thumbnail, extension, and saved content aligned.
-
-All downloads run as persistent foreground work. Direct carousel items use a controlled queue, while processed downloads use an app-cache task directory. The processing engine merges separate streams or converts extracted audio, then `MediaStorage` imports the completed file into Downloads and deletes the temporary task. Notifications and the downloader UI expose progress and cancellation, and transient network failures use bounded retry. Quality selectors account for video orientation; metadata, chapters, and cover artwork are optional. Runtime updates and downloads share a read/write lock so an update cannot replace the executable during an active job.
-
-When changing extraction logic, test at least:
-
-- A public photo post.
-- A public video.
-- A carousel containing both image and video items.
-- Signed-in-only content visible to the test account.
-- Signed-in media visible to the test account.
-- An unavailable or deleted URL.
-- A response that returns HTML under a media-looking URL.
-- A partial video response.
-- A video with separate video and audio streams.
-- An audio link saved as original audio, M4A, and MP3.
-
-Use test accounts and content you control. Repeated automated requests can trigger service safeguards.
-
-## Storage and history
-
-Acqua writes downloads through Android's supported storage APIs into a configurable subfolder under Downloads. Filename settings are applied before the file is created. The Settings page exposes the supported placeholders, including `{title}` for processed media, as toggleable chips and can restore `acqua_{username}_{resolution}_{date}_{time}_{index}` as the default pattern.
-
-History stores searchable and sortable local download records used by the Compose dashboard. It checks whether completed files still exist and offers source re-fetch when a file has moved or been deleted. Authentication state is separate from history and must not be mixed into user-visible records or exports.
-
-If the schema changes, preserve existing entries or provide an explicit migration. Avoid destructive database recreation in production builds.
-
-## Testing
-
-Run unit tests:
-
-```bash
-cd acqua-app
-./gradlew :app:testDebugUnitTest
-```
-
-Run Android instrumentation tests on a connected device or emulator:
-
-```bash
-./gradlew :app:connectedDebugAndroidTest
-```
-
-Create both APK variants:
-
-```bash
-./gradlew :app:assembleDebug :app:assembleRelease
-```
-
-Useful verification points:
-
-- `MediaContentDetectorTest` covers format detection and corrupt/partial payload rejection.
-- `WebLinkTest` covers generic URL normalization, shared-text extraction, and known-source routing.
-- `MediaResolutionServiceTest` covers source routing, browser fallback, validation, and quality selection.
-- Feature-state tests cover history filtering, while Android tests cover history, settings, saved websites, encrypted sessions, and MediaStore-backed storage.
-- Install debug and release together and verify their names and independent data.
-- Confirm browsing, login persistence, app restart restoration, authenticated resolution, and **Clear Data**.
-- Try a direct media URL, a generic HTML page with media metadata, and an unsupported page.
-- Confirm image, video, and audio history entries match the files that are downloaded.
-- Check light/dark themes and compact/expanded layouts.
-
-## Release checklist
-
-1. Update `CHANGELOG.md` with concise user-visible changes.
-2. Set `versionName` and `versionCode` in `app/build.gradle.kts` only when a version change is requested.
-3. Keep debug and release application IDs and labels distinct.
-4. Run unit tests and a release build.
-5. Verify APK output names.
-6. Test a clean install and an upgrade from the previous release.
-7. Verify browser navigation, login persistence, generic and specialized extraction, preview, download, history, and data clearing.
-8. Confirm no secrets, cookies, local paths, or test credentials are committed.
-9. Validate the website in `docs/` and update version references if necessary.
+---
 
 ## Troubleshooting
 
-### A website is blank
+- **yt-dlp extraction fails:** Tap **Update yt-dlp now** in Settings to download the latest extractor definition.
+- **WebView provider unavailable:** Ensure Android System WebView is updated via Google Play or system settings.
+- **Download notification missing:** Ensure notification permission is granted on Android 13+ devices.
+- **Build toolchain issues:** Ensure JDK 21+ and Android SDK 37 are configured in your local environment.
 
-- Confirm Android System WebView and the browser engine are up to date.
-- Check that the device has working network access and correct date/time.
-- Inspect Logcat for WebView renderer or TLS failures without printing session data.
+---
 
-### Login succeeds but extraction is unauthenticated
+## Maintenance Notes
 
-- Confirm the login was completed in Acqua Browser rather than an external browser.
-- Confirm the website remains signed in after closing and reopening Acqua Browser.
-- Check that the media host receives only cookies valid for its domain and the correct page referrer.
-- Remember that debug and release builds do not share sessions.
+- **Changelogs:** Update `CHANGELOG.md` under the current version header for every user-visible change.
+- **Version Bumps:** Do not bump versions unless explicitly instructed. Keep project and build versions identical (`1.2.3` → code `123`).
+- **Release Verification:** Always run `checkProductionStrings :app:verifyAcquaBuildConventions :app:testDebugUnitTest :app:assembleRelease` before declaring a release ready.
 
-### A valid link returns no media
+---
 
-- Confirm the page exposes a direct image or video URL in markup, metadata, a media element, or observable requests.
-- Generic resolution does not assemble segmented streams or bypass DRM/access controls.
-- Add a source adapter when a website needs structured extraction beyond the generic resolver.
+## Feedback
 
-### A video opens in WebView but no preview appears
+Acqua is a solo open-source project. Forking for personal use is welcome under the GNU GPLv3+ license terms.
 
-- Inspect which candidate URLs were observed.
-- Verify range parameters are removed before the final request.
-- Confirm the candidate is a complete video rather than an audio track or thumbnail.
-- Preserve the cover image independently from video selection.
+To report bugs, request features, or suggest improvements, please open an issue on the [GitHub issue tracker](https://github.com/qtremors/acqua/issues).
 
-### A downloaded file is corrupt
+---
 
-- Check the HTTP status, content length, and signature before writing.
-- Reject `206 Partial Content` unless a complete range assembly is implemented.
-- Confirm the downloaded response passes `MediaContentDetector` rather than trusting its extension.
-
-## Contributing
-
-Keep changes scoped, update the changelog for user-visible behavior, and include tests for extraction or validation changes. Contributions are accepted under the terms in [LICENSE.md](LICENSE.md).
+<p align="center">
+  <a href="README.md">Back to README</a>
+</p>

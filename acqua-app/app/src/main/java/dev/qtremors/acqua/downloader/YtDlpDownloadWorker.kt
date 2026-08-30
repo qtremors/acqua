@@ -1,6 +1,7 @@
 package dev.qtremors.acqua.downloader
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import android.webkit.CookieManager
 import androidx.work.CoroutineWorker
@@ -37,7 +38,12 @@ class YtDlpDownloadWorker(
         var processedFile: File? = null
         return try {
             if (request.media.backend == MediaBackend.DIRECT) {
-                runDirectDownload(request)
+                val savedUri = runDirectDownload(request)
+                notifications.complete(
+                    title = request.media.title ?: request.media.username,
+                    uri = savedUri,
+                    mimeType = request.media.mimeType
+                )
                 return Result.success()
             }
             var downloadedBytes = 0L
@@ -62,7 +68,7 @@ class YtDlpDownloadWorker(
                     )
             }
             processedFile = completedFile
-            withContext(Dispatchers.IO) {
+            val savedUri = withContext(Dispatchers.IO) {
                 val settings = AppSettingsRepository(applicationContext)
                 val history = HistoryRepository(applicationContext)
                 val downloader = MediaDownloader()
@@ -73,10 +79,17 @@ class YtDlpDownloadWorker(
                     request.sourceUrl
                 )
             }
+            notifications.complete(
+                title = request.outputMedia.title ?: request.media.title ?: request.outputMedia.username,
+                uri = savedUri,
+                mimeType = if (request.options.contentType == DownloadContentType.AUDIO) "audio/*" else "video/*"
+            )
             Result.success()
         } catch (cancelled: CancellationException) {
+            notifications.cancel()
             throw cancelled
         } catch (error: Throwable) {
+            notifications.cancel()
             if (error is VirtualMachineError || error is ThreadDeath) throw error
             if (error.hasNetworkCause() && runAttemptCount < MAX_RETRIES) {
                 Result.retry()
@@ -92,7 +105,7 @@ class YtDlpDownloadWorker(
         }
     }
 
-    private suspend fun runDirectDownload(request: DownloadWorkRequest) = withContext(Dispatchers.IO) {
+    private suspend fun runDirectDownload(request: DownloadWorkRequest): Uri = withContext(Dispatchers.IO) {
         val settings = AppSettingsRepository(applicationContext)
         val cookiesAllowed = request.media.explicitBrowserSessionAuthorized || settings.useBrowserSessions()
         val requestCookies = if (cookiesAllowed) {

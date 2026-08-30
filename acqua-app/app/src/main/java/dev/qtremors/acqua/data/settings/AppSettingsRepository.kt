@@ -4,6 +4,12 @@ import android.content.Context
 import androidx.core.content.edit
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.AudioOutputFormat
+import dev.qtremors.acqua.downloader.DownloadContentType
+import dev.qtremors.acqua.domain.DownloadEngine
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 data class DownloadSettings(
     val baseFolder: String,
@@ -29,6 +35,21 @@ class AppSettingsRepository(context: Context) {
         preferences.edit { putBoolean(KEY_USE_BROWSER_SESSIONS, enabled) }
     }
 
+    fun screenProtectionEnabled(): Boolean = preferences.getBoolean(KEY_SCREEN_PROTECTION, false)
+
+    fun setScreenProtectionEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_SCREEN_PROTECTION, enabled) }
+    }
+
+    fun screenProtectionEnabledFlow(): Flow<Boolean> = callbackFlow {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == KEY_SCREEN_PROTECTION) trySend(screenProtectionEnabled())
+        }
+        trySend(screenProtectionEnabled())
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
     fun downloadSettings(): DownloadSettings = DownloadSettings(
         baseFolder = preferences.getString(KEY_BASE_FOLDER, DEFAULT_BASE_FOLDER).orEmpty()
             .ifBlank { DEFAULT_BASE_FOLDER },
@@ -36,6 +57,10 @@ class AppSettingsRepository(context: Context) {
         filenamePattern = preferences.getString(KEY_FILENAME_PATTERN, FilenameFormatter.DEFAULT_PATTERN)
             .orEmpty()
             .ifBlank { FilenameFormatter.DEFAULT_PATTERN }
+            .let { pattern ->
+                if (pattern == FilenameFormatter.LEGACY_DEFAULT_PATTERN) FilenameFormatter.DEFAULT_PATTERN
+                else pattern
+            }
     )
 
     fun setBaseFolder(value: String) {
@@ -77,6 +102,22 @@ class AppSettingsRepository(context: Context) {
         preferences.edit { putBoolean(KEY_EMBED_THUMBNAIL, enabled) }
     }
 
+    fun lastDownloadEngine(): DownloadEngine = preferences.getString(KEY_DOWNLOAD_ENGINE, null)
+        ?.let { value -> DownloadEngine.entries.firstOrNull { it.name == value } }
+        ?: DownloadEngine.YT_DLP
+
+    fun setLastDownloadEngine(value: DownloadEngine) {
+        preferences.edit { putString(KEY_DOWNLOAD_ENGINE, value.name) }
+    }
+
+    fun lastDownloadContentType(): DownloadContentType? = preferences
+        .getString(KEY_DOWNLOAD_CONTENT_TYPE, null)
+        ?.let { value -> DownloadContentType.entries.firstOrNull { it.name == value } }
+
+    fun setLastDownloadContentType(value: DownloadContentType) {
+        preferences.edit { putString(KEY_DOWNLOAD_CONTENT_TYPE, value.name) }
+    }
+
     fun setAutoUpdateYtDlp(enabled: Boolean) {
         preferences.edit { putBoolean(KEY_AUTO_UPDATE_YT_DLP, enabled) }
     }
@@ -96,6 +137,7 @@ class AppSettingsRepository(context: Context) {
     companion object {
         const val PREFS_NAME = "acqua_prefs"
         const val KEY_USE_BROWSER_SESSIONS = "acqua_use_session_cookies"
+        const val KEY_SCREEN_PROTECTION = "acqua_screen_protection"
         private const val KEY_BASE_FOLDER = "acqua_base_folder"
         private const val KEY_CATEGORIZE_MEDIA = "acqua_categorize_media"
         private const val KEY_FILENAME_PATTERN = "acqua_filename_format"
@@ -103,6 +145,8 @@ class AppSettingsRepository(context: Context) {
         private const val KEY_AUDIO_FORMAT = "acqua_audio_output_format"
         private const val KEY_EMBED_METADATA = "acqua_embed_metadata"
         private const val KEY_EMBED_THUMBNAIL = "acqua_embed_thumbnail"
+        private const val KEY_DOWNLOAD_ENGINE = "acqua_last_download_engine"
+        private const val KEY_DOWNLOAD_CONTENT_TYPE = "acqua_last_download_content_type"
         private const val KEY_AUTO_UPDATE_YT_DLP = "acqua_auto_update_ytdlp"
         private const val KEY_LAST_YT_DLP_UPDATE = "acqua_last_ytdlp_update"
         private const val DEFAULT_BASE_FOLDER = "Acqua"

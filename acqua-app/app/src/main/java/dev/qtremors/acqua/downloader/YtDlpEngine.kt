@@ -90,7 +90,7 @@ class YtDlpEngine(context: Context) {
                 addOption("--no-embed-info-json")
                 if (options.contentType == DownloadContentType.VIDEO) addOption("--embed-chapters")
             }
-            if (options.embedThumbnail) {
+            if (options.embedThumbnail && options.contentType == DownloadContentType.AUDIO) {
                 addOption("--embed-thumbnail")
                 addOption("--convert-thumbnails", "jpg")
             }

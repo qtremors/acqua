@@ -2,8 +2,15 @@ package dev.qtremors.acqua.feature
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -63,6 +70,10 @@ fun DashboardScreen(
     urlHandoff: String?,
     browserRevision: Int,
     downloadRequestRevision: Int,
+    backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager? = null,
+    appUpdater: dev.qtremors.acqua.data.updater.AppUpdater? = null,
+    currentThemeState: dev.qtremors.acqua.ui.theme.ThemeState = dev.qtremors.acqua.ui.theme.ThemeState(),
+    onThemeChange: (dev.qtremors.acqua.ui.theme.ThemeState) -> Unit = {},
     onUrlHandoffConsumed: () -> Unit,
     resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
     requestDownloadAccess: (needsNotification: Boolean, action: () -> Unit) -> Unit,
@@ -85,13 +96,6 @@ fun DashboardScreen(
     LaunchedEffect(urlHandoff) {
         urlHandoff?.let { url ->
             downloaderViewModel.updateUrl(url)
-            if (browserState.initialized) {
-                downloaderViewModel.resolve(
-                    browserState.useSessions,
-                    downloadRequestRevision,
-                    resolveInBrowser
-                )
-            }
             tab = 0
             onUrlHandoffConsumed()
         }
@@ -160,9 +164,24 @@ fun DashboardScreen(
             }
         }
     ) { padding ->
+        val layoutDirection = LocalLayoutDirection.current
+        val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+        val downloaderPadding = remember(padding, imeBottom, layoutDirection) {
+            if (imeBottom > 0.dp) {
+                PaddingValues(
+                    top = padding.calculateTopPadding(),
+                    start = padding.calculateStartPadding(layoutDirection),
+                    end = padding.calculateEndPadding(layoutDirection),
+                    bottom = 0.dp
+                )
+            } else {
+                padding
+            }
+        }
         Box(Modifier.fillMaxSize()) {
             when (overlay) {
                 AboutDestination.ABOUT -> AboutScreen(
+                    appUpdater = appUpdater,
                     onOpenNotices = { overlay = AboutDestination.NOTICES },
                     onOpenLicense = { overlay = AboutDestination.LICENSE },
                     modifier = Modifier.fillMaxSize().padding(padding)
@@ -186,7 +205,7 @@ fun DashboardScreen(
                     resolveInBrowser,
                     requestDownloadAccess,
                     onOpenBrowser = { openBrowser(it, false, null) },
-                    modifier = Modifier.fillMaxSize().padding(padding)
+                    modifier = Modifier.fillMaxSize().padding(downloaderPadding)
                 )
                 1 -> BrowserScreen(
                     browserViewModel,
@@ -196,7 +215,6 @@ fun DashboardScreen(
                 )
                 2 -> HistoryScreen(
                     historyViewModel,
-                    mediaDownloader,
                     fileActions,
                     active = true,
                     onRefetch = { downloaderViewModel.updateUrl(it); tab = 0 },
@@ -204,6 +222,9 @@ fun DashboardScreen(
                 )
                 else -> SettingsScreen(
                     settingsViewModel,
+                    backupManager = backupManager,
+                    themeState = currentThemeState,
+                    onThemeChange = onThemeChange,
                     onOpenAbout = { overlay = AboutDestination.ABOUT },
                     modifier = Modifier.fillMaxSize().padding(padding)
                 )

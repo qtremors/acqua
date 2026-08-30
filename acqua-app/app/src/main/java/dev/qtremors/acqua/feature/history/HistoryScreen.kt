@@ -1,8 +1,6 @@
 package dev.qtremors.acqua.feature.history
 
-import android.graphics.BitmapFactory
 import android.widget.Toast
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
@@ -27,9 +26,9 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,8 +44,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -57,21 +54,19 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.history.HistoryEntry
-import dev.qtremors.acqua.data.network.MediaDownloader
-import dev.qtremors.acqua.domain.MediaKind
-import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.platform.FileActions
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import dev.qtremors.acqua.ui.scrollbar.AcquaFastScrollbar
+import dev.qtremors.acqua.ui.scrollbar.LazyListScrollbarState
+import dev.qtremors.acqua.ui.image.ThumbnailKey
+import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.Date
 
 @Composable
 fun HistoryScreen(
     viewModel: HistoryViewModel,
-    mediaDownloader: MediaDownloader,
     fileActions: FileActions,
     active: Boolean,
     onRefetch: (String) -> Unit,
@@ -131,18 +126,32 @@ fun HistoryScreen(
                 HistoryEmptyState(state.emptyReason)
             }
         } else {
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(visibleEntries, key = HistoryEntry::id) { entry ->
-                    HistoryRow(
-                        entry,
-                        mediaDownloader,
-                        missing = entry.id in state.missingEntryIds,
-                        onOpen = { context.performHaptic(HapticSignal.CLICK); fileActions.open(entry.fileUri, entry.mimeType) },
-                        onShare = { context.performHaptic(HapticSignal.CLICK); fileActions.share(entry.fileUri, entry.mimeType) },
-                        onDelete = { context.performHaptic(HapticSignal.CLICK); viewModel.delete(entry.id) },
-                        onRefetch = { context.performHaptic(HapticSignal.CLICK); onRefetch(entry.url) }
-                    )
+            val listState = rememberLazyListState()
+            val scrollbarState = remember(listState) { LazyListScrollbarState(listState) }
+            Box(Modifier.fillMaxWidth().weight(1f)) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(visibleEntries, key = HistoryEntry::id) { entry ->
+                        HistoryRow(
+                            entry,
+                            missing = entry.id in state.missingEntryIds,
+                            onOpen = { context.performHaptic(HapticSignal.CLICK); fileActions.open(entry.fileUri, entry.mimeType) },
+                            onShare = { context.performHaptic(HapticSignal.CLICK); fileActions.share(entry.fileUri, entry.mimeType) },
+                            onDelete = { context.performHaptic(HapticSignal.CLICK); viewModel.delete(entry.id) },
+                            onRefetch = { context.performHaptic(HapticSignal.CLICK); onRefetch(entry.url) }
+                        )
+                    }
                 }
+                AcquaFastScrollbar(
+                    scrollbarState = scrollbarState,
+                    labelForIndex = { index ->
+                        visibleEntries.getOrNull(index)?.fileName?.take(15) ?: ""
+                    },
+                    modifier = Modifier.align(Alignment.CenterEnd)
+                )
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -152,29 +161,25 @@ fun HistoryScreen(
 @Composable
 private fun HistoryRow(
     entry: HistoryEntry,
-    mediaDownloader: MediaDownloader,
     missing: Boolean,
     onOpen: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
     onRefetch: () -> Unit
 ) {
-    val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
-    var image by remember(entry.id, entry.thumbnailUrl) { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(entry.id, entry.thumbnailUrl, entry.fileUri) {
-        image = withContext(Dispatchers.IO) {
-            runCatching {
-                val bitmap = if (entry.isDownloaded && !entry.isVideo && !entry.isAudio && entry.fileUri.isNotEmpty()) {
-                    context.contentResolver.openInputStream(entry.fileUri.toUri())?.use(BitmapFactory::decodeStream)
-                } else {
-                    entry.thumbnailUrl?.let { url ->
-                        mediaDownloader.fetchBytes(ResolvedMedia(url, MediaKind.IMAGE))
-                            .let { BitmapFactory.decodeByteArray(it, 0, it.size) }
-                    }
-                }
-                bitmap?.asImageBitmap()
-            }.getOrNull()
+    val thumbnailModel = remember(entry.id, entry.thumbnailUrl, entry.fileUri, missing) {
+        when {
+            missing -> null
+            entry.isDownloaded && entry.fileUri.isNotEmpty() && (entry.isVideo || entry.isAudio) -> ThumbnailKey(
+                path = "",
+                extension = entry.fileName.substringAfterLast('.', "").lowercase(),
+                sizeBytes = entry.sizeBytes,
+                lastModifiedMillis = entry.timestamp,
+                contentUri = entry.fileUri
+            )
+            entry.isDownloaded && entry.fileUri.isNotEmpty() -> entry.fileUri.toUri()
+            else -> entry.thumbnailUrl
         }
     }
     Card(
@@ -187,18 +192,25 @@ private fun HistoryRow(
                     Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    image?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
-                        ?: Icon(
-                            when {
-                                !entry.isDownloaded -> Icons.Filled.Link
-                                entry.isVideo -> Icons.Filled.Movie
-                                entry.isAudio -> Icons.Filled.MusicNote
-                                else -> Icons.Filled.Image
-                            },
-                            null,
-                            tint = colors.primary.copy(alpha = 0.6f),
-                            modifier = Modifier.size(24.dp)
+                    Icon(
+                        when {
+                            !entry.isDownloaded -> Icons.Filled.Link
+                            entry.isVideo -> Icons.Filled.Movie
+                            entry.isAudio -> Icons.Filled.MusicNote
+                            else -> Icons.Filled.Image
+                        },
+                        null,
+                        tint = colors.primary.copy(alpha = 0.6f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    if (thumbnailModel != null) {
+                        AsyncImage(
+                            model = thumbnailModel,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
+                    }
                 }
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {

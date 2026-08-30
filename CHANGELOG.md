@@ -2,6 +2,88 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.5] - 2026-08-30
+
+### Added
+
+- Add a minimal, expressive onboarding experience guiding new users through feature highlights, notification permissions, storage destination, and appearance setup.
+- Add an atomic backup and restore engine with SHA256 integrity verification, schema validation, and automatic reverse rollback on failure.
+- Add Backup and Restore management section in Settings with export and restore confirmation previews.
+- Add in-app self-updater for release builds fetching latest GitHub releases, architecture-matched APKs, real-time download progress, and direct installation.
+
+### Fixed
+
+- Include app, download, browser-session, and media-processing preferences in settings backups while preserving them when restoring older backups.
+- Add an opt-in screen-protection toggle for browser, resolver, downloader, and main app surfaces, disabled by default.
+- Load history image, video, and audio thumbnails through the bounded Coil pipeline on every supported Android version.
+- Select the correct updater APK on 32-bit x86 devices and keep denied notification permission state accurate during onboarding.
+- Validate downloaded updates before installation, reject incompatible APK assets, and continue installation after permission is granted.
+- Keep existing users out of first-run onboarding, refresh visible settings after restore, and clearly label values that a backup will restore, reset, or leave unchanged.
+- Prevent the hidden History scrollbar from intercepting edge gestures and apply saved appearance settings to browser-launched downloads.
+
+## [0.1.4] - 2026-08-30
+
+### Added
+
+- Introduce dynamic Material 3 tonal palette generation, OLED pure black theme, custom presets, and expressive color selectors in Settings.
+- Add AndroidX Core Splash Screen with smooth startup transition and preloaded preference state.
+- Add fast scrollbar with fluid motion stretch and index label tooltip for media lists.
+- Add background memory cache eviction and secure window protection lifecycle support.
+- Add high-performance video, audio artwork, GIF, and SVG thumbnail pipeline powered by Coil.
+
+## [0.1.3] - 2026-08-30
+
+### Changed
+
+- Redesign the Settings, About, and Open Source Notices screens with Material 3 Expressive grouped segmented lists and unified design tokens.
+- Upgrade Android Gradle Plugin, Kotlin, and Compose toolchains, adding automated build convention and production string verification gates.
+- Display live GitHub repository and release statistics on the project website with improved mobile resolution support and zero horizontal overflow.
+- Add comprehensive Credits and acknowledgements section to the project website and documentation.
+
+## [0.1.2] - 2026-08-30
+
+### Added
+
+- Send completed download notifications with tap-to-open actions for saved media.
+
+### Changed
+
+- Modernize the Downloader layout with adaptive video and uncropped square photo previews.
+- Compact bottom controls into a full-width link field above a side-by-side engine chip and primary action button.
+- Label download buttons with specific item counts and media types (such as Download all (5), Download video, or Download image).
+- Move active download progress below the preview area and dock bottom controls flush above the keyboard.
+- Streamline the configuration sheet to focus on engine switching and yt-dlp media options.
+- Adopt official Material 3 Expressive components across the Downloader screen.
+
+### Fixed
+
+- Prevent completed downloads from lingering at 100% in the status bar and app interface.
+- Prevent broken video thumbnails in media pickers by restricting cover art embedding to audio files.
+- Prevent text clipping in active download progress cards.
+
+## [0.1.1] - 2026-08-30
+
+### Added
+
+- Let users choose video or audio output, quality, format, metadata, and artwork before Acqua fetches a link preview.
+- Remember the last download engine and media configuration for the next link.
+- Add website and DuckDuckGo search entry from the Browser tab.
+- Cache image previews in bounded private temporary storage and decode them at screen size for memory-safe large carousels.
+- Show the active WebView provider and version in Settings with a shortcut to check for updates.
+
+### Changed
+
+- Use yt-dlp as the default video and audio download engine while keeping Acqua available for direct media extraction.
+- Expand media previews into an edge-to-edge swipeable carousel and replace large progress panels with a compact circular wave indicator.
+- Give Acqua Browser a persistent address bar with back, forward, home, refresh or stop, media download, and return controls.
+- Keep shared and pasted links in download configuration, and offer browser recovery only after resolution or download failures.
+- Make optional Images, Videos, and Audio folder organization explicit, and remove the Acqua prefix from default filenames.
+- Report whether yt-dlp was updated or already current, together with the last successful update check.
+
+### Fixed
+
+- Enable individual yt-dlp preview downloads and route them through the configured yt-dlp processing options.
+
 ## [0.1.0] - 2026-08-01
 
 ### Added

@@ -8,6 +8,7 @@ import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.YtDlpMaintenance
 import dev.qtremors.acqua.downloader.YtDlpFailure
+import dev.qtremors.acqua.downloader.YtDlpUpdateStatus
 import dev.qtremors.acqua.downloader.toYtDlpFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +24,10 @@ data class SettingsUiState(
     val embedMetadata: Boolean = true,
     val embedThumbnail: Boolean = true,
     val autoUpdateYtDlp: Boolean = true,
+    val screenProtectionEnabled: Boolean = false,
     val ytDlpVersion: String? = null,
+    val lastYtDlpUpdate: Long = 0L,
+    val ytDlpUpdateStatus: YtDlpUpdateStatus? = null,
     val isUpdatingYtDlp: Boolean = false,
     val ytDlpUpdateError: YtDlpFailure? = null
 )
@@ -32,26 +36,16 @@ class SettingsViewModel(
     private val repository: AppSettingsRepository,
     private val maintenance: YtDlpMaintenance
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow(
-        repository.downloadSettings().let { downloads ->
-            repository.mediaProcessingSettings().let { media ->
-                SettingsUiState(
-                    baseFolder = downloads.baseFolder,
-                    categorizeMedia = downloads.categorizeMedia,
-                    filenamePattern = downloads.filenamePattern,
-                    maximumVideoHeight = media.maximumVideoHeight,
-                    audioFormat = media.audioFormat,
-                    embedMetadata = media.embedMetadata,
-                    embedThumbnail = media.embedThumbnail,
-                    autoUpdateYtDlp = media.autoUpdateYtDlp
-                )
-            }
-        }
-    )
+    private val mutableState = MutableStateFlow(repository.readSettingsUiState())
     val state = mutableState.asStateFlow()
 
     init {
         updateYtDlp(force = false)
+        viewModelScope.launch {
+            repository.screenProtectionEnabledFlow().collect { enabled ->
+                mutableState.value = mutableState.value.copy(screenProtectionEnabled = enabled)
+            }
+        }
     }
 
     fun setBaseFolder(value: String) {
@@ -100,15 +94,30 @@ class SettingsViewModel(
         mutableState.value = mutableState.value.copy(autoUpdateYtDlp = enabled)
     }
 
+    fun setScreenProtectionEnabled(enabled: Boolean) {
+        repository.setScreenProtectionEnabled(enabled)
+        mutableState.value = mutableState.value.copy(screenProtectionEnabled = enabled)
+    }
+
+    fun reload() {
+        mutableState.value = repository.readSettingsUiState(mutableState.value)
+    }
+
     fun updateYtDlp(force: Boolean = true) {
         if (mutableState.value.isUpdatingYtDlp) return
         viewModelScope.launch {
-            mutableState.value = mutableState.value.copy(isUpdatingYtDlp = true, ytDlpUpdateError = null)
+            mutableState.value = mutableState.value.copy(
+                isUpdatingYtDlp = true,
+                ytDlpUpdateError = null,
+                ytDlpUpdateStatus = null
+            )
             try {
-                val version = maintenance.update(force)
+                val result = maintenance.update(force)
                 mutableState.value = mutableState.value.copy(
                     isUpdatingYtDlp = false,
-                    ytDlpVersion = version
+                    ytDlpVersion = result.version,
+                    lastYtDlpUpdate = result.lastCheckedAt,
+                    ytDlpUpdateStatus = result.updateStatus
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -127,4 +136,23 @@ class SettingsViewModel(
     private companion object {
         const val TAG = "SettingsViewModel"
     }
+}
+
+private fun AppSettingsRepository.readSettingsUiState(
+    previous: SettingsUiState = SettingsUiState()
+): SettingsUiState {
+    val downloads = downloadSettings()
+    val media = mediaProcessingSettings()
+    return previous.copy(
+        baseFolder = downloads.baseFolder,
+        categorizeMedia = downloads.categorizeMedia,
+        filenamePattern = downloads.filenamePattern,
+        maximumVideoHeight = media.maximumVideoHeight,
+        audioFormat = media.audioFormat,
+        embedMetadata = media.embedMetadata,
+        embedThumbnail = media.embedThumbnail,
+        autoUpdateYtDlp = media.autoUpdateYtDlp,
+        screenProtectionEnabled = screenProtectionEnabled(),
+        lastYtDlpUpdate = media.lastYtDlpUpdate
+    )
 }
