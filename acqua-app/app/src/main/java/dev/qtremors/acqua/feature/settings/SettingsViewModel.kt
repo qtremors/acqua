@@ -19,6 +19,7 @@ data class SettingsUiState(
     val baseFolder: String = "",
     val categorizeMedia: Boolean = false,
     val filenamePattern: String = FilenameFormatter.DEFAULT_PATTERN,
+    val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN,
     val maximumVideoHeight: Int = 0,
     val audioFormat: AudioOutputFormat = AudioOutputFormat.ORIGINAL,
     val embedMetadata: Boolean = true,
@@ -68,6 +69,17 @@ class SettingsViewModel(
     }
 
     fun resetFilenamePattern() = setFilenamePattern(FilenameFormatter.DEFAULT_PATTERN)
+
+    fun setAudioFilenamePattern(value: String) {
+        repository.setAudioFilenamePattern(value)
+        mutableState.value = mutableState.value.copy(audioFilenamePattern = value)
+    }
+
+    fun toggleAudioFilenameVariable(variable: String) {
+        setAudioFilenamePattern(FilenameFormatter.toggleAudioVariable(mutableState.value.audioFilenamePattern, variable))
+    }
+
+    fun resetAudioFilenamePattern() = setAudioFilenamePattern(FilenameFormatter.DEFAULT_AUDIO_PATTERN)
 
     fun setMaximumVideoHeight(value: Int) {
         repository.setMaximumVideoHeight(value)
@@ -147,6 +159,7 @@ private fun AppSettingsRepository.readSettingsUiState(
         baseFolder = downloads.baseFolder,
         categorizeMedia = downloads.categorizeMedia,
         filenamePattern = downloads.filenamePattern,
+        audioFilenamePattern = downloads.audioFilenamePattern,
         maximumVideoHeight = media.maximumVideoHeight,
         audioFormat = media.audioFormat,
         embedMetadata = media.embedMetadata,

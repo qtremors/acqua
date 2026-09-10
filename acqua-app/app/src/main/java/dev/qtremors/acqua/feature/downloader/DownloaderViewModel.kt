@@ -17,6 +17,7 @@ import dev.qtremors.acqua.platform.storage.MediaStorage
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.downloader.DownloadQueueSnapshot
+import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.YtDlpDownloadOptions
 import dev.qtremors.acqua.downloader.YtDlpDownloadCoordinator
 import dev.qtremors.acqua.downloader.DownloadWorkData
@@ -66,7 +67,9 @@ data class DownloaderUiState(
     val downloadEngine: DownloadEngine = DownloadEngine.YT_DLP,
     val activeDownloadCount: Int = 0,
     val downloadQueue: DownloadQueueSnapshot = DownloadQueueSnapshot(),
-    val resolutionFailure: MediaResolutionFailure? = null
+    val resolutionFailure: MediaResolutionFailure? = null,
+    val filenamePattern: String = FilenameFormatter.DEFAULT_PATTERN,
+    val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN
 )
 
 private data class AutomaticRequest(
@@ -145,9 +148,11 @@ class DownloaderViewModel(
     fun seedResolvedMedia(url: String, media: List<ResolvedMedia>) {
         updateUrl(url)
         if (media.isNotEmpty()) {
+            val isAudioOnly = media.all { it.isAudio }
             mutableState.value = mutableState.value.copy(
                 media = media,
                 isResolving = false,
+                downloadContentType = if (isAudioOnly) DownloadContentType.AUDIO else mutableState.value.downloadContentType,
                 downloadEngine = if (media.all { it.backend == MediaBackend.DIRECT }) {
                     DownloadEngine.ACQUA
                 } else {
@@ -273,9 +278,13 @@ class DownloaderViewModel(
                     snapshot.downloadEngine,
                     browserResolver = browserResolver
                 )
+                val isAudioOnly = media.isNotEmpty() && media.all { it.isAudio }
                 mutableState.value = mutableState.value.copy(
                     isResolving = false,
-                    media = media
+                    media = media,
+                    downloadContentType = if (isAudioOnly) DownloadContentType.AUDIO else snapshot.downloadContentType,
+                    filenamePattern = settings.downloadSettings().filenamePattern,
+                    audioFilenamePattern = settings.downloadSettings().audioFilenamePattern
                 )
                 mutableEvents.send(DownloaderEvent.ResolutionComplete)
             } catch (error: CancellationException) {
@@ -495,6 +504,7 @@ class DownloaderViewModel(
         contentType: DownloadContentType? = null
     ): DownloaderUiState {
         val preferences = settings.mediaProcessingSettings()
+        val downloadSettings = settings.downloadSettings()
         return DownloaderUiState(
             url = url,
             validity = when {
@@ -507,7 +517,9 @@ class DownloaderViewModel(
             maximumVideoHeight = preferences.maximumVideoHeight,
             audioFormat = preferences.audioFormat,
             embedMetadata = preferences.embedMetadata,
-            embedThumbnail = preferences.embedThumbnail
+            embedThumbnail = preferences.embedThumbnail,
+            filenamePattern = downloadSettings.filenamePattern,
+            audioFilenamePattern = downloadSettings.audioFilenamePattern
         )
     }
 

@@ -55,13 +55,17 @@ class MediaStorage(
             MediaKind.AUDIO -> "audio/mp4"
             MediaKind.IMAGE -> "image/jpeg"
         }
+        val isAudio = item.kind == MediaKind.AUDIO
         val fileName = FilenameFormatter.format(
-            settings.filenamePattern,
-            item.username,
-            item.width,
-            item.height,
-            index,
-            extension
+            pattern = if (isAudio) settings.audioFilenamePattern else settings.filenamePattern,
+            username = item.username,
+            width = if (isAudio) 0 else item.width,
+            height = if (isAudio) 0 else item.height,
+            index = index,
+            fileExtension = extension,
+            title = item.title,
+            artist = item.artist,
+            album = item.album
         )
         val requestCookies = item.requestCookies.takeIf {
             item.explicitBrowserSessionAuthorized || settingsRepository.useBrowserSessions()
@@ -93,18 +97,20 @@ class MediaStorage(
         require(sourceFile.isFile && sourceFile.length() > 0L) { "The processed media file is empty." }
         val settings = settingsRepository.downloadSettings()
         val baseFolder = settingsRepository.sanitizedBaseFolder(settings.baseFolder)
-        val isAudio = contentType == DownloadContentType.AUDIO
+        val isAudio = contentType == DownloadContentType.AUDIO || media.isAudio
         val category = if (isAudio) "Audio" else "Videos"
         val extension = sourceFile.extension.lowercase().ifBlank { if (isAudio) "m4a" else "mp4" }
         val mimeType = mimeTypeFor(extension, isAudio)
         val fileName = FilenameFormatter.format(
-            pattern = settings.filenamePattern,
+            pattern = if (isAudio) settings.audioFilenamePattern else settings.filenamePattern,
             username = media.username,
             width = if (isAudio) 0 else media.width,
             height = if (isAudio) 0 else media.height,
             index = 0,
             fileExtension = extension,
-            title = media.title
+            title = media.title,
+            artist = media.artist,
+            album = media.album
         )
         val relativePath = buildString {
             append("Download/")

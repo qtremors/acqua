@@ -80,4 +80,72 @@ class FilenameFormatterTest {
         assertEquals("photo (2).jpg", FilenameFormatter.withCollisionSuffix("photo.jpg", 2))
         assertEquals("download (1)", FilenameFormatter.withCollisionSuffix("download", 1))
     }
+
+    @Test
+    fun `default audio filename formats with title only`() {
+        val name = FilenameFormatter.format(
+            pattern = FilenameFormatter.DEFAULT_AUDIO_PATTERN,
+            username = "band_channel",
+            width = 0,
+            height = 0,
+            index = 0,
+            fileExtension = "mp3",
+            title = "Bohemian Rhapsody",
+            artist = "Queen",
+            album = "A Night at the Opera",
+            now = Date(0)
+        )
+
+        assertEquals("Bohemian Rhapsody.mp3", name)
+    }
+
+    @Test
+    fun `audio filename supports artist and album tokens`() {
+        val name = FilenameFormatter.format(
+            pattern = "{artist} - {album} - {title}",
+            username = "band_channel",
+            width = 0,
+            height = 0,
+            index = 0,
+            fileExtension = "flac",
+            title = "Bohemian Rhapsody",
+            artist = "Queen",
+            album = "A Night at the Opera",
+            now = Date(0)
+        )
+
+        assertEquals("Queen - A Night at the Opera - Bohemian Rhapsody.flac", name)
+    }
+
+    @Test
+    fun `audio filename falls back when title is missing or blank`() {
+        val name = FilenameFormatter.format(
+            pattern = FilenameFormatter.DEFAULT_AUDIO_PATTERN,
+            username = "band_channel",
+            width = 0,
+            height = 0,
+            index = 0,
+            fileExtension = "mp3",
+            title = "",
+            artist = "Queen",
+            now = Date(0)
+        )
+
+        assertEquals("Queen.mp3", name)
+    }
+
+    @Test
+    fun `previewAudio renders stable audio filename`() {
+        val preview = FilenameFormatter.previewAudio("{artist} - {title}")
+        assertEquals("Sample artist - Sample song.mp3", preview)
+    }
+
+    @Test
+    fun `toggleAudioVariable toggles variables in pattern`() {
+        val pattern = "{title}"
+        val withArtist = FilenameFormatter.toggleAudioVariable(pattern, "{artist}")
+        assertEquals("{title}_{artist}", withArtist)
+        val withoutArtist = FilenameFormatter.toggleAudioVariable(withArtist, "{artist}")
+        assertEquals("{title}", withoutArtist)
+    }
 }

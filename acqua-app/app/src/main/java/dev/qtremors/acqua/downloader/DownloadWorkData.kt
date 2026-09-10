@@ -24,6 +24,7 @@ internal object DownloadWorkData {
     const val KEY_EMBED_THUMBNAIL = "embed_thumbnail"
     const val KEY_BROWSER_SESSION_AUTHORIZED = "browser_session_authorized"
     const val KEY_IS_VIDEO = "is_video"
+    const val KEY_MEDIA_KIND = "media_kind"
     const val KEY_ITEM_INDEX = "item_index"
     const val KEY_MEDIA_WIDTH = "media_width"
     const val KEY_MEDIA_HEIGHT = "media_height"
@@ -33,6 +34,8 @@ internal object DownloadWorkData {
     const val KEY_THUMBNAIL_URL = "thumbnail_url"
     const val KEY_USERNAME = "username"
     const val KEY_TITLE = "title"
+    const val KEY_ARTIST = "artist"
+    const val KEY_ALBUM = "album"
     const val KEY_REFERER = "referer"
     const val KEY_MIME_TYPE = "mime_type"
     const val KEY_FILE_EXTENSION = "file_extension"
@@ -89,9 +92,12 @@ internal object DownloadWorkData {
             data.getString(KEY_AUDIO_FORMAT),
             AudioOutputFormat.ORIGINAL
         )
+        val kind = data.getString(KEY_MEDIA_KIND)?.let { name ->
+            runCatching { MediaKind.valueOf(name) }.getOrNull()
+        } ?: if (data.getBoolean(KEY_IS_VIDEO, true)) MediaKind.VIDEO else MediaKind.IMAGE
         val media = ResolvedMedia(
             url = mediaUrl,
-            kind = if (data.getBoolean(KEY_IS_VIDEO, true)) MediaKind.VIDEO else MediaKind.IMAGE,
+            kind = kind,
             thumbnailUrl = data.nonBlankString(KEY_THUMBNAIL_URL),
             width = data.nonNegativeInt(KEY_MEDIA_WIDTH),
             height = data.nonNegativeInt(KEY_MEDIA_HEIGHT),
@@ -103,6 +109,8 @@ internal object DownloadWorkData {
             fileSize = data.positiveLong(KEY_FILE_SIZE),
             backend = backend,
             title = data.nonBlankString(KEY_TITLE),
+            artist = data.nonBlankString(KEY_ARTIST),
+            album = data.nonBlankString(KEY_ALBUM),
             sourceTimestampMillis = data.positiveLong(KEY_SOURCE_TIMESTAMP_MILLIS)
         )
         val outputWidth = data.getInt(KEY_OUTPUT_WIDTH, media.width).coerceAtLeast(0)
@@ -143,6 +151,7 @@ internal object DownloadWorkData {
             .putString(KEY_MEDIA_URL, media.url)
             .putString(KEY_BACKEND, media.backend.name)
             .putString(KEY_SOURCE_URL, sourceUrl)
+            .putString(KEY_MEDIA_KIND, media.kind.name)
             .putBoolean(KEY_IS_VIDEO, media.isVideo)
             .putBoolean(KEY_BROWSER_SESSION_AUTHORIZED, media.explicitBrowserSessionAuthorized)
             .putInt(KEY_MEDIA_WIDTH, media.width.coerceAtLeast(0))
@@ -156,6 +165,8 @@ internal object DownloadWorkData {
                 }
                 media.username?.takeIf(String::isNotBlank)?.let { putString(KEY_USERNAME, it) }
                 media.title?.takeIf(String::isNotBlank)?.let { putString(KEY_TITLE, it) }
+                media.artist?.takeIf(String::isNotBlank)?.let { putString(KEY_ARTIST, it) }
+                media.album?.takeIf(String::isNotBlank)?.let { putString(KEY_ALBUM, it) }
             }
 
     private fun Data.nonBlankString(key: String): String? =

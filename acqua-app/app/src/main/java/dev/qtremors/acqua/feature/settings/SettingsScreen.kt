@@ -62,6 +62,9 @@ import dev.qtremors.acqua.ui.components.SettingsSection
 import dev.qtremors.acqua.ui.components.SettingsSwitchRow
 import dev.qtremors.acqua.ui.settings.AccentColorSelector
 import dev.qtremors.acqua.ui.settings.ThemeModeSelector
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.platform.LocalLayoutDirection
 import dev.qtremors.acqua.ui.theme.ThemePreset
 import dev.qtremors.acqua.ui.theme.ThemeState
 import java.text.DateFormat
@@ -74,26 +77,28 @@ fun SettingsScreen(
     themeState: ThemeState = ThemeState(),
     onThemeChange: (ThemeState) -> Unit = {},
     onOpenAbout: () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(),
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.state.collectAsState()
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
     val webViewProvider = remember { WebViewUpdateManager.currentProvider(context) }
+    val layoutDirection = LocalLayoutDirection.current
+    val effectivePadding = remember(contentPadding, layoutDirection) {
+        PaddingValues(
+            start = 16.dp + contentPadding.calculateStartPadding(layoutDirection),
+            end = 16.dp + contentPadding.calculateEndPadding(layoutDirection),
+            top = contentPadding.calculateTopPadding() + 8.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp
+        )
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+        contentPadding = effectivePadding,
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        item {
-            Text(
-                stringResource(R.string.settings),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
-            )
-        }
 
         // Section 0: Appearance
         item {
@@ -150,7 +155,7 @@ fun SettingsScreen(
         // Section 1: Downloads and Storage
         item {
             SettingsSection(title = stringResource(R.string.downloads_and_filenames)) {
-                SettingsCardContainer(index = 0, count = 3) {
+                SettingsCardContainer(index = 0, count = 4) {
                     OutlinedTextField(
                         value = state.baseFolder,
                         onValueChange = viewModel::setBaseFolder,
@@ -164,14 +169,14 @@ fun SettingsScreen(
                 }
                 SettingsSwitchRow(
                     index = 1,
-                    count = 3,
+                    count = 4,
                     title = stringResource(R.string.categorize_media),
                     description = stringResource(R.string.category_explanation),
                     checked = state.categorizeMedia,
                     leadingIcon = Icons.Filled.FolderSpecial,
                     onCheckedChange = viewModel::setCategorizeMedia
                 )
-                SettingsCardContainer(index = 2, count = 3) {
+                SettingsCardContainer(index = 2, count = 4) {
                     OutlinedTextField(
                         value = state.filenamePattern,
                         onValueChange = viewModel::setFilenamePattern,
@@ -213,6 +218,50 @@ fun SettingsScreen(
                         Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.reset_filename_pattern))
+                    }
+                }
+                SettingsCardContainer(index = 3, count = 4) {
+                    OutlinedTextField(
+                        value = state.audioFilenamePattern,
+                        onValueChange = viewModel::setAudioFilenamePattern,
+                        label = { Text(stringResource(R.string.audio_filename_pattern)) },
+                        placeholder = { Text(FilenameFormatter.DEFAULT_AUDIO_PATTERN) },
+                        supportingText = { Text(stringResource(R.string.filename_variables_guidance)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    Text(
+                        stringResource(R.string.audio_filename_preview, FilenameFormatter.previewAudio(state.audioFilenamePattern)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilenameFormatter.audioVariables.forEach { variable ->
+                            val selected = state.audioFilenamePattern.contains(variable)
+                            FilterChip(
+                                selected = selected,
+                                onClick = { viewModel.toggleAudioFilenameVariable(variable) },
+                                label = { Text(variable) },
+                                leadingIcon = if (selected) {{
+                                    Icon(Icons.Filled.Check, null, Modifier.size(18.dp))
+                                }} else null
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = viewModel::resetAudioFilenamePattern,
+                        enabled = state.audioFilenamePattern != FilenameFormatter.DEFAULT_AUDIO_PATTERN,
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(Icons.Filled.Refresh, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.reset_audio_filename_pattern))
                     }
                 }
             }

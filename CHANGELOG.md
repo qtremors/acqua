@@ -2,6 +2,14 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.6] - 2026-09-10
+
+### Changed
+
+- Add separate audio filename patterns with artist and album variables, a live preview, and title-only defaults.
+- Carry audio titles, artists, albums, and media types through downloads and saved files.
+- Recognize supported audio file signatures while keeping MP4 videos distinct from M4A and AAC distinct from MP3.
+
 ## [0.1.5] - 2026-08-30
 
 ### Added
