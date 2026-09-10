@@ -2,6 +2,13 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.7] - 2026-09-10
+
+### Changed
+
+- Refresh About, legal notices, and History layouts with consistent spacing and scrolling.
+- Add animated empty states for History and search results, respecting reduced-motion settings.
+
 ## [0.1.6] - 2026-09-10
 
 ### Changed

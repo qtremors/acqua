@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -42,7 +44,10 @@ import dev.qtremors.acqua.ui.components.SettingsActionRow
 import dev.qtremors.acqua.ui.components.SettingsSection
 
 @Composable
-fun OpenSourceNoticesScreen(modifier: Modifier = Modifier) {
+fun OpenSourceNoticesScreen(
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues()
+) {
     val uriHandler = LocalUriHandler.current
     var showCompleteNotice by remember { mutableStateOf(false) }
 
@@ -54,9 +59,19 @@ fun OpenSourceNoticesScreen(modifier: Modifier = Modifier) {
         )
     }
 
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val effectivePadding = remember(contentPadding, layoutDirection) {
+        PaddingValues(
+            start = 16.dp + contentPadding.calculateStartPadding(layoutDirection),
+            end = 16.dp + contentPadding.calculateEndPadding(layoutDirection),
+            top = contentPadding.calculateTopPadding() + 8.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp
+        )
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
+        contentPadding = effectivePadding,
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         item {
@@ -113,14 +128,25 @@ fun LegalDocumentScreen(
     title: String,
     assetName: String,
     modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(),
     introduction: String? = null
 ) {
     val document = rememberLegalDocument(assetName)
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val effectivePadding = remember(contentPadding, layoutDirection) {
+        PaddingValues(
+            start = 16.dp + contentPadding.calculateStartPadding(layoutDirection),
+            end = 16.dp + contentPadding.calculateEndPadding(layoutDirection),
+            top = contentPadding.calculateTopPadding() + 8.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp
+        )
+    }
     SelectionContainer {
         Column(
             modifier = modifier
+                .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 20.dp)
+                .padding(effectivePadding)
         ) {
             Text(
                 title,

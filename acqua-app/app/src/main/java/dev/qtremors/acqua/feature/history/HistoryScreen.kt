@@ -61,6 +61,12 @@ import dev.qtremors.acqua.ui.scrollbar.AcquaFastScrollbar
 import dev.qtremors.acqua.ui.scrollbar.LazyListScrollbarState
 import dev.qtremors.acqua.ui.image.ThumbnailKey
 import coil.compose.AsyncImage
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.ui.platform.LocalLayoutDirection
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -70,7 +76,8 @@ fun HistoryScreen(
     fileActions: FileActions,
     active: Boolean,
     onRefetch: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
@@ -78,6 +85,16 @@ fun HistoryScreen(
     val colors = MaterialTheme.colorScheme
     var confirmClear by remember { mutableStateOf(false) }
     LaunchedEffect(active) { if (active) viewModel.refresh() }
+
+    val layoutDirection = LocalLayoutDirection.current
+    val effectivePadding = remember(contentPadding, layoutDirection) {
+        PaddingValues(
+            start = contentPadding.calculateStartPadding(layoutDirection) + 20.dp,
+            top = contentPadding.calculateTopPadding() + 8.dp,
+            end = contentPadding.calculateEndPadding(layoutDirection) + 20.dp,
+            bottom = contentPadding.calculateBottomPadding() + 24.dp
+        )
+    }
 
     if (confirmClear) {
         AlertDialog(
@@ -98,45 +115,64 @@ fun HistoryScreen(
         )
     }
 
-    Column(modifier.fillMaxSize().padding(horizontal = 20.dp)) {
-        HistoryHeader(
-            hasEntries = state.entries.isNotEmpty(),
-            onOpenDownloads = fileActions::openDownloads,
-            onClear = { confirmClear = true }
+    if (state.entries.isEmpty()) {
+        EmptyState(
+            variant = EmptyStateVariant.History,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(effectivePadding)
         )
-        HistorySummaryCard(state.summary)
-        HistorySearchAndFilters(
-            query = state.query,
-            selectedFilter = state.filter,
-            selectedSort = state.sort,
-            summary = state.summary,
-            resultCount = visibleEntries.size,
-            onQueryChange = viewModel::setQuery,
-            onFilterChange = { filter ->
-                context.performHaptic(HapticSignal.CLICK)
-                viewModel.selectFilter(filter)
-            },
-            onSortChange = { sort ->
-                context.performHaptic(HapticSignal.CLICK)
-                viewModel.selectSort(sort)
-            }
-        )
-        if (visibleEntries.isEmpty()) {
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                HistoryEmptyState(state.emptyReason)
-            }
-        } else {
-            val listState = rememberLazyListState()
-            val scrollbarState = remember(listState) { LazyListScrollbarState(listState) }
-            Box(Modifier.fillMaxWidth().weight(1f)) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
+    } else {
+        val listState = rememberLazyListState()
+        val scrollbarState = remember(listState) { LazyListScrollbarState(listState) }
+        Box(modifier = modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = effectivePadding,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item(key = "history_header") {
+                    HistoryHeader(
+                        hasEntries = state.entries.isNotEmpty(),
+                        onOpenDownloads = fileActions::openDownloads,
+                        onClear = { confirmClear = true }
+                    )
+                }
+                item(key = "history_summary") {
+                    HistorySummaryCard(state.summary)
+                }
+                item(key = "history_filters") {
+                    HistorySearchAndFilters(
+                        query = state.query,
+                        selectedFilter = state.filter,
+                        selectedSort = state.sort,
+                        summary = state.summary,
+                        resultCount = visibleEntries.size,
+                        onQueryChange = viewModel::setQuery,
+                        onFilterChange = { filter ->
+                            context.performHaptic(HapticSignal.CLICK)
+                            viewModel.selectFilter(filter)
+                        },
+                        onSortChange = { sort ->
+                            context.performHaptic(HapticSignal.CLICK)
+                            viewModel.selectSort(sort)
+                        }
+                    )
+                }
+                if (visibleEntries.isEmpty()) {
+                    item(key = "history_empty_search") {
+                        EmptyState(
+                            variant = EmptyStateVariant.Search,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp)
+                        )
+                    }
+                } else {
                     items(visibleEntries, key = HistoryEntry::id) { entry ->
                         HistoryRow(
-                            entry,
+                            entry = entry,
                             missing = entry.id in state.missingEntryIds,
                             onOpen = { context.performHaptic(HapticSignal.CLICK); fileActions.open(entry.fileUri, entry.mimeType) },
                             onShare = { context.performHaptic(HapticSignal.CLICK); fileActions.share(entry.fileUri, entry.mimeType) },
@@ -145,16 +181,26 @@ fun HistoryScreen(
                         )
                     }
                 }
+            }
+            if (visibleEntries.isNotEmpty()) {
                 AcquaFastScrollbar(
                     scrollbarState = scrollbarState,
                     labelForIndex = { index ->
-                        visibleEntries.getOrNull(index)?.fileName?.take(15) ?: ""
+                        if (index >= 3) {
+                            visibleEntries.getOrNull(index - 3)?.fileName?.take(15) ?: ""
+                        } else {
+                            ""
+                        }
                     },
-                    modifier = Modifier.align(Alignment.CenterEnd)
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(
+                            top = contentPadding.calculateTopPadding(),
+                            bottom = contentPadding.calculateBottomPadding()
+                        )
                 )
             }
         }
-        Spacer(Modifier.height(16.dp))
     }
 }
 
