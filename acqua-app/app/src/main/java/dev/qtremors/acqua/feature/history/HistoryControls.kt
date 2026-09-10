@@ -68,28 +68,22 @@ internal fun HistoryHeader(
     onOpenDownloads: () -> Unit,
     onClear: () -> Unit
 ) {
+    if (!hasEntries) return
     val colors = MaterialTheme.colorScheme
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
+        horizontalArrangement = Arrangement.End,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            stringResource(R.string.downloads_and_links),
-            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.weight(1f)
-        )
-        if (hasEntries) {
-            IconButton(onClick = onOpenDownloads) {
-                Icon(
-                    Icons.Filled.FolderOpen,
-                    stringResource(R.string.open_downloads_folder),
-                    tint = colors.primary
-                )
-            }
-            TextButton(onClick = onClear) {
-                Text(stringResource(R.string.clear_all), color = colors.error)
-            }
+        IconButton(onClick = onOpenDownloads) {
+            Icon(
+                Icons.Filled.FolderOpen,
+                stringResource(R.string.open_downloads_folder),
+                tint = colors.primary
+            )
+        }
+        TextButton(onClick = onClear) {
+            Text(stringResource(R.string.clear_all), color = colors.error)
         }
     }
 }

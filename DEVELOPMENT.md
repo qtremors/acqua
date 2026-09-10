@@ -297,8 +297,8 @@ Acqua implements **Material 3 Expressive** design tokens and grouped list presen
 | **Compile SDK** | 37 |
 | **Target SDK** | 37 |
 | **Min SDK** | 24 (Android 7.0+) |
-| **Version Code** | 15 |
-| **Version Name** | 0.1.5 |
+| **Version Code** | 20 |
+| **Version Name** | 0.2.0 |
 | **Java Target** | JVM 11 |
 | **Gradle Version** | 9.5.0 |
 | **Gradle JVM** | JDK 21 |

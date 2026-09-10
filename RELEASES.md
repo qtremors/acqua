@@ -1,13 +1,66 @@
 # Acqua - Releases
 
 > **Project:** Acqua
-> **Version:** 0.1.5
-> **Last Updated:** 2026-08-30
+> **Version:** 0.2.0
+> **Last Updated:** 2026-09-10
 
 | Version | Release Date | Key Focus |
 | :--- | :--- | :--- |
+| [v0.2.0](#v020) | 2026-09-10 | Integrated dashboard browser, swipeable tabs and floating toolbar, adaptive media carousel, audio tagging and filename templates, and history restoration |
 | [v0.1.5](#v015) | 2026-08-30 | Minimal onboarding, atomic backup and restore, dynamic M3 theming, fast scrollbar, security protections, Coil thumbnail pipeline, and in-app self-updater |
 | [v0.1.0](#v010) | 2026-08-01 | Initial release with smart media extraction, yt-dlp integration, private browser, and history management |
+
+---
+
+# v0.2.0
+
+**Release Date:** September 10, 2026
+
+**Previous public release:** v0.1.5
+
+**Development range included:** v0.1.6 through v0.2.0
+
+Acqua v0.2.0 brings integrated web browsing directly into the dashboard, swipeable tabs with an adaptive floating navigation toolbar, a rich media preview carousel with detailed metadata cards, customizable audio filename templates with artist and album variables, reliable filename fallbacks for punctuation-only titles, and browser navigation history restoration.
+
+## Highlights
+
+- **Integrated Dashboard Browser**: Browse websites directly within the main dashboard with quick shortcuts, seamless media extraction, and full back and forward navigation history preserved across screen recreations.
+- **Swipeable Tabs & Floating Navigation**: Fluidly swipe between Downloader, Browser, and History tabs with an adaptive floating toolbar offering quick contextual actions.
+- **Adaptive Media Carousel & Metadata Card**: Dynamically sized video and photo previews paired with a dedicated metadata card previewing proposed filenames, file sizes, artwork, and descriptions with synchronized scrolling.
+- **Audio Tagging & Dedicated Filename Templates**: Full audio metadata extraction (title, artist, album, cover art) with independent audio filename patterns, live previews in Settings, and strict audio format distinction (separating AAC from MP3 and M4A from MP4).
+- **Reliable Filename Fallback System**: Automatic safety fallbacks that prevent empty filenames when media titles contain only punctuation or symbols by resolving artist, uploader, or clean generated names.
+- **Refreshed Layouts & Expressive Empty States**: Polished About, Legal Notices, and History screens with smooth scrolling, consistent layout spacing, and animated motion-respecting empty states.
+
+## What's New Since v0.1.5
+
+### Dashboard & In-App Browser
+
+- Integrated web browsing directly into the main dashboard alongside Downloader and History.
+- Enabled horizontal swipe gestures between tabs and introduced a floating toolbar with contextual shortcuts.
+- Preserved browser back and forward navigation history across screen recreation while cleanly resetting history on Home or when clearing browser data.
+- Applied active session configuration changes directly to the live browser and cleanly released WebView resources when leaving the browser screen.
+- Provided a floating toolbar for browser-launched media previews and extraction.
+
+### Media Previews & Downloader
+
+- Added an adaptive media preview carousel that dynamically adjusts to video and image aspect ratios.
+- Added a dedicated metadata card displaying the proposed filename, file size, and details before starting a download.
+- Added rich audio preview cards with embedded cover art, title, artist, album, and synchronized scrolling for long metadata.
+- Added a downward pull gesture and header button to quickly access the About screen directly from the Downloader.
+
+### Audio Metadata & Custom Filenames
+
+- Introduced separate audio filename patterns supporting `{artist}` and `{album}` variables in addition to `{title}`.
+- Added a live audio filename pattern preview in Settings with title-only defaults.
+- Preserved complete audio tags (title, artist, album, media type) through download execution, file output, and history records.
+- Enhanced media signature detection to accurately distinguish AAC from MP3 and M4A from MP4 video containers.
+- Implemented automatic fallback resolution for media with punctuation-only titles to prevent blank filenames, trying artist, uploader, then a generated name.
+
+### Visual Design & Documentation
+
+- Refreshed About, legal notices, and History layouts with unified spacing, alignment, and smooth scrolling.
+- Added animated empty states for download history and search results that respect system reduced-motion accessibility preferences.
+- Configured website download links on the GitHub release page to open in a new tab.
 
 ---
 

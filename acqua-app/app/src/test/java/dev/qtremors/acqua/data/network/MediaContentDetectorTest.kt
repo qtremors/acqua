@@ -82,4 +82,62 @@ class MediaContentDetectorTest {
             MediaContentDetector.detect("image/webp", prefix, expectedVideo = false)
         )
     }
+
+    @Test
+    fun `audio mp4 is detected as audio when video is not expected`() {
+        val prefix = byteArrayOf(
+            0, 0, 0, 16,
+            'f'.code.toByte(), 't'.code.toByte(), 'y'.code.toByte(), 'p'.code.toByte(),
+            'M'.code.toByte(), '4'.code.toByte(), 'A'.code.toByte(), ' '.code.toByte(),
+            0, 0, 0, 0,
+            0, 0, 0, 8,
+            'm'.code.toByte(), 'd'.code.toByte(), 'a'.code.toByte(), 't'.code.toByte()
+        )
+
+        assertEquals(
+            DetectedMediaFormat.M4A,
+            MediaContentDetector.detect("audio/mp4", prefix, expectedVideo = false)
+        )
+    }
+
+    @Test
+    fun `mp3 with id3 is detected as audio`() {
+        val prefix = byteArrayOf('I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(), 4, 0, 0)
+
+        assertEquals(
+            DetectedMediaFormat.MP3,
+            MediaContentDetector.detect("audio/mpeg", prefix, expectedVideo = false)
+        )
+    }
+
+    @Test
+    fun `generic mp4 with video mime stays video when inspecting an image candidate`() {
+        for (brand in listOf("isom", "mp42")) {
+            val prefix = byteArrayOf(0, 0, 0, 16) + "ftyp$brand".toByteArray() +
+                byteArrayOf(0, 0, 0, 0, 0, 0, 0, 8) + "mdat".toByteArray()
+            assertEquals(DetectedMediaFormat.MP4, MediaContentDetector.detect("video/mp4", prefix, false))
+            assertNull(MediaContentDetector.detect("application/octet-stream", prefix, false))
+            assertEquals(DetectedMediaFormat.M4A, MediaContentDetector.detect("audio/mp4", prefix, false))
+        }
+    }
+
+    @Test
+    fun `aac adts is not confused with mpeg frames`() {
+        for (secondByte in listOf(0xF1, 0xF9)) {
+            val prefix = byteArrayOf(0xFF.toByte(), secondByte.toByte(), 0x50, 0x80.toByte(), 0, 0xFF.toByte(), 0xFC.toByte())
+            assertEquals(DetectedMediaFormat.AAC, MediaContentDetector.detect("audio/aac", prefix, false))
+            assertEquals(DetectedMediaFormat.AAC, MediaContentDetector.detect(null, prefix, false))
+        }
+        val mp3 = byteArrayOf(0xFF.toByte(), 0xFB.toByte(), 0x90.toByte(), 0)
+        assertEquals(DetectedMediaFormat.MP3, MediaContentDetector.detect("audio/mpeg", mp3, false))
+    }
+
+    @Test
+    fun `audio mime alone cannot validate an error page or truncated container`() {
+        for (mime in listOf("audio/mpeg", "audio/mp4", "audio/aac", "audio/unknown")) {
+            assertNull(MediaContentDetector.detect(mime, "<html>error</html>".toByteArray(), false))
+        }
+        val truncated = byteArrayOf(0, 0, 0, 32) + "ftypM4A ".toByteArray()
+        assertNull(MediaContentDetector.detect("audio/mp4", truncated, false))
+    }
 }

@@ -47,6 +47,8 @@ data class ResolvedMedia(
     val fileExtension: String? = null,
     val backend: MediaBackend = MediaBackend.DIRECT,
     val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
     val durationSeconds: Int = 0,
     val formats: List<MediaFormatOption> = emptyList(),
     val sourceTimestampMillis: Long? = null

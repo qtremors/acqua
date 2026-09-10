@@ -166,25 +166,37 @@ class YtDlpEngine(context: Context) {
         }
         val bestVideo = formats.filter(MediaFormatOption::hasVideo)
             .maxWithOrNull(compareBy<MediaFormatOption> { it.height }.thenBy { it.totalBitrateKbps })
-        val title = root.optString("title").takeIf(String::isNotBlank)
-        val uploader = root.optString("artist").takeIf(String::isNotBlank)
+        val bestAudio = formats.filter(MediaFormatOption::hasAudio)
+            .maxWithOrNull(compareBy<MediaFormatOption> { it.audioBitrateKbps }.thenBy { it.fileSize ?: 0L })
+        val title = root.optString("track").takeIf(String::isNotBlank)
+            ?: root.optString("title").takeIf(String::isNotBlank)
+        val artist = root.optString("artist").takeIf(String::isNotBlank)
+            ?: root.optString("creator").takeIf(String::isNotBlank)
             ?: root.optString("uploader").takeIf(String::isNotBlank)
             ?: root.optString("channel").takeIf(String::isNotBlank)
+        val album = root.optString("album").takeIf(String::isNotBlank)
         val thumbnail = root.optString("thumbnail").takeIf { it.startsWith("http") }
         val size = root.optLong("filesize").takeIf { it > 0L }
             ?: root.optLong("filesize_approx").takeIf { it > 0L }
             ?: bestVideo?.fileSize
+            ?: bestAudio?.fileSize
+        val isAudioOnly = (formats.isNotEmpty() && formats.none(MediaFormatOption::hasVideo)) ||
+            root.optString("vcodec") == "none" ||
+            root.optString("_type") == "audio" ||
+            WebLink.isYouTubeMusicUrl(originalUrl)
 
         return ResolvedMedia(
             url = originalUrl,
-            kind = MediaKind.VIDEO,
+            kind = if (isAudioOnly) MediaKind.AUDIO else MediaKind.VIDEO,
             thumbnailUrl = thumbnail,
             width = root.optInt("width").takeIf { it > 0 } ?: bestVideo?.width ?: 0,
             height = root.optInt("height").takeIf { it > 0 } ?: bestVideo?.height ?: 0,
             fileSize = size,
-            username = uploader,
+            username = artist,
             backend = MediaBackend.YT_DLP,
             title = title,
+            artist = artist,
+            album = album,
             durationSeconds = root.optInt("duration").coerceAtLeast(0),
             formats = formats,
             explicitBrowserSessionAuthorized = allowBrowserSession,

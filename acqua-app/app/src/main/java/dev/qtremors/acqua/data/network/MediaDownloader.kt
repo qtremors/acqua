@@ -62,11 +62,12 @@ class MediaDownloader(
             val format = MediaContentDetector.detect(response.header("Content-Type"), prefix, item.isVideo)
                 ?: error("The media server returned an unsupported or incomplete file.")
 
-            if ((format.kind == MediaKind.VIDEO) != item.isVideo) {
-                error(
-                    if (item.isVideo) "The video URL returned an image instead of a complete video."
-                    else "The image URL returned video data instead of an image."
-                )
+            if (item.isVideo && format.kind != MediaKind.VIDEO) {
+                error("The video URL returned non-video media instead of a complete video.")
+            } else if (item.isAudio && format.kind != MediaKind.AUDIO) {
+                error("The audio URL returned non-audio media instead of an audio file.")
+            } else if (!item.isVideo && !item.isAudio && format.kind != MediaKind.IMAGE) {
+                error("The image URL returned non-image media instead of an image.")
             }
 
             output.write(prefix)
@@ -113,6 +114,16 @@ class MediaDownloader(
                 if (format.kind == MediaKind.VIDEO) {
                     return@use item.copy(
                         kind = MediaKind.VIDEO,
+                        thumbnailUrl = item.thumbnailUrl?.takeIf { it != item.url },
+                        fileSize = totalSize.takeIf { it > 0L } ?: item.fileSize,
+                        mimeType = format.mimeType,
+                        fileExtension = format.fileExtension
+                    )
+                }
+
+                if (format.kind == MediaKind.AUDIO) {
+                    return@use item.copy(
+                        kind = MediaKind.AUDIO,
                         thumbnailUrl = item.thumbnailUrl?.takeIf { it != item.url },
                         fileSize = totalSize.takeIf { it > 0L } ?: item.fileSize,
                         mimeType = format.mimeType,

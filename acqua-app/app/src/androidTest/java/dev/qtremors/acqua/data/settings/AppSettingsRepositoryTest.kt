@@ -27,6 +27,7 @@ class AppSettingsRepositoryTest {
 
         repository.setFilenamePattern("custom_{title}")
         assertEquals("custom_{title}", repository.downloadSettings().filenamePattern)
+        assertEquals(FilenameFormatter.DEFAULT_AUDIO_PATTERN, repository.downloadSettings().audioFilenamePattern)
     }
 
     @Test
@@ -38,6 +39,7 @@ class AppSettingsRepositoryTest {
         repository.setBaseFolder(" Acqua/Unsafe:* ")
         repository.setCategorizeMedia(true)
         repository.setFilenamePattern("{date}_{index}")
+        repository.setAudioFilenamePattern("{artist} - {title}")
         repository.setLastDownloadEngine(DownloadEngine.ACQUA)
         repository.setLastDownloadContentType(DownloadContentType.AUDIO)
         repository.setMaximumVideoHeight(1080)
@@ -53,6 +55,7 @@ class AppSettingsRepositoryTest {
         assertEquals(" Acqua/Unsafe:* ", restored.baseFolder)
         assertTrue(restored.categorizeMedia)
         assertEquals("{date}_{index}", restored.filenamePattern)
+        assertEquals("{artist} - {title}", restored.audioFilenamePattern)
         assertEquals("Acqua_Unsafe__", repository.sanitizedBaseFolder(restored.baseFolder))
         assertEquals(DownloadEngine.ACQUA, restoredRepository.lastDownloadEngine())
         assertEquals(DownloadContentType.AUDIO, restoredRepository.lastDownloadContentType())

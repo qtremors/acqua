@@ -14,7 +14,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 data class DownloadSettings(
     val baseFolder: String,
     val categorizeMedia: Boolean,
-    val filenamePattern: String
+    val filenamePattern: String,
+    val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN
 )
 
 data class MediaProcessingSettings(
@@ -60,7 +61,11 @@ class AppSettingsRepository(context: Context) {
             .let { pattern ->
                 if (pattern == FilenameFormatter.LEGACY_DEFAULT_PATTERN) FilenameFormatter.DEFAULT_PATTERN
                 else pattern
-            }
+            },
+        audioFilenamePattern = preferences.getString(
+            KEY_AUDIO_FILENAME_PATTERN,
+            FilenameFormatter.DEFAULT_AUDIO_PATTERN
+        ).orEmpty().ifBlank { FilenameFormatter.DEFAULT_AUDIO_PATTERN }
     )
 
     fun setBaseFolder(value: String) {
@@ -73,6 +78,10 @@ class AppSettingsRepository(context: Context) {
 
     fun setFilenamePattern(value: String) {
         preferences.edit { putString(KEY_FILENAME_PATTERN, value) }
+    }
+
+    fun setAudioFilenamePattern(value: String) {
+        preferences.edit { putString(KEY_AUDIO_FILENAME_PATTERN, value) }
     }
 
     fun mediaProcessingSettings(): MediaProcessingSettings = MediaProcessingSettings(
@@ -141,6 +150,7 @@ class AppSettingsRepository(context: Context) {
         private const val KEY_BASE_FOLDER = "acqua_base_folder"
         private const val KEY_CATEGORIZE_MEDIA = "acqua_categorize_media"
         private const val KEY_FILENAME_PATTERN = "acqua_filename_format"
+        private const val KEY_AUDIO_FILENAME_PATTERN = "acqua_audio_filename_format"
         private const val KEY_MAXIMUM_VIDEO_HEIGHT = "acqua_maximum_video_height"
         private const val KEY_AUDIO_FORMAT = "acqua_audio_output_format"
         private const val KEY_EMBED_METADATA = "acqua_embed_metadata"

@@ -2,6 +2,47 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.0] - 2026-09-10
+
+### Changed
+
+- Preserve browser back and forward history when its screen is recreated, and discard it when returning Home or clearing browser data.
+- Keep punctuation-only media titles from producing empty filenames by trying the artist, uploader, then a generated name.
+- Open website download links on the GitHub release page in a new tab.
+
+## [0.1.9] - 2026-09-10
+
+### Changed
+
+- Browse websites within the dashboard with saved website shortcuts and media extraction.
+- Switch dashboard tabs by swiping or using the floating navigation toolbar and contextual actions.
+- Apply session-setting changes to the live browser and disable session reuse when clearing all browser data.
+- Cancel pending extraction and release the WebView when leaving the browser.
+
+## [0.1.8] - 2026-09-10
+
+### Changed
+
+- Add a media carousel with adaptive sizing and a separate metadata card showing the proposed filename.
+- Show audio artwork, title, artist, album, and file size with synchronized scrolling for long metadata.
+- Open About from the Downloader header or a downward pull, including when no media is loaded.
+- Use a floating toolbar for browser-launched download previews.
+
+## [0.1.7] - 2026-09-10
+
+### Changed
+
+- Refresh About, legal notices, and History layouts with consistent spacing and scrolling.
+- Add animated empty states for History and search results, respecting reduced-motion settings.
+
+## [0.1.6] - 2026-09-10
+
+### Changed
+
+- Add separate audio filename patterns with artist and album variables, a live preview, and title-only defaults.
+- Carry audio titles, artists, albums, and media types through downloads and saved files.
+- Recognize supported audio file signatures while keeping MP4 videos distinct from M4A and AAC distinct from MP3.
+
 ## [0.1.5] - 2026-08-30
 
 ### Added

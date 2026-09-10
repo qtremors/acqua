@@ -5,17 +5,39 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.widget.Toast
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import dev.qtremors.acqua.platform.HapticSignal
+import dev.qtremors.acqua.platform.performHaptic
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
@@ -32,6 +54,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +70,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -66,6 +90,7 @@ fun AboutScreen(
     appUpdater: dev.qtremors.acqua.data.updater.AppUpdater? = null,
     onOpenNotices: () -> Unit,
     onOpenLicense: () -> Unit = {},
+    contentPadding: PaddingValues = PaddingValues(),
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -159,16 +184,116 @@ fun AboutScreen(
         }
     }
 
-    LazyColumn(
-        modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 20.dp),
+    val scrollState = rememberScrollState()
+    val overscrollOffset = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (available.y < 0 && overscrollOffset.value > 0) {
+                    val toConsume =
+                        if (overscrollOffset.value + available.y >= 0) available.y else -overscrollOffset.value
+                    scope.launch {
+                        overscrollOffset.snapTo(overscrollOffset.value + toConsume)
+                    }
+                    return Offset(0f, toConsume)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource
+            ): Offset {
+                if (available.y > 0 && scrollState.value == 0) {
+                    val prevValue = overscrollOffset.value
+                    if (prevValue >= 350f) return Offset.Zero
+
+                    val newValue = (prevValue + available.y * 0.5f).coerceAtMost(350f)
+                    scope.launch {
+                        overscrollOffset.snapTo(newValue)
+                    }
+
+                    // Tactile haptic feedback when stretched significantly
+                    if (prevValue < 300f && newValue >= 300f) {
+                        context.performHaptic(HapticSignal.CLICK)
+                    }
+
+                    return Offset(0f, available.y)
+                }
+                return super.onPostScroll(consumed, available, source)
+            }
+        }
+    }
+
+    var isStartupAnimationRunning by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        isStartupAnimationRunning = true
+    }
+
+    val contentAlphaState = animateFloatAsState(
+        targetValue = if (isStartupAnimationRunning) 1f else 0f,
+        animationSpec = tween(durationMillis = 400, delayMillis = 0, easing = EaseOut),
+        label = "contentAlpha"
+    )
+
+    val contentOffsetState = animateDpAsState(
+        targetValue = if (isStartupAnimationRunning) 0.dp else 40.dp,
+        animationSpec = tween(durationMillis = 400, delayMillis = 0, easing = FastOutSlowInEasing),
+        label = "contentOffset"
+    )
+
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    val effectivePadding = remember(contentPadding, layoutDirection) {
+        PaddingValues(
+            start = 16.dp + contentPadding.calculateStartPadding(layoutDirection),
+            end = 16.dp + contentPadding.calculateEndPadding(layoutDirection),
+            top = contentPadding.calculateTopPadding() + 8.dp,
+            bottom = contentPadding.calculateBottomPadding() + 16.dp
+        )
+    }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .nestedScroll(nestedScrollConnection)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.type == PointerEventType.Release && overscrollOffset.value > 0) {
+                            scope.launch {
+                                overscrollOffset.animateTo(
+                                    0f,
+                                    spring(stiffness = Spring.StiffnessMediumLow)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            .verticalScroll(scrollState)
+            .padding(effectivePadding),
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        item {
-            AboutHero(buildInfo)
-        }
+        AboutHero(
+            buildInfo = buildInfo,
+            overscrollOffset = overscrollOffset.value,
+            contentAlpha = { contentAlphaState.value },
+            contentOffset = { contentOffsetState.value }
+        )
 
-        item {
+        Box(
+            modifier = Modifier.graphicsLayer {
+                alpha = contentAlphaState.value
+                translationY = contentOffsetState.value.toPx()
+            }
+        ) {
             SettingsSection(title = stringResource(R.string.about_app_info)) {
                 SettingsActionRow(
                     index = 0,
@@ -223,7 +348,12 @@ fun AboutScreen(
             }
         }
 
-        item {
+        Box(
+            modifier = Modifier.graphicsLayer {
+                alpha = contentAlphaState.value
+                translationY = contentOffsetState.value.toPx()
+            }
+        ) {
             SettingsSection(title = stringResource(R.string.about_privacy)) {
                 SettingsActionRow(
                     index = 0,
@@ -237,7 +367,12 @@ fun AboutScreen(
             }
         }
 
-        item {
+        Box(
+            modifier = Modifier.graphicsLayer {
+                alpha = contentAlphaState.value
+                translationY = contentOffsetState.value.toPx()
+            }
+        ) {
             SettingsSection(title = stringResource(R.string.about_support)) {
                 SettingsActionRow(
                     index = 0,
@@ -276,7 +411,7 @@ fun AboutScreen(
             }
         }
 
-        item { Spacer(Modifier.height(12.dp)) }
+        Spacer(Modifier.height(12.dp))
     }
 
     updateInfo?.let { info ->
@@ -340,7 +475,15 @@ fun AboutScreen(
 }
 
 @Composable
-private fun AboutHero(buildInfo: AboutBuildInfo) {
+private fun AboutHero(
+    buildInfo: AboutBuildInfo,
+    overscrollOffset: Float = 0f,
+    contentAlpha: () -> Float = { 1f },
+    contentOffset: () -> Dp = { 0.dp }
+) {
+    val density = LocalDensity.current
+    val extraSize = with(density) { overscrollOffset.toDp() }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -348,25 +491,48 @@ private fun AboutHero(buildInfo: AboutBuildInfo) {
         Image(
             painter = painterResource(R.drawable.acqua),
             contentDescription = stringResource(R.string.app_name),
-            modifier = Modifier.size(96.dp)
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = contentAlpha()
+                    translationY = contentOffset().toPx()
+                    scaleX = 1f + (overscrollOffset / 1000f)
+                    scaleY = 1f + (overscrollOffset / 1000f)
+                }
+                .size(96.dp + extraSize)
+                .padding(bottom = 8.dp)
         )
         Text(
             stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-            modifier = Modifier.padding(top = 12.dp)
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = contentAlpha()
+                    translationY = contentOffset().toPx()
+                }
+                .padding(top = 4.dp)
         )
         Text(
             stringResource(R.string.about_tagline),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 4.dp)
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = contentAlpha()
+                    translationY = contentOffset().toPx()
+                }
+                .padding(top = 4.dp)
         )
         Text(
             buildInfo.displayVersion,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier
+                .graphicsLayer {
+                    alpha = contentAlpha()
+                    translationY = contentOffset().toPx()
+                }
+                .padding(top = 8.dp)
         )
     }
 }

@@ -206,6 +206,9 @@
     <string name="filename_variables_guidance">Tap a variable below to add or remove it.</string>
     <string name="filename_preview">Example: %1$s</string>
     <string name="reset_filename_pattern">Reset filename pattern</string>
+    <string name="audio_filename_pattern">Audio filename format pattern</string>
+    <string name="audio_filename_preview">Audio example: %1$s</string>
+    <string name="reset_audio_filename_pattern">Reset audio filename pattern</string>
     <string name="media_processing">Video, audio &amp; metadata</string>
     <string name="default_video_quality">Default video quality</string>
     <string name="default_audio_format">Default audio format</string>
@@ -374,4 +377,28 @@
     <string name="update_download_failed">Download failed: %1$s</string>
     <string name="update_check_failed">Failed to check for updates: %1$s</string>
     <string name="update_no_compatible_apk">A newer release exists, but it does not include an APK compatible with this device.</string>
+
+    <!-- Browser & Navigation UI -->
+    <string name="browser_search_or_type_url">Search or type URL</string>
+    <string name="desktop_site">Desktop site</string>
+    <string name="browser_sessions">Browser Sessions</string>
+    <string name="browser_sessions_active_desc">Credentials &amp; cookies active</string>
+    <string name="browser_sessions_inactive_desc">Isolated &amp; private browsing</string>
+    <string name="paste_link">Paste link</string>
+    <string name="no_link_in_clipboard">No link found in clipboard</string>
+    <string name="copy_link">Copy link</string>
+    <string name="share_link">Share link</string>
+    <string name="open_in_external_browser">Open in external browser</string>
+    <string name="download_page_media">Download page media</string>
+    <string name="bookmarks">Bookmarks</string>
+    <string name="bookmark_added">Bookmark added</string>
+    <string name="bookmark_removed">Bookmark removed</string>
+    <string name="remove_bookmark">Remove bookmark</string>
+    <string name="new_tab">New tab</string>
+    <string name="exit_to_app">Return to Downloader</string>
+    <string name="more_options">More options</string>
+    <string name="secure_connection">Connection is secure</string>
+    <string name="insecure_connection">Connection is not secure</string>
+    <string name="edit_url">Edit address</string>
+    <string name="back_to_home">Return to start page</string>
 </resources>

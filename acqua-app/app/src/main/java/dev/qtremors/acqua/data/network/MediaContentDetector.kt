@@ -13,7 +13,13 @@ internal enum class DetectedMediaFormat(
     PNG(MediaKind.IMAGE, "image/png", "png"),
     GIF(MediaKind.IMAGE, "image/gif", "gif"),
     WEBP(MediaKind.IMAGE, "image/webp", "webp"),
-    MP4(MediaKind.VIDEO, "video/mp4", "mp4")
+    MP4(MediaKind.VIDEO, "video/mp4", "mp4"),
+    MP3(MediaKind.AUDIO, "audio/mpeg", "mp3"),
+    M4A(MediaKind.AUDIO, "audio/mp4", "m4a"),
+    AAC(MediaKind.AUDIO, "audio/aac", "aac"),
+    OGG(MediaKind.AUDIO, "audio/ogg", "ogg"),
+    FLAC(MediaKind.AUDIO, "audio/flac", "flac"),
+    WAV(MediaKind.AUDIO, "audio/wav", "wav")
 }
 
 internal object MediaContentDetector {
@@ -27,6 +33,12 @@ internal object MediaContentDetector {
             ?.trim()
             ?.lowercase(Locale.ROOT)
             .orEmpty()
+        if (expectedVideo && contentType.startsWith("audio/")) return null
+        if (!expectedVideo) {
+            val audioFormat = detectAudioFormat(contentType, prefix)
+            if (audioFormat != null) return audioFormat
+        }
+
         val imageFormat = detectImageFormat(prefix)
         val hasMp4Header = hasMp4FileHeader(prefix)
 
@@ -38,6 +50,36 @@ internal object MediaContentDetector {
             return imageFormat
         }
         return null
+    }
+
+    private fun detectAudioFormat(contentType: String, bytes: ByteArray): DetectedMediaFormat? {
+        val isAdtsHeader = bytes.size >= 7 && bytes[0] == 0xFF.toByte() &&
+            (bytes[1].toInt() and 0xF6) == 0xF0
+        val isMp3Header = (bytes.size >= 3 && bytes.asciiAt(0, 3) == "ID3") ||
+            (bytes.size >= 4 && bytes[0] == 0xFF.toByte() &&
+                (bytes[1].toInt() and 0xE0) == 0xE0 &&
+                (bytes[1].toInt() and 0x18) != 0x08 &&
+                (bytes[1].toInt() and 0x06) != 0 &&
+                (bytes[2].toInt() and 0xF0) != 0xF0 &&
+                (bytes[2].toInt() and 0x0C) != 0x0C)
+        val isFlacHeader = bytes.size >= 4 && bytes.asciiAt(0, 4) == "fLaC"
+        val isOggHeader = bytes.size >= 4 && bytes.asciiAt(0, 4) == "OggS"
+        val isWavHeader = bytes.size >= 12 && bytes.asciiAt(0, 4) == "RIFF" && bytes.asciiAt(8, 4) == "WAVE"
+        // Generic ISO BMFF brands identify the container, not its track types.
+        val isM4aHeader = hasMp4FileHeader(bytes) &&
+            !contentType.startsWith("video/") &&
+            (contentType in setOf("audio/mp4", "audio/x-m4a", "audio/m4a") ||
+                bytes.asciiAt(8, 4) in setOf("M4A ", "M4B "))
+
+        return when {
+            isM4aHeader -> DetectedMediaFormat.M4A
+            isAdtsHeader -> DetectedMediaFormat.AAC
+            isMp3Header -> DetectedMediaFormat.MP3
+            isFlacHeader -> DetectedMediaFormat.FLAC
+            isOggHeader -> DetectedMediaFormat.OGG
+            isWavHeader -> DetectedMediaFormat.WAV
+            else -> null
+        }
     }
 
     private fun hasMp4FileHeader(bytes: ByteArray): Boolean {
