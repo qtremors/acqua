@@ -2,6 +2,15 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.9] - 2026-09-10
+
+### Changed
+
+- Browse websites within the dashboard with saved website shortcuts and media extraction.
+- Switch dashboard tabs by swiping or using the floating navigation toolbar and contextual actions.
+- Apply session-setting changes to the live browser and disable session reuse when clearing all browser data.
+- Cancel pending extraction and release the WebView when leaving the browser.
+
 ## [0.1.8] - 2026-09-10
 
 ### Changed

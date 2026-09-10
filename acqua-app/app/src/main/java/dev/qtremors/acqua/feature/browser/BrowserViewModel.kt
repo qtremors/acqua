@@ -18,8 +18,19 @@ import kotlinx.coroutines.withContext
 data class BrowserUiState(
     val useSessions: Boolean = false,
     val websites: List<SavedWebsite> = emptyList(),
-    val initialized: Boolean = false
+    val initialized: Boolean = false,
+    val currentUrl: String? = null,
+    val pageTitle: String? = null,
+    val isLoading: Boolean = false,
+    val progress: Int = 0,
+    val canGoBack: Boolean = false,
+    val canGoForward: Boolean = false,
+    val isDesktopSite: Boolean = false,
+    val isSecure: Boolean = true,
+    val navigationAction: BrowserNavigationAction? = null
 )
+
+enum class BrowserNavigationAction { RELOAD, STOP, BACK, FORWARD }
 
 class BrowserViewModel(
     private val settings: AppSettingsRepository,
@@ -50,8 +61,87 @@ class BrowserViewModel(
             } else {
                 instagramResolver.clearSessionCookies()
             }
-            mutableState.value = BrowserUiState(useSessions, savedWebsites.load(), initialized = true)
+            mutableState.value = mutableState.value.copy(
+                useSessions = useSessions,
+                websites = savedWebsites.load(),
+                initialized = true
+            )
         }
+    }
+
+    fun loadUrl(url: String) {
+        mutableState.value = mutableState.value.copy(
+            currentUrl = url,
+            isLoading = true,
+            progress = 15
+        )
+    }
+
+    fun goHome() {
+        mutableState.value = mutableState.value.copy(
+            currentUrl = null,
+            pageTitle = null,
+            isLoading = false,
+            progress = 0,
+            canGoBack = false,
+            canGoForward = false
+        )
+    }
+
+    fun updatePageState(
+        url: String?,
+        title: String?,
+        canGoBack: Boolean,
+        canGoForward: Boolean,
+        isSecure: Boolean
+    ) {
+        if (mutableState.value.currentUrl == null) return
+        mutableState.value = mutableState.value.copy(
+            currentUrl = url ?: mutableState.value.currentUrl,
+            pageTitle = title ?: mutableState.value.pageTitle,
+            canGoBack = canGoBack,
+            canGoForward = canGoForward,
+            isSecure = isSecure
+        )
+    }
+
+    fun updateProgress(progress: Int, isLoading: Boolean) {
+        if (mutableState.value.currentUrl == null) return
+        mutableState.value = mutableState.value.copy(
+            progress = progress,
+            isLoading = isLoading
+        )
+    }
+
+    fun toggleDesktopSite() {
+        mutableState.value = mutableState.value.copy(
+            isDesktopSite = !mutableState.value.isDesktopSite
+        )
+    }
+
+    fun reload() {
+        mutableState.value = mutableState.value.copy(navigationAction = BrowserNavigationAction.RELOAD)
+    }
+
+    fun stop() {
+        mutableState.value = mutableState.value.copy(navigationAction = BrowserNavigationAction.STOP)
+    }
+
+    fun goBack() {
+        mutableState.value = mutableState.value.copy(navigationAction = BrowserNavigationAction.BACK)
+    }
+
+    fun goForward() {
+        mutableState.value = mutableState.value.copy(navigationAction = BrowserNavigationAction.FORWARD)
+    }
+
+    fun consumeNavigationAction() {
+        mutableState.value = mutableState.value.copy(navigationAction = null)
+    }
+
+    fun addWebsite(name: String, url: String) {
+        savedWebsites.save(name, url, null)
+        mutableState.value = mutableState.value.copy(websites = savedWebsites.load())
     }
 
     fun setUseSessions(enabled: Boolean) {
@@ -83,9 +173,10 @@ class BrowserViewModel(
 
     fun clearAll() {
         sessionJob?.cancel()
+        // Stop the live page before clearing cookies so it cannot save them again.
+        mutableState.value = BrowserUiState(initialized = true)
         browserData.clearAll {
             instagramResolver.clearSessionCookies()
-            mutableState.value = BrowserUiState(initialized = true)
         }
     }
 }
