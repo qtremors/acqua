@@ -99,16 +99,6 @@ const sumReleaseDownloads = (releases) => {
   }, 0);
 };
 
-const universalApkUrl = (release, tag) => {
-  if (!Array.isArray(release?.assets)) return null;
-  const version = tag.replace(/^v/i, "");
-  const expectedName = `Acqua-${version}.apk`;
-  const asset = release.assets.find((candidate) => candidate?.name === expectedName);
-  return typeof asset?.browser_download_url === "string" && asset.browser_download_url.startsWith("https://")
-    ? asset.browser_download_url
-    : null;
-};
-
 const fetchTotalReleaseDownloads = async () => {
   let nextUrl = "https://api.github.com/repos/qtremors/acqua/releases?per_page=100";
   let totalDownloads = 0;
@@ -138,7 +128,6 @@ const applyLatestRelease = (release) => {
   const releaseUrl = typeof release.html_url === "string" && release.html_url.startsWith("https://")
     ? release.html_url
     : latestReleaseFallback;
-  const downloadUrl = universalApkUrl(release, tag) || releaseUrl;
   const latestDownloads = sumReleaseDownloads([release]);
 
   document.querySelectorAll("[data-latest-release]").forEach((element) => {
@@ -147,11 +136,13 @@ const applyLatestRelease = (release) => {
       : `Latest release · ${tag}`;
   });
   document.querySelectorAll("[data-download-label]").forEach((element) => {
-    element.textContent = `Download ${tag}`;
+    element.textContent = `Get ${tag}`;
   });
   document.querySelectorAll("[data-latest-release-link]").forEach((element) => {
-    element.setAttribute("href", downloadUrl);
-    element.setAttribute("aria-label", `Download Acqua ${tag} universal APK`);
+    element.setAttribute("href", releaseUrl);
+    element.setAttribute("aria-label", `View Acqua ${tag} release on GitHub`);
+    element.setAttribute("target", "_blank");
+    element.setAttribute("rel", "noopener noreferrer");
   });
 
   const latestDownloadsEl = document.getElementById("gh-latest-downloads");

@@ -2,6 +2,14 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.0] - 2026-09-10
+
+### Changed
+
+- Preserve browser back and forward history when its screen is recreated, and discard it when returning Home or clearing browser data.
+- Keep punctuation-only media titles from producing empty filenames by trying the artist, uploader, then a generated name.
+- Open website download links on the GitHub release page in a new tab.
+
 ## [0.1.9] - 2026-09-10
 
 ### Changed

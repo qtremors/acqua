@@ -2,7 +2,7 @@
 
 > **Project:** Acqua
 >
-> **Version:** 0.1.9
+> **Version:** 0.2.0
 >
 > **Last Updated:** 2026-09-10
 

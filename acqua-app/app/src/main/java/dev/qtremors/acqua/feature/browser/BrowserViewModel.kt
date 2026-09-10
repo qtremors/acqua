@@ -1,5 +1,7 @@
 package dev.qtremors.acqua.feature.browser
 
+import android.graphics.Bitmap
+import android.os.Bundle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.qtremors.acqua.data.session.BrowserDataManager
@@ -7,6 +9,7 @@ import dev.qtremors.acqua.data.session.InstagramSessionStore
 import dev.qtremors.acqua.data.session.SavedWebsite
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
+import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.resolver.instagram.InstagramResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,6 +45,15 @@ class BrowserViewModel(
     private val mutableState = MutableStateFlow(BrowserUiState())
     val state = mutableState.asStateFlow()
     private var sessionJob: Job? = null
+    internal var savedWebViewState: Bundle? = null
+        private set
+
+    internal fun saveWebViewState(pageUrl: String?, webViewState: Bundle) {
+        // A disposed page must not revive history after Home, Clear All, or a new URL.
+        if (pageUrl != null && pageUrl == mutableState.value.currentUrl) {
+            savedWebViewState = webViewState
+        }
+    }
 
     init {
         refresh()
@@ -70,6 +82,7 @@ class BrowserViewModel(
     }
 
     fun loadUrl(url: String) {
+        savedWebViewState = null
         mutableState.value = mutableState.value.copy(
             currentUrl = url,
             isLoading = true,
@@ -78,13 +91,15 @@ class BrowserViewModel(
     }
 
     fun goHome() {
+        savedWebViewState = null
         mutableState.value = mutableState.value.copy(
             currentUrl = null,
             pageTitle = null,
             isLoading = false,
             progress = 0,
             canGoBack = false,
-            canGoForward = false
+            canGoForward = false,
+            navigationAction = null
         )
     }
 
@@ -139,8 +154,19 @@ class BrowserViewModel(
         mutableState.value = mutableState.value.copy(navigationAction = null)
     }
 
-    fun addWebsite(name: String, url: String) {
-        savedWebsites.save(name, url, null)
+    fun addWebsite(name: String, url: String, icon: Bitmap? = null) {
+        savedWebsites.save(name, url, icon)
+        mutableState.value = mutableState.value.copy(websites = savedWebsites.load())
+    }
+
+    fun removeWebsite(url: String) {
+        val host = WebLink.host(url)?.removePrefix("www.") ?: return
+        val existing = mutableState.value.websites.firstOrNull {
+            it.host.equals(host, ignoreCase = true) ||
+                it.origin.equals(WebLink.origin(url), ignoreCase = true)
+        }
+        val originToRemove = existing?.origin ?: WebLink.origin(url) ?: return
+        savedWebsites.remove(listOf(originToRemove))
         mutableState.value = mutableState.value.copy(websites = savedWebsites.load())
     }
 
@@ -173,6 +199,7 @@ class BrowserViewModel(
 
     fun clearAll() {
         sessionJob?.cancel()
+        savedWebViewState = null
         // Stop the live page before clearing cookies so it cannot save them again.
         mutableState.value = BrowserUiState(initialized = true)
         browserData.clearAll {

@@ -48,8 +48,10 @@ object FilenameFormatter {
         while (name.contains("__")) name = name.replace("__", "_")
         name = name.trim('_', ' ', '.')
         if (name.isEmpty()) {
-            name = title?.takeIf(String::isNotBlank)?.let(::sanitizeSegment)
-                ?: effectiveArtist?.takeIf(String::isNotBlank)?.let(::sanitizeSegment)
+            name = sequenceOf(title, artist, username)
+                .filterNotNull()
+                .map(::sanitizeSegment)
+                .firstOrNull(String::isNotBlank)
                 ?: "download_${date}_${time}_${index + 1}"
         }
 

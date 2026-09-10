@@ -1,6 +1,7 @@
 package dev.qtremors.acqua.feature.browser
 
 import android.content.Context
+import android.os.Bundle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -12,8 +13,10 @@ import dev.qtremors.acqua.resolver.instagram.InstagramResolver
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -71,6 +74,48 @@ class BrowserViewModelTest {
             viewModel.updateProgress(100, false)
             assertNull(viewModel.state.value.currentUrl)
             assertFalse(viewModel.state.value.canGoBack)
+        }
+    }
+
+    @Test
+    fun historyIsRetainedOnlyForTheCurrentPage() {
+        val (viewModel, _) = createViewModel()
+        instrumentation.runOnMainSync {
+            val url = "https://example.com"
+            val history = Bundle().apply { putString("history", "saved") }
+            viewModel.loadUrl(url)
+            viewModel.saveWebViewState(url, history)
+            assertSame(history, viewModel.savedWebViewState)
+
+            viewModel.goHome()
+            viewModel.saveWebViewState(url, history)
+            assertNull(viewModel.savedWebViewState)
+
+            viewModel.loadUrl(url)
+            viewModel.saveWebViewState(url, history)
+            viewModel.loadUrl("https://example.org")
+            viewModel.saveWebViewState(url, history)
+            assertNull(viewModel.savedWebViewState)
+
+            viewModel.loadUrl(url)
+            viewModel.saveWebViewState(url, history)
+            viewModel.clearAll()
+            viewModel.saveWebViewState(url, history)
+            assertNull(viewModel.savedWebViewState)
+        }
+    }
+
+    @Test
+    fun addingAndRemovingWebsitesUpdatesUiState() {
+        val (viewModel, _) = createViewModel()
+        instrumentation.runOnMainSync {
+            val url = "https://example.com/page"
+            viewModel.addWebsite("Example", url)
+            assertEquals(1, viewModel.state.value.websites.size)
+            assertEquals("example.com", viewModel.state.value.websites.first().host)
+
+            viewModel.removeWebsite(url)
+            assertTrue(viewModel.state.value.websites.isEmpty())
         }
     }
 }

@@ -85,6 +85,7 @@ abstract class CheckProductionStringsTask : DefaultTask() {
             "Acqua ",
             "AcquaError",
             "Sample video",
+            "Sample song",
             "ClipData.newPlainText",
             "https://",
             "http://"

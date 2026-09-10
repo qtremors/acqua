@@ -148,4 +148,19 @@ class FilenameFormatterTest {
         val withoutArtist = FilenameFormatter.toggleAudioVariable(withArtist, "{artist}")
         assertEquals("{title}", withoutArtist)
     }
+
+    @Test
+    fun `sanitized empty title falls back to artist then uploader`() {
+        fun filename(title: String, artist: String?, username: String?) = FilenameFormatter.format(
+            pattern = "{title}", username = username, width = 0, height = 0,
+            index = 0, fileExtension = "mp3", title = title, artist = artist, now = Date(0)
+        )
+        for (title in listOf("...", "/:*?", "\u0001\u200B")) {
+            assertEquals("Artist.mp3", filename(title, "Artist", "Uploader"))
+            assertEquals("Uploader.mp3", filename(title, "...", "Uploader"))
+            val generated = filename(title, "...", "/")
+            assertTrue(generated.startsWith("download_"))
+            assertTrue(generated.endsWith("_1.mp3"))
+        }
+    }
 }

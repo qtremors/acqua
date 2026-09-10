@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -25,6 +26,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -73,19 +75,21 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -107,6 +111,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -146,6 +151,7 @@ import java.io.File
 private const val DESKTOP_USER_AGENT =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
@@ -166,6 +172,7 @@ fun BrowserScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var showManageDialog by remember { mutableStateOf(false) }
     var showBookmarksSheet by remember { mutableStateOf(false) }
+    var showMenuSheet by remember { mutableStateOf(false) }
     var editingWebsite by remember { mutableStateOf<SavedWebsite?>(null) }
     var activeWebView by remember { mutableStateOf<WebView?>(null) }
     var isEditingAddress by remember { mutableStateOf(false) }
@@ -176,6 +183,49 @@ fun BrowserScreen(
     val currentActive by rememberUpdatedState(active)
 
     val liveMediaCollector = remember { LivePageMediaCollector() }
+
+    val currentHost = state.currentUrl?.let(WebLink::host)?.removePrefix("www.")
+    val isBookmarked = remember(state.currentUrl, state.websites) {
+        !currentHost.isNullOrBlank() && state.websites.any {
+            it.host.equals(currentHost, ignoreCase = true) ||
+                it.origin.equals(WebLink.origin(state.currentUrl.orEmpty()), ignoreCase = true)
+        }
+    }
+
+    val toggleBookmark: () -> Unit = {
+        context.performHaptic(HapticSignal.CLICK)
+        state.currentUrl?.let { url ->
+            if (isBookmarked) {
+                viewModel.removeWebsite(url)
+                Toast.makeText(context, R.string.bookmark_removed, Toast.LENGTH_SHORT).show()
+            } else {
+                val title = state.pageTitle?.trim()?.takeIf { it.isNotBlank() }
+                val host = WebLink.host(url)?.removePrefix("www.") ?: url
+                val name = title ?: host
+                viewModel.addWebsite(name, url, activeWebView?.favicon)
+                Toast.makeText(context, R.string.bookmark_added, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val triggerMediaDownload: () -> Unit = {
+        val wv = activeWebView
+        if (wv != null && !extractionPending) {
+            extractionPending = true
+            context.performHaptic(HapticSignal.CLICK)
+            Toast.makeText(context, R.string.resolving_media, Toast.LENGTH_SHORT).show()
+            val sourceUrl = state.currentUrl.orEmpty()
+            extractionJob = scope.launch {
+                try {
+                    extractMediaFromPage(context, wv, sourceUrl, liveMediaCollector) {
+                        currentActive && viewModel.state.value.currentUrl == sourceUrl
+                    }
+                } finally {
+                    extractionPending = false
+                }
+            }
+        }
+    }
 
     DisposableEffect(activeWebView, state.currentUrl, active) {
         onDispose { extractionJob?.cancel() }
@@ -263,6 +313,100 @@ fun BrowserScreen(
         )
     }
 
+    if (showMenuSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showMenuSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+            dragHandle = { BottomSheetDefaults.DragHandle() }
+        ) {
+            BrowserExpressiveMenu(
+                currentUrl = state.currentUrl.orEmpty(),
+                pageTitle = state.pageTitle,
+                favicon = activeWebView?.favicon,
+                isBookmarked = isBookmarked,
+                isDesktopSite = state.isDesktopSite,
+                useSessions = state.useSessions,
+                canGoBack = state.canGoBack,
+                canGoForward = state.canGoForward,
+                isLoading = state.isLoading,
+                onGoBack = {
+                    context.performHaptic(HapticSignal.CLICK)
+                    showMenuSheet = false
+                    viewModel.goBack()
+                },
+                onGoForward = {
+                    context.performHaptic(HapticSignal.CLICK)
+                    showMenuSheet = false
+                    viewModel.goForward()
+                },
+                onReload = {
+                    context.performHaptic(HapticSignal.CLICK)
+                    showMenuSheet = false
+                    viewModel.reload()
+                },
+                onStop = {
+                    context.performHaptic(HapticSignal.CLICK)
+                    showMenuSheet = false
+                    viewModel.stop()
+                },
+                onHome = {
+                    context.performHaptic(HapticSignal.CLICK)
+                    showMenuSheet = false
+                    viewModel.goHome()
+                },
+                onDownloadMedia = {
+                    showMenuSheet = false
+                    triggerMediaDownload()
+                },
+                onToggleBookmark = toggleBookmark,
+                onBookmarks = {
+                    showMenuSheet = false
+                    showBookmarksSheet = true
+                },
+                onToggleDesktopSite = {
+                    context.performHaptic(HapticSignal.CLICK)
+                    viewModel.toggleDesktopSite()
+                },
+                onToggleSessions = {
+                    context.performHaptic(HapticSignal.CLICK)
+                    viewModel.setUseSessions(!state.useSessions)
+                },
+                onCopyLink = {
+                    showMenuSheet = false
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("URL", state.currentUrl.orEmpty()))
+                    Toast.makeText(context, R.string.copied_to_clipboard, Toast.LENGTH_SHORT).show()
+                },
+                onShareLink = {
+                    showMenuSheet = false
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, state.currentUrl.orEmpty())
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, null))
+                },
+                onClearData = {
+                    showMenuSheet = false
+                    showManageDialog = true
+                },
+                onOpenExternal = {
+                    showMenuSheet = false
+                    state.currentUrl?.let {
+                        runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)))
+                        }
+                    }
+                },
+                onExitToDownloader = {
+                    showMenuSheet = false
+                    onExitToDownloader()
+                }
+            )
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -315,6 +459,8 @@ fun BrowserScreen(
                     BrowserWebViewContainer(
                         url = state.currentUrl.orEmpty(),
                         active = active,
+                        savedState = viewModel.savedWebViewState,
+                        onSaveState = viewModel::saveWebViewState,
                         useSessions = state.useSessions,
                         isDesktopSite = state.isDesktopSite,
                         navigationAction = state.navigationAction,
@@ -337,79 +483,22 @@ fun BrowserScreen(
 
                 // Bottom Browser Toolbar (Home, Bookmarks, Search, Download, 3-Dot Menu)
                 BrowserBottomToolbar(
-                    canGoBack = state.canGoBack,
-                    canGoForward = state.canGoForward,
-                    isLoading = state.isLoading,
-                    isDesktopSite = state.isDesktopSite,
-                    useSessions = state.useSessions,
-                    currentUrl = state.currentUrl.orEmpty(),
+                    isBookmarked = isBookmarked,
                     onHome = {
                         context.performHaptic(HapticSignal.CLICK)
                         viewModel.goHome()
                     },
-                    onBookmarks = {
-                        context.performHaptic(HapticSignal.CLICK)
-                        showBookmarksSheet = true
-                    },
+                    onToggleBookmark = toggleBookmark,
                     onSearch = {
                         context.performHaptic(HapticSignal.CLICK)
                         searchInput = state.currentUrl.orEmpty()
                         isEditingAddress = true
                     },
-                    onDownloadMedia = {
-                        val wv = activeWebView
-                        if (wv != null && !extractionPending) {
-                            extractionPending = true
-                            context.performHaptic(HapticSignal.CLICK)
-                            Toast.makeText(context, R.string.resolving_media, Toast.LENGTH_SHORT).show()
-                            val sourceUrl = state.currentUrl.orEmpty()
-                            extractionJob = scope.launch {
-                                try {
-                                    extractMediaFromPage(context, wv, sourceUrl, liveMediaCollector) {
-                                        currentActive && viewModel.state.value.currentUrl == sourceUrl
-                                    }
-                                } finally {
-                                    extractionPending = false
-                                }
-                            }
-                        }
-                    },
-                    onReload = { viewModel.reload() },
-                    onStop = { viewModel.stop() },
-                    onGoBack = { viewModel.goBack() },
-                    onGoForward = { viewModel.goForward() },
-                    onAddBookmark = {
-                        state.currentUrl?.let { url ->
-                            val host = WebLink.host(url) ?: url
-                            viewModel.addWebsite(host, url)
-                            Toast.makeText(context, R.string.saved_to_downloads, Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    onToggleDesktopSite = { viewModel.toggleDesktopSite() },
-                    onToggleSessions = { viewModel.setUseSessions(!state.useSessions) },
-                    onCopyLink = {
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        clipboard.setPrimaryClip(ClipData.newPlainText("URL", state.currentUrl.orEmpty()))
-                        Toast.makeText(context, R.string.copied_to_clipboard, Toast.LENGTH_SHORT).show()
-                    },
-                    onShareLink = {
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, state.currentUrl.orEmpty())
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, null))
-                    },
-                    onClearData = {
-                        showManageDialog = true
-                    },
-                    onOpenExternal = {
-                        state.currentUrl?.let {
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)))
-                            }
-                        }
-                    },
-                    onExitToDownloader = onExitToDownloader
+                    onDownloadMedia = triggerMediaDownload,
+                    onOpenMenu = {
+                        context.performHaptic(HapticSignal.CLICK)
+                        showMenuSheet = true
+                    }
                 )
             }
         }
@@ -732,31 +821,14 @@ private fun BrowserTopBar(
  */
 @Composable
 private fun BrowserBottomToolbar(
-    canGoBack: Boolean,
-    canGoForward: Boolean,
-    isLoading: Boolean,
-    isDesktopSite: Boolean,
-    useSessions: Boolean,
-    currentUrl: String,
+    isBookmarked: Boolean,
     onHome: () -> Unit,
-    onBookmarks: () -> Unit,
+    onToggleBookmark: () -> Unit,
     onSearch: () -> Unit,
     onDownloadMedia: () -> Unit,
-    onReload: () -> Unit,
-    onStop: () -> Unit,
-    onGoBack: () -> Unit,
-    onGoForward: () -> Unit,
-    onAddBookmark: () -> Unit,
-    onToggleDesktopSite: () -> Unit,
-    onToggleSessions: () -> Unit,
-    onCopyLink: () -> Unit,
-    onShareLink: () -> Unit,
-    onClearData: () -> Unit,
-    onOpenExternal: () -> Unit,
-    onExitToDownloader: () -> Unit
+    onOpenMenu: () -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
-    var menuExpanded by remember { mutableStateOf(false) }
 
     Surface(
         color = colors.surfaceContainerHigh,
@@ -777,8 +849,14 @@ private fun BrowserBottomToolbar(
             }
 
             // 2. Bookmarks button
-            IconButton(onClick = onBookmarks, modifier = Modifier.size(46.dp)) {
-                Icon(Icons.Filled.BookmarkBorder, stringResource(R.string.bookmarks), tint = colors.onSurface)
+            IconButton(onClick = onToggleBookmark, modifier = Modifier.size(46.dp)) {
+                Icon(
+                    imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                    contentDescription = stringResource(
+                        if (isBookmarked) R.string.remove_bookmark else R.string.save_website
+                    ),
+                    tint = if (isBookmarked) colors.primary else colors.onSurface
+                )
             }
 
             // 3. Search button
@@ -792,107 +870,354 @@ private fun BrowserBottomToolbar(
             }
 
             // 5. 3-Dot Overflow Menu
-            Box {
-                IconButton(onClick = { menuExpanded = true }, modifier = Modifier.size(46.dp)) {
-                    Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options), tint = colors.onSurface)
-                }
+            IconButton(onClick = onOpenMenu, modifier = Modifier.size(46.dp)) {
+                Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options), tint = colors.onSurface)
+            }
+        }
+    }
+}
 
-                DropdownMenu(
-                    expanded = menuExpanded,
-                    onDismissRequest = { menuExpanded = false },
-                    modifier = Modifier.width(250.dp)
+/**
+ * Material 3 Expressive Browser Overflow Menu:
+ * - Header status card with website favicon, page title, host, and SSL lock badge
+ * - Segmented cards grouping related actions:
+ *     1. Media & Bookmarks (Download media, Bookmark toggle, Bookmarks list)
+ *     2. Page Options (Desktop site switch, Session protection switch)
+ *     3. Link & Tools (Copy link, Share link, Open external, Manage website data)
+ *     4. Exit navigation (Return to Downloader)
+ * - Pinned Bottom Quick Actions Pill (Back, Forward, Stop/Refresh, Home) right at thumb level
+ */
+@Composable
+private fun BrowserExpressiveMenu(
+    currentUrl: String,
+    pageTitle: String?,
+    favicon: Bitmap?,
+    isBookmarked: Boolean,
+    isDesktopSite: Boolean,
+    useSessions: Boolean,
+    canGoBack: Boolean,
+    canGoForward: Boolean,
+    isLoading: Boolean,
+    onGoBack: () -> Unit,
+    onGoForward: () -> Unit,
+    onReload: () -> Unit,
+    onStop: () -> Unit,
+    onHome: () -> Unit,
+    onDownloadMedia: () -> Unit,
+    onToggleBookmark: () -> Unit,
+    onBookmarks: () -> Unit,
+    onToggleDesktopSite: () -> Unit,
+    onToggleSessions: () -> Unit,
+    onCopyLink: () -> Unit,
+    onShareLink: () -> Unit,
+    onClearData: () -> Unit,
+    onOpenExternal: () -> Unit,
+    onExitToDownloader: () -> Unit
+) {
+    val colors = MaterialTheme.colorScheme
+    val host = remember(currentUrl) {
+        WebLink.host(currentUrl)?.removePrefix("www.").orEmpty()
+    }
+    val isHttps = remember(currentUrl) {
+        currentUrl.startsWith("https://", ignoreCase = true)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(bottom = 8.dp)
+    ) {
+        // Scrollable content area containing header and segmented cards
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header Info Card (Favicon, Title, Host, Security Badge)
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = colors.surfaceContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Navigation row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        IconButton(onClick = { onGoBack(); menuExpanded = false }, enabled = canGoBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back))
-                        }
-                        IconButton(onClick = { onGoForward(); menuExpanded = false }, enabled = canGoForward) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.forward))
-                        }
-                        IconButton(onClick = {
-                            if (isLoading) onStop() else onReload()
-                            menuExpanded = false
-                        }) {
-                            Icon(
-                                if (isLoading) Icons.Filled.Clear else Icons.Filled.Refresh,
-                                stringResource(if (isLoading) R.string.stop else R.string.refresh)
-                            )
+                    val safeFavicon = favicon?.takeUnless { it.isRecycled }
+                    if (safeFavicon != null) {
+                        Image(
+                            bitmap = safeFavicon.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Surface(
+                            shape = CircleShape,
+                            color = if (isHttps) colors.primaryContainer else colors.surfaceContainerHighest,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = if (isHttps) Icons.Filled.Lock else Icons.Filled.Security,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = if (isHttps) colors.onPrimaryContainer else colors.onSurfaceVariant
+                                )
+                            }
                         }
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = pageTitle?.takeIf { it.isNotBlank() } ?: host.ifBlank { currentUrl },
+                            style = MaterialTheme.typography.titleSmall,
+                            color = colors.onSurface,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = host.ifBlank { currentUrl },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = colors.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
 
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.download_page_media)) },
-                        leadingIcon = { Icon(Icons.Filled.Download, null, tint = colors.primary) },
-                        onClick = { onDownloadMedia(); menuExpanded = false }
+            // Segment 1: Media & Bookmarks
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ExpressiveMenuItem(
+                        title = stringResource(R.string.download_page_media),
+                        icon = Icons.Filled.Download,
+                        iconTint = colors.primary,
+                        onClick = onDownloadMedia
                     )
-
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.save_website)) },
-                        leadingIcon = { Icon(Icons.Filled.Bookmark, null) },
-                        onClick = { onAddBookmark(); menuExpanded = false }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = colors.outlineVariant.copy(alpha = 0.35f)
                     )
-
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.desktop_site)) },
-                        leadingIcon = { Icon(Icons.Filled.DesktopMac, null) },
-                        trailingIcon = {
-                            Checkbox(checked = isDesktopSite, onCheckedChange = { onToggleDesktopSite(); menuExpanded = false })
-                        },
-                        onClick = { onToggleDesktopSite(); menuExpanded = false }
+                    ExpressiveMenuItem(
+                        title = stringResource(if (isBookmarked) R.string.remove_bookmark else R.string.save_website),
+                        icon = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
+                        iconTint = if (isBookmarked) colors.primary else colors.onSurface,
+                        onClick = onToggleBookmark
                     )
-
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.use_browser_sessions)) },
-                        leadingIcon = { Icon(Icons.Filled.Security, null) },
-                        trailingIcon = {
-                            Switch(checked = useSessions, onCheckedChange = { onToggleSessions(); menuExpanded = false })
-                        },
-                        onClick = { onToggleSessions(); menuExpanded = false }
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = colors.outlineVariant.copy(alpha = 0.35f)
                     )
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.copy_link)) },
-                        leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
-                        onClick = { onCopyLink(); menuExpanded = false }
-                    )
-
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.share_link)) },
-                        leadingIcon = { Icon(Icons.Filled.Share, null) },
-                        onClick = { onShareLink(); menuExpanded = false }
-                    )
-
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.manage_website_data)) },
-                        leadingIcon = { Icon(Icons.Filled.DeleteOutline, null) },
-                        onClick = { onClearData(); menuExpanded = false }
-                    )
-
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.open_in_external_browser)) },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.OpenInNew, null) },
-                        onClick = { onOpenExternal(); menuExpanded = false }
-                    )
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.exit_to_app)) },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = colors.primary) },
-                        onClick = { onExitToDownloader(); menuExpanded = false }
+                    ExpressiveMenuItem(
+                        title = stringResource(R.string.bookmarks),
+                        icon = Icons.Filled.BookmarkBorder,
+                        iconTint = colors.onSurface,
+                        onClick = onBookmarks
                     )
                 }
             }
+
+            // Segment 2: Page Options (Desktop site, Sessions)
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ExpressiveMenuItem(
+                        title = stringResource(R.string.desktop_site),
+                        icon = Icons.Filled.DesktopMac,
+                        onClick = onToggleDesktopSite,
+                        trailing = {
+                            Switch(
+                                checked = isDesktopSite,
+                                onCheckedChange = { onToggleDesktopSite() }
+                            )
+                        }
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = colors.outlineVariant.copy(alpha = 0.35f)
+                    )
+                    ExpressiveMenuItem(
+                        title = stringResource(R.string.use_browser_sessions),
+                        icon = Icons.Filled.Security,
+                        onClick = onToggleSessions,
+                        trailing = {
+                            Switch(
+                                checked = useSessions,
+                                onCheckedChange = { onToggleSessions() }
+                            )
+                        }
+                    )
+                }
+            }
+
+            // Segment 3: Link & Tools
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    ExpressiveMenuItem(
+                        title = stringResource(R.string.copy_link),
+                        icon = Icons.Filled.ContentCopy,
+                        onClick = onCopyLink
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = colors.outlineVariant.copy(alpha = 0.35f)
+                    )
+                    ExpressiveMenuItem(
+                        title = stringResource(R.string.share_link),
+                        icon = Icons.Filled.Share,
+                        onClick = onShareLink
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = colors.outlineVariant.copy(alpha = 0.35f)
+                    )
+                    ExpressiveMenuItem(
+                        title = stringResource(R.string.open_in_external_browser),
+                        icon = Icons.AutoMirrored.Filled.OpenInNew,
+                        onClick = onOpenExternal
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        color = colors.outlineVariant.copy(alpha = 0.35f)
+                    )
+                    ExpressiveMenuItem(
+                        title = stringResource(R.string.manage_website_data),
+                        icon = Icons.Filled.DeleteOutline,
+                        onClick = onClearData
+                    )
+                }
+            }
+
+            // Segment 4: App Navigation
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                ExpressiveMenuItem(
+                    title = stringResource(R.string.exit_to_app),
+                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                    iconTint = colors.primary,
+                    onClick = onExitToDownloader
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Pinned Bottom Quick Actions Pill (Back, Forward, Refresh/Stop, Home)
+        Surface(
+            shape = RoundedCornerShape(26.dp),
+            color = colors.surfaceContainerHighest,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = onGoBack,
+                    enabled = canGoBack,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.back)
+                    )
+                }
+                IconButton(
+                    onClick = onGoForward,
+                    enabled = canGoForward,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = stringResource(R.string.forward)
+                    )
+                }
+                IconButton(
+                    onClick = { if (isLoading) onStop() else onReload() },
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        if (isLoading) Icons.Filled.Clear else Icons.Filled.Refresh,
+                        contentDescription = stringResource(if (isLoading) R.string.stop else R.string.refresh)
+                    )
+                }
+                IconButton(
+                    onClick = onHome,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Home,
+                        contentDescription = stringResource(R.string.home)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpressiveMenuItem(
+    title: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    iconTint: Color = MaterialTheme.colorScheme.onSurface,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        if (trailing != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            trailing()
         }
     }
 }
@@ -905,6 +1230,8 @@ private fun BrowserBottomToolbar(
 private fun BrowserWebViewContainer(
     url: String,
     active: Boolean,
+    savedState: Bundle?,
+    onSaveState: (String?, Bundle) -> Unit,
     useSessions: Boolean,
     isDesktopSite: Boolean,
     navigationAction: dev.qtremors.acqua.feature.browser.BrowserNavigationAction?,
@@ -1054,7 +1381,11 @@ private fun BrowserWebViewContainer(
                 }
 
                 currentLoadedUrl = url
-                loadUrl(url)
+                if (savedState == null || restoreState(savedState) == null) {
+                    loadUrl(url)
+                } else {
+                    onPageStateChanged(this.url, title, canGoBack(), canGoForward(), this.url?.startsWith("https://") == true)
+                }
                 webViewRef = this
                 onWebViewReady(this)
             }
@@ -1066,6 +1397,8 @@ private fun BrowserWebViewContainer(
             }
         },
         onRelease = { webView ->
+            val history = Bundle()
+            if (webView.saveState(history) != null) onSaveState(webView.url, history)
             onWebViewReady(null)
             webViewRef = null
             webView.stopLoading()
