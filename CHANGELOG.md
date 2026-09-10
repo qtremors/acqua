@@ -2,6 +2,15 @@
 
 All notable user-visible changes are documented here.
 
+## [0.1.8] - 2026-09-10
+
+### Changed
+
+- Add a media carousel with adaptive sizing and a separate metadata card showing the proposed filename.
+- Show audio artwork, title, artist, album, and file size with synchronized scrolling for long metadata.
+- Open About from the Downloader header or a downward pull, including when no media is loaded.
+- Use a floating toolbar for browser-launched download previews.
+
 ## [0.1.7] - 2026-09-10
 
 ### Changed

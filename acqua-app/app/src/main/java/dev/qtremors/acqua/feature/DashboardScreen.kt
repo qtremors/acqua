@@ -205,6 +205,7 @@ fun DashboardScreen(
                     resolveInBrowser,
                     requestDownloadAccess,
                     onOpenBrowser = { openBrowser(it, false, null) },
+                    onOpenAbout = { overlay = AboutDestination.ABOUT },
                     modifier = Modifier.fillMaxSize().padding(downloaderPadding)
                 )
                 1 -> BrowserScreen(

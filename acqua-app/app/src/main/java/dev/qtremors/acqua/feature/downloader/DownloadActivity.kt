@@ -11,20 +11,28 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.zIndex
+import dev.qtremors.acqua.ui.components.AcquaFabAction
+import dev.qtremors.acqua.ui.components.AcquaFloatingToolbar
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -77,7 +85,6 @@ class DownloadActivity : ComponentActivity() {
         }
     }
 
-    @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val sourceUrl = intent.getStringExtra(EXTRA_URL)?.let(WebLink::normalize)
@@ -122,33 +129,64 @@ class DownloadActivity : ComponentActivity() {
                     if (browserMedia.isEmpty()) downloader.updateUrl(sourceUrl)
                     else downloader.seedResolvedMedia(sourceUrl, browserMedia)
                 }
-                Scaffold(
-                    topBar = {
-                        CenterAlignedTopAppBar(
-                            title = { Text(stringResource(R.string.download)) },
-                            navigationIcon = {
-                                IconButton(onClick = ::finish) {
-                                    Icon(
-                                        Icons.AutoMirrored.Filled.ArrowBack,
-                                        stringResource(R.string.return_to_browser)
-                                    )
+                val downloaderState by downloader.state.collectAsStateWithLifecycle()
+                val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                val imeBottom = WindowInsets.ime.asPaddingValues().calculateBottomPadding()
+                val screenPadding = remember(statusBarTop, navBottom, imeBottom) {
+                    val baseBottom = if (imeBottom > 0.dp) 0.dp else navBottom + 80.dp
+                    PaddingValues(
+                        top = statusBarTop,
+                        bottom = baseBottom,
+                        start = 0.dp,
+                        end = 0.dp
+                    )
+                }
+
+                val downloadFabAction = remember(downloaderState) {
+                    val hasMedia = !downloaderState.media.isNullOrEmpty()
+                    val canDownload = hasMedia && !downloaderState.isSaving && !downloaderState.saved && downloaderState.savingItemIndex == null
+                    if (canDownload) {
+                        AcquaFabAction(
+                            icon = Icons.Filled.Download,
+                            contentDescriptionRes = R.string.download,
+                            onClick = {
+                                runWithDownloadPermissions(true) {
+                                    downloader.downloadAll(browserSessionsEnabled = true, browserResolver = ::resolveInBrowser)
                                 }
                             }
                         )
-                    }
+                    } else null
+                }
+
+                Scaffold(
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    topBar = {}
                 ) { padding ->
-                    DownloaderScreen(
-                        viewModel = downloader,
-                        mediaDownloader = dependencies.mediaDownloader,
-                        useBrowserSessions = true,
-                        sessionsInitialized = true,
-                        browserRequestRevision = EXPLICIT_BROWSER_REQUEST_REVISION,
-                        resolveInBrowser = ::resolveInBrowser,
-                        requestDownloadAccess = ::runWithDownloadPermissions,
-                        onOpenBrowser = { finish() },
-                        showLinkEditor = false,
-                        modifier = Modifier.padding(padding)
-                    )
+                    Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                        DownloaderScreen(
+                            viewModel = downloader,
+                            mediaDownloader = dependencies.mediaDownloader,
+                            useBrowserSessions = true,
+                            sessionsInitialized = true,
+                            browserRequestRevision = EXPLICIT_BROWSER_REQUEST_REVISION,
+                            resolveInBrowser = ::resolveInBrowser,
+                            requestDownloadAccess = ::runWithDownloadPermissions,
+                            onOpenBrowser = { finish() },
+                            contentPadding = screenPadding,
+                            modifier = Modifier.fillMaxSize(),
+                            showLinkEditor = false
+                        )
+
+                        AcquaFloatingToolbar(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .zIndex(1f),
+                            title = stringResource(R.string.download),
+                            onBackClick = ::finish,
+                            fabAction = downloadFabAction
+                        )
+                    }
                 }
             }
         }
