@@ -337,7 +337,7 @@ class DownloaderViewModel(
             val workIds = if (items.size == 1 && items.single().backend == MediaBackend.YT_DLP) {
                 listOf(enqueueYtDlpDownload(items.single(), url))
             } else {
-                items.mapIndexed { index, item -> ytDlpDownloads.enqueueDirect(item, index, url) }
+                items.mapIndexed { index, item -> ytDlpDownloads.enqueueDirect(item, index, url, items.size) }
             }
             observeDownloads(workIds)
         }
@@ -353,7 +353,7 @@ class DownloaderViewModel(
             val workId = if (item.backend == MediaBackend.YT_DLP) {
                 enqueueYtDlpDownload(mediaWithDimensions, sourceUrl)
             } else {
-                ytDlpDownloads.enqueueDirect(mediaWithDimensions, index, sourceUrl)
+                ytDlpDownloads.enqueueDirect(mediaWithDimensions, index, sourceUrl, mutableState.value.media?.size ?: 1)
             }
             observeDownloads(listOf(workId), itemIndex = index)
         }
@@ -513,7 +513,7 @@ class DownloaderViewModel(
                 else -> LinkValidity.INVALID
             },
             downloadContentType = contentType ?: settings.lastDownloadContentType() ?: DownloadContentType.VIDEO,
-            downloadEngine = settings.lastDownloadEngine(),
+            downloadEngine = WebLink.preferredEngine(url, settings.lastDownloadEngine()),
             maximumVideoHeight = preferences.maximumVideoHeight,
             audioFormat = preferences.audioFormat,
             embedMetadata = preferences.embedMetadata,

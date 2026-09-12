@@ -42,8 +42,8 @@ class YtDlpDownloadCoordinator(context: Context) {
         return request.id
     }
 
-    fun enqueueDirect(media: ResolvedMedia, index: Int, sourceUrl: String): UUID {
-        val input = DownloadWorkData.directRequest(media, index, sourceUrl)
+    fun enqueueDirect(media: ResolvedMedia, index: Int, sourceUrl: String, itemCount: Int = 1): UUID {
+        val input = DownloadWorkData.directRequest(media, index, sourceUrl, itemCount)
         val request = OneTimeWorkRequestBuilder<YtDlpDownloadWorker>()
             .setInputData(input)
             .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())

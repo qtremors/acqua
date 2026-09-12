@@ -22,7 +22,8 @@ object FilenameFormatter {
         title: String? = null,
         artist: String? = null,
         album: String? = null,
-        now: Date = Date()
+        now: Date = Date(),
+        itemCount: Int = 1
     ): String {
         val date = SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(now)
         val time = SimpleDateFormat("HHmmss", Locale.ROOT).format(now)
@@ -40,7 +41,7 @@ object FilenameFormatter {
             .replace("{resolution}", resolution)
             .replace("{date}", date)
             .replace("{time}", time)
-            .replace("{index}", (index + 1).toString())
+            .replace("{index}", if (itemCount > 1) (index + 1).toString() else "")
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
             .replace(Regex("[\\p{Cc}\\p{Cf}]"), "")
             .replace(Regex("\\s+"), " ")
@@ -52,7 +53,7 @@ object FilenameFormatter {
                 .filterNotNull()
                 .map(::sanitizeSegment)
                 .firstOrNull(String::isNotBlank)
-                ?: "download_${date}_${time}_${index + 1}"
+                ?: "download_${date}_${time}" + if (itemCount > 1) "_${index + 1}" else ""
         }
 
         return "$name.$safeExtension"
@@ -92,6 +93,7 @@ object FilenameFormatter {
         width = 1080,
         height = 1920,
         index = 0,
+        itemCount = 2,
         fileExtension = "mp4",
         title = "Sample video",
         now = Date(1_704_067_200_000L)
@@ -103,6 +105,7 @@ object FilenameFormatter {
         width = 0,
         height = 0,
         index = 0,
+        itemCount = 2,
         fileExtension = "mp3",
         title = "Sample song",
         artist = "Sample artist",

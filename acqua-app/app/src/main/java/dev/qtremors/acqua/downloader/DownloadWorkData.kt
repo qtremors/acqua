@@ -26,6 +26,7 @@ internal object DownloadWorkData {
     const val KEY_IS_VIDEO = "is_video"
     const val KEY_MEDIA_KIND = "media_kind"
     const val KEY_ITEM_INDEX = "item_index"
+    const val KEY_ITEM_COUNT = "item_count"
     const val KEY_MEDIA_WIDTH = "media_width"
     const val KEY_MEDIA_HEIGHT = "media_height"
     const val KEY_SOURCE_TIMESTAMP_MILLIS = "source_timestamp_millis"
@@ -64,9 +65,11 @@ internal object DownloadWorkData {
     fun directRequest(
         media: ResolvedMedia,
         itemIndex: Int,
-        sourceUrl: String
+        sourceUrl: String,
+        itemCount: Int = 1
     ): Data = commonRequest(media, sourceUrl)
         .putInt(KEY_ITEM_INDEX, itemIndex.coerceAtLeast(0))
+        .putInt(KEY_ITEM_COUNT, itemCount.coerceAtLeast(1))
         .apply {
             media.fileSize?.takeIf { it > 0L }?.let { putLong(KEY_FILE_SIZE, it) }
             media.referer?.takeIf(String::isNotBlank)?.let { putString(KEY_REFERER, it) }
@@ -120,6 +123,7 @@ internal object DownloadWorkData {
             outputMedia = media.copy(width = outputWidth, height = outputHeight),
             sourceUrl = sourceUrl,
             itemIndex = data.getInt(KEY_ITEM_INDEX, 0).coerceAtLeast(0),
+            itemCount = data.getInt(KEY_ITEM_COUNT, 1).coerceAtLeast(1),
             options = YtDlpDownloadOptions(
                 contentType = contentType,
                 maximumVideoHeight = data.getInt(KEY_MAXIMUM_VIDEO_QUALITY, 0).coerceAtLeast(0),
@@ -187,5 +191,6 @@ internal data class DownloadWorkRequest(
     val outputMedia: ResolvedMedia,
     val sourceUrl: String,
     val itemIndex: Int,
-    val options: YtDlpDownloadOptions
+    val options: YtDlpDownloadOptions,
+    val itemCount: Int = 1
 )

@@ -31,6 +31,7 @@ class MediaStorage(
         item: ResolvedMedia,
         index: Int,
         sourceUrl: String,
+        itemCount: Int = 1,
         onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
     ): Uri {
         val settings = settingsRepository.downloadSettings()
@@ -62,6 +63,7 @@ class MediaStorage(
             width = if (isAudio) 0 else item.width,
             height = if (isAudio) 0 else item.height,
             index = index,
+            itemCount = itemCount,
             fileExtension = extension,
             title = item.title,
             artist = item.artist,
@@ -107,6 +109,7 @@ class MediaStorage(
             width = if (isAudio) 0 else media.width,
             height = if (isAudio) 0 else media.height,
             index = 0,
+            itemCount = 1,
             fileExtension = extension,
             title = media.title,
             artist = media.artist,

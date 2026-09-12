@@ -398,6 +398,7 @@ fun MediaMetadataContainer(
         width = width,
         height = height,
         index = index,
+        itemCount = totalCount,
         fileExtension = extension,
         title = item.title ?: fallbackTitle,
         artist = item.artist,

@@ -12,6 +12,15 @@ import org.junit.Test
 
 class DownloadWorkDataTest {
     @Test
+    fun `direct requests retain collection size for background filenames`() {
+        val media = completeMedia(backend = MediaBackend.DIRECT)
+        val collection = DownloadWorkData.decode(DownloadWorkData.directRequest(media, 2, SOURCE_URL, 4))!!
+        assertEquals(4, collection.itemCount)
+        assertEquals(2, collection.itemIndex)
+        assertEquals(1, DownloadWorkData.decode(DownloadWorkData.directRequest(media, 0, SOURCE_URL))!!.itemCount)
+    }
+
+    @Test
     fun `processed request round trips media output and options`() {
         val media = completeMedia(backend = MediaBackend.YT_DLP)
         val output = media.copy(width = 1280, height = 720)

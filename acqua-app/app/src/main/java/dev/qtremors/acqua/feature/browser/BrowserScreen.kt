@@ -10,6 +10,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
@@ -136,6 +137,8 @@ import dev.qtremors.acqua.feature.downloader.DownloadActivity
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -176,11 +179,16 @@ fun BrowserScreen(
     var editingWebsite by remember { mutableStateOf<SavedWebsite?>(null) }
     var activeWebView by remember { mutableStateOf<WebView?>(null) }
     var isEditingAddress by remember { mutableStateOf(false) }
+    var chromeVisible by remember(state.currentUrl?.let(WebLink::mediaPageIdentity)) { mutableStateOf(true) }
     var searchInput by remember { mutableStateOf("") }
     var extractionPending by remember { mutableStateOf(false) }
     var extractionJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
     val currentActive by rememberUpdatedState(active)
+    val returnToStartPage: () -> Unit = {
+        activeWebView?.clearFocus()
+        viewModel.goHome()
+    }
 
     val liveMediaCollector = remember { LivePageMediaCollector() }
 
@@ -218,8 +226,12 @@ fun BrowserScreen(
             extractionJob = scope.launch {
                 try {
                     extractMediaFromPage(context, wv, sourceUrl, liveMediaCollector) {
-                        currentActive && viewModel.state.value.currentUrl == sourceUrl
+                        currentActive && WebLink.mediaPageIdentity(viewModel.state.value.currentUrl.orEmpty()) == WebLink.mediaPageIdentity(sourceUrl)
                     }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    Toast.makeText(context, R.string.no_media_found, Toast.LENGTH_LONG).show()
                 } finally {
                     extractionPending = false
                 }
@@ -227,7 +239,7 @@ fun BrowserScreen(
         }
     }
 
-    DisposableEffect(activeWebView, state.currentUrl, active) {
+    DisposableEffect(activeWebView, WebLink.mediaPageIdentity(state.currentUrl.orEmpty()), active) {
         onDispose { extractionJob?.cancel() }
     }
 
@@ -257,7 +269,7 @@ fun BrowserScreen(
         if (webView != null && webView.canGoBack()) {
             webView.goBack()
         } else {
-            viewModel.goHome()
+            returnToStartPage()
         }
     }
 
@@ -308,6 +320,7 @@ fun BrowserScreen(
             onClearAll = {
                 showManageDialog = false
                 showBookmarksSheet = false
+                activeWebView?.clearFocus()
                 viewModel.clearAll()
             }
         )
@@ -354,7 +367,7 @@ fun BrowserScreen(
                 onHome = {
                     context.performHaptic(HapticSignal.CLICK)
                     showMenuSheet = false
-                    viewModel.goHome()
+                    returnToStartPage()
                 },
                 onDownloadMedia = {
                     showMenuSheet = false
@@ -433,7 +446,7 @@ fun BrowserScreen(
             // STATE 2: Browsing Mode (On a website, matching Reference Image 2)
             Column(modifier = Modifier.fillMaxSize()) {
                 // Top Address Bar
-                BrowserTopBar(
+                if (chromeVisible || isEditingAddress) BrowserTopBar(
                     currentUrl = state.currentUrl.orEmpty(),
                     isSecure = state.isSecure,
                     isLoading = state.isLoading,
@@ -472,7 +485,17 @@ fun BrowserScreen(
                             viewModel.updateProgress(progress, loading)
                         },
                         onIconReceived = { pageUrl, bitmap ->
-                            savedWebsitesRepo.updateIcon(pageUrl, bitmap)
+                            scope.launch(Dispatchers.IO) {
+                                savedWebsitesRepo.updateIcon(pageUrl, bitmap)
+                            }
+                        },
+                        onPageVisited = { pageUrl ->
+                            scope.launch(Dispatchers.IO) {
+                                savedWebsitesRepo.record(pageUrl)
+                            }
+                        },
+                        onScrollDirection = { visible ->
+                            if (!extractionPending) chromeVisible = visible
                         },
                         onWebViewReady = { webView ->
                             extractionJob?.cancel()
@@ -482,11 +505,11 @@ fun BrowserScreen(
                 }
 
                 // Bottom Browser Toolbar (Home, Bookmarks, Search, Download, 3-Dot Menu)
-                BrowserBottomToolbar(
+                if (chromeVisible || isEditingAddress) BrowserBottomToolbar(
                     isBookmarked = isBookmarked,
                     onHome = {
                         context.performHaptic(HapticSignal.CLICK)
-                        viewModel.goHome()
+                        returnToStartPage()
                     },
                     onToggleBookmark = toggleBookmark,
                     onSearch = {
@@ -1239,15 +1262,22 @@ private fun BrowserWebViewContainer(
     onPageStateChanged: (url: String?, title: String?, canBack: Boolean, canForward: Boolean, isSecure: Boolean) -> Unit,
     onProgressChanged: (progress: Int, isLoading: Boolean) -> Unit,
     onIconReceived: (url: String, icon: Bitmap) -> Unit,
+    onPageVisited: (url: String) -> Unit,
+    onScrollDirection: (Boolean) -> Unit,
     onWebViewReady: (WebView?) -> Unit
 ) {
     val context = LocalContext.current
     val instagramSessions = remember { InstagramSessionStore(context) }
-    val savedWebsitesRepo = remember { SavedWebsiteRepository(context) }
     val currentUseSessions by rememberUpdatedState(useSessions)
+    val currentOnScrollDirection by rememberUpdatedState(onScrollDirection)
 
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var currentLoadedUrl by remember { mutableStateOf<String?>(null) }
+
+    DisposableEffect(webViewRef) {
+        val webView = webViewRef
+        onDispose { webView?.clearFocus() }
+    }
 
     // Handle incoming navigation actions from ViewModel
     LaunchedEffect(navigationAction, webViewRef) {
@@ -1274,7 +1304,12 @@ private fun BrowserWebViewContainer(
 
     LaunchedEffect(active, webViewRef) {
         val wv = webViewRef ?: return@LaunchedEffect
-        if (active) wv.onResume() else wv.onPause()
+        if (active) {
+            wv.onResume()
+        } else {
+            wv.clearFocus()
+            wv.onPause()
+        }
     }
 
     AndroidView(
@@ -1297,6 +1332,24 @@ private fun BrowserWebViewContainer(
                     mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                     if (isDesktopSite) userAgentString = DESKTOP_USER_AGENT
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
+                }
+
+                var lastTouchY = 0f
+                setOnTouchListener { _, event ->
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> lastTouchY = event.y
+                        MotionEvent.ACTION_MOVE -> {
+                            val delta = event.y - lastTouchY
+                            if (kotlin.math.abs(delta) > 16 * resources.displayMetrics.density) {
+                                currentOnScrollDirection(delta > 0 || scrollY == 0)
+                                lastTouchY = event.y
+                            }
+                        }
+                    }
+                    false
+                }
+                setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                    if (scrollY == 0) currentOnScrollDirection(true)
                 }
 
                 val webViewInstance = this
@@ -1348,7 +1401,7 @@ private fun BrowserWebViewContainer(
                             currentLoadedUrl = it
                             val isSecure = it.startsWith("https://")
                             onPageStateChanged(it, view.title, view.canGoBack(), view.canGoForward(), isSecure)
-                            savedWebsitesRepo.record(it)
+                            onPageVisited(it)
                             if (currentUseSessions && WebLink.isInstagramHost(it)) {
                                 val cookies = CookieManager.getInstance().getCookie("https://www.instagram.com").orEmpty()
                                 if (cookies.contains("sessionid=")) {
@@ -1397,14 +1450,18 @@ private fun BrowserWebViewContainer(
             }
         },
         onRelease = { webView ->
+            webView.clearFocus()
             val history = Bundle()
             if (webView.saveState(history) != null) onSaveState(webView.url, history)
             onWebViewReady(null)
             webViewRef = null
+            webView.setOnTouchListener(null)
+            webView.setOnScrollChangeListener(null)
             webView.stopLoading()
             webView.onPause()
             webView.webChromeClient = null
             webView.webViewClient = WebViewClient()
+            (webView.parent as? ViewGroup)?.removeView(webView)
             webView.removeAllViews()
             webView.destroy()
         },
@@ -1435,13 +1492,15 @@ private suspend fun extractMediaFromPage(
     collector.reset()
     while (true) {
         // Never combine media from a new page with the original source URL.
-        if (!isCurrentPage() || WebLink.normalize(webView.url.orEmpty()) != WebLink.normalize(sourceUrl)) return
-        val rawValue = suspendCancellableCoroutine<String?> { continuation ->
-            webView.evaluateJavascript(RenderedPageResolverActivity.EXTRACTION_SCRIPT) { value ->
-                if (continuation.isActive) continuation.resume(value)
+        if (!isCurrentPage() || WebLink.mediaPageIdentity(webView.url.orEmpty()) != WebLink.mediaPageIdentity(sourceUrl)) return
+        val rawValue = withTimeoutOrNull(2_000L) {
+            suspendCancellableCoroutine<String?> { continuation ->
+                webView.evaluateJavascript(RenderedPageResolverActivity.EXTRACTION_SCRIPT) { value ->
+                    if (continuation.isActive) continuation.resume(value)
+                }
             }
         }
-        if (!isCurrentPage() || WebLink.normalize(webView.url.orEmpty()) != WebLink.normalize(sourceUrl)) return
+        if (!isCurrentPage() || WebLink.mediaPageIdentity(webView.url.orEmpty()) != WebLink.mediaPageIdentity(sourceUrl)) return
         val payload = RenderedPageResolverActivity.decodeJavascriptResult(rawValue)
         when (val outcome = collector.consume(payload, sourceUrl)) {
             LivePageExtractionOutcome.Continue -> {

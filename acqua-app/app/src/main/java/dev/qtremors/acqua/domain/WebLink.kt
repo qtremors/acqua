@@ -65,4 +65,22 @@ object WebLink {
 
     fun isYouTubeMusicUrl(url: String): Boolean =
         host(url) == "music.youtube.com"
+
+    fun preferredEngine(input: String, fallback: DownloadEngine): DownloadEngine {
+        val url = normalize(input) ?: return fallback
+        if (!isInstagramHost(url)) return fallback
+        return when (URI(url).path.orEmpty().split('/').getOrNull(1)?.lowercase()) {
+            "p" -> DownloadEngine.ACQUA
+            "reel", "reels", "tv" -> DownloadEngine.YT_DLP
+            else -> fallback
+        }
+    }
+
+    // Carousel navigation changes the query without changing the Instagram post.
+    fun mediaPageIdentity(input: String): String? {
+        val url = normalize(input) ?: return null
+        return if (isInstagramMediaUrl(url)) {
+            "${host(url)}${URI(url).path.trimEnd('/')}"
+        } else url
+    }
 }

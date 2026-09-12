@@ -1,263 +1,137 @@
 package dev.qtremors.acqua.feature.history
 
 import android.text.format.Formatter
-import androidx.annotation.StringRes
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
 
-private data class HistoryFilterOption(
-    val filter: HistoryFilter,
-    @StringRes val label: Int
-)
+internal fun HistoryFilter.labelRes(): Int = when (this) {
+    HistoryFilter.MEDIA -> R.string.hist_downloads
+    HistoryFilter.PHOTOS -> R.string.photos
+    HistoryFilter.VIDEOS -> R.string.videos
+    HistoryFilter.AUDIO -> R.string.audio
+    HistoryFilter.LINKS -> R.string.links
+    HistoryFilter.UNAVAILABLE -> R.string.hist_unavailable
+}
 
-private data class HistorySortOption(
-    val sort: HistorySort,
-    @StringRes val label: Int
-)
-
-private val filterOptions = listOf(
-    HistoryFilterOption(HistoryFilter.MEDIA, R.string.all_media),
-    HistoryFilterOption(HistoryFilter.PHOTOS, R.string.photos),
-    HistoryFilterOption(HistoryFilter.VIDEOS, R.string.videos),
-    HistoryFilterOption(HistoryFilter.AUDIO, R.string.audio),
-    HistoryFilterOption(HistoryFilter.LINKS, R.string.links)
-)
-
-private val sortOptions = listOf(
-    HistorySortOption(HistorySort.NEWEST, R.string.newest),
-    HistorySortOption(HistorySort.OLDEST, R.string.oldest),
-    HistorySortOption(HistorySort.LARGEST, R.string.largest)
-)
-
-@Composable
-internal fun HistoryHeader(
-    hasEntries: Boolean,
-    onOpenDownloads: () -> Unit,
-    onClear: () -> Unit
-) {
-    if (!hasEntries) return
-    val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onOpenDownloads) {
-            Icon(
-                Icons.Filled.FolderOpen,
-                stringResource(R.string.open_downloads_folder),
-                tint = colors.primary
-            )
-        }
-        TextButton(onClick = onClear) {
-            Text(stringResource(R.string.clear_all), color = colors.error)
-        }
-    }
+internal fun HistorySort.labelRes(): Int = when (this) {
+    HistorySort.NEWEST -> R.string.newest
+    HistorySort.OLDEST -> R.string.oldest
+    HistorySort.LARGEST -> R.string.largest
 }
 
 @Composable
 internal fun HistorySearchAndFilters(
-    query: String,
-    selectedFilter: HistoryFilter,
-    selectedSort: HistorySort,
-    summary: HistorySummary,
-    resultCount: Int,
+    state: HistoryUiState,
     onQueryChange: (String) -> Unit,
     onFilterChange: (HistoryFilter) -> Unit,
-    onSortChange: (HistorySort) -> Unit
+    onSortChange: (HistorySort) -> Unit,
+    onGroupingChange: (Boolean) -> Unit,
+    onStatistics: () -> Unit,
+    onSelect: () -> Unit,
+    onRefresh: () -> Unit,
+    onClear: () -> Unit
 ) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        leadingIcon = { Icon(Icons.Filled.Search, null) },
-        trailingIcon = if (query.isNotEmpty()) {
-            {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Filled.Close, stringResource(R.string.clear_search))
-                }
-            }
-        } else {
-            null
-        },
-        label = { Text(stringResource(R.string.search_history)) },
-        supportingText = {
-            Text(
-                pluralStringResource(R.plurals.history_results, resultCount, resultCount),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+    var menu by remember { mutableStateOf(false) }
+    var sortMenu by remember { mutableStateOf(false) }
+    val focus = LocalFocusManager.current
+    val summary = state.summary
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = state.query, onValueChange = onQueryChange,
+                label = { Text(stringResource(R.string.hist_search)) },
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = if (state.query.isNotEmpty()) {{
+                    IconButton(onClick = { onQueryChange("") }) {
+                        Icon(Icons.Default.Close, stringResource(R.string.clear_search))
+                    }
+                }} else null,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
+                shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)
             )
-        },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-        shape = RoundedCornerShape(16.dp)
-    )
-
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .padding(bottom = 8.dp)
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        filterOptions.forEach { option ->
-            val selected = selectedFilter == option.filter
-            Surface(
-                onClick = { onFilterChange(option.filter) },
-                shape = RoundedCornerShape(20.dp),
-                color = if (selected) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                },
-                contentColor = if (selected) {
-                    MaterialTheme.colorScheme.onPrimary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier.height(40.dp)
-            ) {
-                Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        stringResource(
-                            R.string.history_filter_count,
-                            stringResource(option.label),
-                            summary.countFor(option.filter)
-                        ),
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.hist_options)) }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Column {
+                            Text(stringResource(R.string.hist_group))
+                            Text(stringResource(R.string.hist_group_help), style = MaterialTheme.typography.bodySmall)
+                        } },
+                        leadingIcon = { Checkbox(state.groupBySource, onCheckedChange = null) },
+                        onClick = { menu = false; onGroupingChange(!state.groupBySource) }
                     )
+                    DropdownMenuItem(text = { Text(stringResource(R.string.hist_select)) }, enabled = state.filteredEntries.isNotEmpty(), onClick = { menu = false; onSelect(); focus.clearFocus() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.refresh)) }, onClick = { menu = false; onRefresh() })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.clear_history)) }, enabled = state.entries.isNotEmpty(), onClick = { menu = false; onClear() })
                 }
             }
         }
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .padding(bottom = 12.dp)
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        sortOptions.forEach { option ->
-            FilterChip(
-                selected = selectedSort == option.sort,
-                onClick = { onSortChange(option.sort) },
-                label = { Text(stringResource(option.label)) }
-            )
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            HistoryFilter.entries.forEach { filter ->
+                FilterChip(
+                    selected = state.filter == filter,
+                    onClick = { onFilterChange(filter); focus.clearFocus() },
+                    label = { Text(stringResource(R.string.history_filter_count, stringResource(filter.labelRes()), summary.countFor(filter))) }
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(pluralStringResource(R.plurals.history_results, state.filteredEntries.size, state.filteredEntries.size), modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+            Box {
+                val sortDescription = stringResource(R.string.hist_sort, stringResource(state.sort.labelRes()))
+                TextButton(onClick = { sortMenu = true }, modifier = Modifier.semantics { contentDescription = sortDescription }) {
+                    Text(stringResource(state.sort.labelRes()))
+                }
+                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                    HistorySort.entries.forEach { sort ->
+                        DropdownMenuItem(
+                            text = { Text(stringResource(sort.labelRes())) },
+                            leadingIcon = { RadioButton(selected = state.sort == sort, onClick = null) },
+                            onClick = { sortMenu = false; onSortChange(sort); focus.clearFocus() }
+                        )
+                    }
+                }
+            }
+            IconButton(onClick = onStatistics) { Icon(Icons.Default.Info, stringResource(R.string.hist_statistics)) }
         }
     }
 }
 
 @Composable
-internal fun HistorySummaryCard(summary: HistorySummary) {
-    if (summary.totalEntries == 0) return
+internal fun HistoryStatistics(summary: HistorySummary, onUnavailable: () -> Unit) {
     val context = LocalContext.current
-    val colors = MaterialTheme.colorScheme
-    val storedSize = Formatter.formatShortFileSize(context, summary.storedBytes)
-
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(bottom = 14.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = colors.surfaceContainerLow)
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(
-                stringResource(R.string.history_summary_title),
-                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold)
-            )
-            FlowRow(
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                SummaryPill(
-                    pluralStringResource(
-                        R.plurals.history_download_count,
-                        summary.downloads,
-                        summary.downloads
-                    )
-                )
-                SummaryPill(
-                    pluralStringResource(
-                        R.plurals.history_link_count,
-                        summary.links,
-                        summary.links
-                    )
-                )
-                SummaryPill(stringResource(R.string.history_storage_used, storedSize))
-                if (summary.missing > 0) {
-                    SummaryPill(
-                        pluralStringResource(
-                            R.plurals.history_missing_count,
-                            summary.missing,
-                            summary.missing
-                        ),
-                        isWarning = true
-                    )
-                }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(pluralStringResource(R.plurals.history_download_count, summary.downloads, summary.downloads))
+        Text(pluralStringResource(R.plurals.history_link_count, summary.links, summary.links))
+        Text(stringResource(R.string.history_storage_used, Formatter.formatShortFileSize(context, summary.storedBytes)))
+        if (summary.missing > 0) {
+            TextButton(onClick = onUnavailable) {
+                Text(pluralStringResource(R.plurals.hist_unavailable_count, summary.missing, summary.missing), color = MaterialTheme.colorScheme.error)
             }
         }
-    }
-}
-
-@Composable
-private fun SummaryPill(label: String, isWarning: Boolean = false) {
-    val colors = MaterialTheme.colorScheme
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = if (isWarning) colors.errorContainer else colors.secondaryContainer,
-        contentColor = if (isWarning) colors.onErrorContainer else colors.onSecondaryContainer
-    ) {
-        Text(
-            label,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.labelMedium
-        )
-    }
-}
-
-@Composable
-internal fun HistoryEmptyState(reason: HistoryEmptyReason) {
-    val message = when (reason) {
-        HistoryEmptyReason.NO_HISTORY -> R.string.no_history
-        HistoryEmptyReason.NO_SEARCH_RESULTS -> R.string.no_history_search_results
-        HistoryEmptyReason.NO_FILTER_RESULTS -> R.string.no_history_filter_results
-    }
-    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Text(
-            stringResource(message),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 48.dp)
-        )
     }
 }

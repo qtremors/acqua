@@ -1,299 +1,223 @@
 package dev.qtremors.acqua.feature.history
 
-import android.widget.Toast
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import java.util.TimeZone
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.core.net.toUri
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.history.HistoryEntry
 import dev.qtremors.acqua.platform.FileActions
-import dev.qtremors.acqua.platform.HapticSignal
-import dev.qtremors.acqua.platform.performHaptic
+import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.ui.scrollbar.AcquaFastScrollbar
 import dev.qtremors.acqua.ui.scrollbar.LazyListScrollbarState
-import dev.qtremors.acqua.ui.image.ThumbnailKey
-import coil.compose.AsyncImage
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.ui.platform.LocalLayoutDirection
-import dev.qtremors.acqua.ui.components.EmptyState
-import dev.qtremors.acqua.ui.components.EmptyStateVariant
-import java.text.SimpleDateFormat
-import java.util.Date
 
 @Composable
 fun HistoryScreen(
-    viewModel: HistoryViewModel,
-    fileActions: FileActions,
-    active: Boolean,
-    onRefetch: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    viewModel: HistoryViewModel, fileActions: FileActions, active: Boolean,
+    onRefetch: (String) -> Unit, modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
-    val visibleEntries = state.filteredEntries
-    val colors = MaterialTheme.colorScheme
+    val visible = remember(state.entries, state.activeQuery, state.missingEntryIds) { state.filteredEntries }
+    val listState = rememberLazyListState()
+    val scrollbar = remember(listState) { LazyListScrollbarState(listState) }
+    val snackbar = remember { SnackbarHostState() }
     var confirmClear by remember { mutableStateOf(false) }
-    LaunchedEffect(active) { if (active) viewModel.refresh() }
+    var statistics by remember { mutableStateOf(false) }
+    var detailsId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selecting by rememberSaveable { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(emptySet<String>()) }
+    var expanded by remember { mutableStateOf(emptySet<String>()) }
+    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    val zone = TimeZone.getDefault()
+    val displayItems = remember(visible, state.sort, state.groupBySource, expanded, currentTime, zone) {
+        historyListItems(visible, state.sort, state.groupBySource, expanded, currentTime, zone)
+    }
+    val selectedEntries = visible.filter { it.id in selected }
+    val canShare = selectedEntries.isNotEmpty() && selectedEntries.all { it.isDownloaded && it.id !in state.missingEntryIds }
+    val currentActive by rememberUpdatedState(active)
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && currentActive) {
+                currentTime = System.currentTimeMillis()
+                if (!viewModel.state.value.isLoading) viewModel.refresh()
+            }
+        }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(active) {
+        if (active) {
+            currentTime = System.currentTimeMillis()
+            if (!state.isLoading) viewModel.refresh()
+        }
+    }
+    LaunchedEffect(state.query, state.filter, state.sort, state.groupBySource) {
+        listState.scrollToItem(0)
+        selected = emptySet()
+        selecting = false
+    }
+    LaunchedEffect(state.entries) { if (detailsId != null && state.entries.none { it.id == detailsId }) detailsId = null }
+    LaunchedEffect(visible) {
+        selected = selected.intersect(visible.mapTo(mutableSetOf(), HistoryEntry::id))
+        if (visible.isEmpty()) selecting = false
+    }
+    LaunchedEffect(active, viewModel) {
+        if (!active) return@LaunchedEffect
+        viewModel.events.collect { event ->
+            when (event) {
+                is HistoryEvent.Removed -> {
+                    val result = snackbar.showSnackbar(
+                        context.resources.getQuantityString(R.plurals.hist_removed, event.entries.size, event.entries.size),
+                        actionLabel = context.getString(R.string.hist_undo),
+                        withDismissAction = true, duration = SnackbarDuration.Long
+                    )
+                    if (result == SnackbarResult.ActionPerformed) viewModel.restore(event.entries)
+                }
+                HistoryEvent.Failed -> snackbar.showSnackbar(context.getString(R.string.hist_failed))
+            }
+        }
+    }
+    BackHandler(enabled = active && selecting) { selecting = false; selected = emptySet() }
 
-    val layoutDirection = LocalLayoutDirection.current
-    val effectivePadding = remember(contentPadding, layoutDirection) {
-        PaddingValues(
-            start = contentPadding.calculateStartPadding(layoutDirection) + 20.dp,
-            top = contentPadding.calculateTopPadding() + 8.dp,
-            end = contentPadding.calculateEndPadding(layoutDirection) + 20.dp,
-            bottom = contentPadding.calculateBottomPadding() + 24.dp
-        )
+    if (confirmClear) AlertDialog(
+        onDismissRequest = { confirmClear = false },
+        title = { Text(stringResource(R.string.clear_history)) },
+        text = { Text(stringResource(R.string.clear_history_confirmation)) },
+        confirmButton = { TextButton(onClick = { confirmClear = false; selecting = false; selected = emptySet(); viewModel.clear() }) {
+            Text(stringResource(R.string.hist_remove), color = MaterialTheme.colorScheme.error)
+        } },
+        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) } }
+    )
+    if (statistics) AlertDialog(
+        onDismissRequest = { statistics = false }, title = { Text(stringResource(R.string.hist_statistics)) },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+            HistoryStatistics(state.summary) {
+                statistics = false
+                viewModel.setQuery("")
+                viewModel.selectFilter(HistoryFilter.UNAVAILABLE)
+            }
+        } },
+        confirmButton = { TextButton(onClick = { statistics = false }) { Text(stringResource(R.string.close)) } }
+    )
+    state.entries.firstOrNull { it.id == detailsId }?.let { entry ->
+        HistoryDetailsSheet(entry, state.fileStatuses[entry.id], onDismiss = { detailsId = null }, fileActions = fileActions, onRefetch = {
+            detailsId = null; onRefetch(entry.url)
+        }, onRetry = { viewModel.refresh() })
     }
 
-    if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text(stringResource(R.string.clear_history)) },
-            text = { Text(stringResource(R.string.clear_history_confirmation)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmClear = false
-                    context.performHaptic(HapticSignal.WARNING)
-                    viewModel.clear()
-                    Toast.makeText(context, R.string.history_cleared, Toast.LENGTH_SHORT).show()
-                }) { Text(stringResource(R.string.clear_all), color = colors.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) }
-            }
-        )
-    }
-
-    if (state.entries.isEmpty()) {
-        EmptyState(
-            variant = EmptyStateVariant.History,
-            modifier = modifier
-                .fillMaxSize()
-                .padding(effectivePadding)
-        )
-    } else {
-        val listState = rememberLazyListState()
-        val scrollbarState = remember(listState) { LazyListScrollbarState(listState) }
-        Box(modifier = modifier.fillMaxSize()) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = effectivePadding,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                item(key = "history_header") {
-                    HistoryHeader(
-                        hasEntries = state.entries.isNotEmpty(),
-                        onOpenDownloads = fileActions::openDownloads,
-                        onClear = { confirmClear = true }
-                    )
-                }
-                item(key = "history_summary") {
-                    HistorySummaryCard(state.summary)
-                }
-                item(key = "history_filters") {
-                    HistorySearchAndFilters(
-                        query = state.query,
-                        selectedFilter = state.filter,
-                        selectedSort = state.sort,
-                        summary = state.summary,
-                        resultCount = visibleEntries.size,
-                        onQueryChange = viewModel::setQuery,
-                        onFilterChange = { filter ->
-                            context.performHaptic(HapticSignal.CLICK)
-                            viewModel.selectFilter(filter)
-                        },
-                        onSortChange = { sort ->
-                            context.performHaptic(HapticSignal.CLICK)
-                            viewModel.selectSort(sort)
-                        }
-                    )
-                }
-                if (visibleEntries.isEmpty()) {
-                    item(key = "history_empty_search") {
-                        EmptyState(
-                            variant = EmptyStateVariant.Search,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 32.dp)
-                        )
+    Box(modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding())) {
+        Column(Modifier.fillMaxSize()) {
+            if (selecting) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { selecting = false; selected = emptySet() }) { Icon(Icons.Default.Close, stringResource(R.string.hist_cancel_selection)) }
+                    Text(stringResource(R.string.hist_selected, selected.size), Modifier.weight(1f))
+                    IconButton(onClick = { fileActions.shareMany(selectedEntries) }, enabled = canShare) {
+                        Icon(Icons.Default.Share, stringResource(R.string.hist_share_selected))
                     }
-                } else {
-                    items(visibleEntries, key = HistoryEntry::id) { entry ->
-                        HistoryRow(
-                            entry = entry,
-                            missing = entry.id in state.missingEntryIds,
-                            onOpen = { context.performHaptic(HapticSignal.CLICK); fileActions.open(entry.fileUri, entry.mimeType) },
-                            onShare = { context.performHaptic(HapticSignal.CLICK); fileActions.share(entry.fileUri, entry.mimeType) },
-                            onDelete = { context.performHaptic(HapticSignal.CLICK); viewModel.delete(entry.id) },
-                            onRefetch = { context.performHaptic(HapticSignal.CLICK); onRefetch(entry.url) }
-                        )
+                    IconButton(onClick = { viewModel.remove(selected); selected = emptySet(); selecting = false }, enabled = selected.isNotEmpty()) {
+                        Icon(Icons.Default.DeleteOutline, stringResource(R.string.hist_remove))
                     }
                 }
+                TextButton(onClick = { selected = visible.mapTo(mutableSetOf(), HistoryEntry::id) }) { Text(stringResource(R.string.hist_select_all)) }
+                if (selectedEntries.isNotEmpty() && !canShare) Text(stringResource(R.string.hist_share_hint), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
+            } else {
+                HistorySearchAndFilters(state, viewModel::setQuery, viewModel::selectFilter, viewModel::selectSort,
+                    viewModel::setGrouping, onStatistics = { statistics = true }, onSelect = { selecting = true },
+                    onRefresh = { viewModel.refresh() }, onClear = { confirmClear = true })
             }
-            if (visibleEntries.isNotEmpty()) {
-                AcquaFastScrollbar(
-                    scrollbarState = scrollbarState,
-                    labelForIndex = { index ->
-                        if (index >= 3) {
-                            visibleEntries.getOrNull(index - 3)?.fileName?.take(15) ?: ""
-                        } else {
-                            ""
+            if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (state.loadFailed) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.hist_load_failed), Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = { viewModel.refresh() }) { Text(stringResource(R.string.hist_retry)) }
+                }
+            }
+            Box(Modifier.weight(1f)) {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (visible.isEmpty() && !state.isLoading && !state.loadFailed) item("empty") {
+                        val title = when {
+                            state.entries.isEmpty() -> R.string.no_history
+                            state.activeQuery.isSearching -> R.string.hist_no_matches
+                            else -> when (state.filter) {
+                                HistoryFilter.MEDIA -> R.string.hist_no_downloads
+                                HistoryFilter.PHOTOS -> R.string.hist_no_photos
+                                HistoryFilter.VIDEOS -> R.string.hist_no_videos
+                                HistoryFilter.AUDIO -> R.string.hist_no_audio
+                                HistoryFilter.LINKS -> R.string.hist_no_links
+                                HistoryFilter.UNAVAILABLE -> R.string.hist_no_unavailable
+                            }
                         }
-                    },
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(
-                            top = contentPadding.calculateTopPadding(),
-                            bottom = contentPadding.calculateBottomPadding()
-                        )
+                        Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(if (state.entries.isEmpty()) R.string.hist_empty_help else if (state.activeQuery.isSearching) R.string.hist_search_help else R.string.hist_category_help), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium)
+                            if (state.entries.isNotEmpty()) {
+                                TextButton(onClick = viewModel::resetFilters) { Text(stringResource(R.string.hist_reset)) }
+                                if (state.summary.links > 0 && state.filter != HistoryFilter.LINKS) TextButton(onClick = { viewModel.setQuery(""); viewModel.selectFilter(HistoryFilter.LINKS) }) { Text(stringResource(R.string.hist_show_links)) }
+                            }
+                        }
+                    }
+                    items(displayItems, key = { it.key }) { item ->
+                        when (item) {
+                            is HistoryListItem.Day -> Text(stringResource(when (item.day) {
+                                HistoryDay.TODAY -> R.string.hist_today
+                                HistoryDay.YESTERDAY -> R.string.hist_yesterday
+                                HistoryDay.EARLIER -> R.string.hist_earlier
+                            }), Modifier.padding(top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleSmall)
+                            is HistoryListItem.Group -> {
+                                val isExpanded = item.key in expanded
+                                Surface(onClick = { expanded = if (isExpanded) expanded - item.key else expanded + item.key }, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
+                                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                        Text(stringResource(R.string.hist_group_count, item.entries.size, WebLink.host(item.entries.first().url).orEmpty()), style = MaterialTheme.typography.titleSmall)
+                                        Text(stringResource(if (isExpanded) R.string.hist_collapse else R.string.hist_expand), style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                            is HistoryListItem.Entry -> {
+                                val entry = item.entry
+                                val toggle = { selected = if (entry.id in selected) selected - entry.id else selected + entry.id }
+                                HistoryRow(entry, state.fileStatuses[entry.id], selecting, entry.id in selected,
+                                    onClick = { if (selecting) toggle() else if (entry.isDownloaded && entry.id !in state.missingEntryIds) fileActions.open(entry.fileUri, entry.mimeType) else detailsId = entry.id },
+                                    onLongClick = { selecting = true; toggle() }, onToggle = toggle,
+                                    onShare = { fileActions.share(entry.fileUri, entry.mimeType) },
+                                    onRemove = { viewModel.delete(entry.id) }, onDetails = { detailsId = entry.id },
+                                    onSource = { fileActions.openSource(entry.url) }, onRefetch = { onRefetch(entry.url) },
+                                    onRetry = { viewModel.refresh() })
+                            }
+                        }
+                    }
+                }
+                if (displayItems.isNotEmpty()) AcquaFastScrollbar(
+                    scrollbarState = scrollbar,
+                    labelForIndex = { index -> when (val item = displayItems.getOrNull(index)) {
+                        is HistoryListItem.Entry -> item.entry.fileName.ifBlank { WebLink.host(item.entry.url).orEmpty() }.take(20)
+                        is HistoryListItem.Group -> WebLink.host(item.entries.first().url).orEmpty()
+                        else -> ""
+                    } }, modifier = Modifier.align(Alignment.CenterEnd)
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun HistoryRow(
-    entry: HistoryEntry,
-    missing: Boolean,
-    onOpen: () -> Unit,
-    onShare: () -> Unit,
-    onDelete: () -> Unit,
-    onRefetch: () -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-    val thumbnailModel = remember(entry.id, entry.thumbnailUrl, entry.fileUri, missing) {
-        when {
-            missing -> null
-            entry.isDownloaded && entry.fileUri.isNotEmpty() && (entry.isVideo || entry.isAudio) -> ThumbnailKey(
-                path = "",
-                extension = entry.fileName.substringAfterLast('.', "").lowercase(),
-                sizeBytes = entry.sizeBytes,
-                lastModifiedMillis = entry.timestamp,
-                contentUri = entry.fileUri
-            )
-            entry.isDownloaded && entry.fileUri.isNotEmpty() -> entry.fileUri.toUri()
-            else -> entry.thumbnailUrl
-        }
-    }
-    Card(
-        Modifier.fillMaxWidth(), RoundedCornerShape(24.dp),
-        CardDefaults.cardColors(containerColor = colors.surfaceContainerHigh)
-    ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        when {
-                            !entry.isDownloaded -> Icons.Filled.Link
-                            entry.isVideo -> Icons.Filled.Movie
-                            entry.isAudio -> Icons.Filled.MusicNote
-                            else -> Icons.Filled.Image
-                        },
-                        null,
-                        tint = colors.primary.copy(alpha = 0.6f),
-                        modifier = Modifier.size(24.dp)
-                    )
-                    if (thumbnailModel != null) {
-                        AsyncImage(
-                            model = thumbnailModel,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        if (entry.isDownloaded) entry.fileName else stringResource(R.string.media_link_title),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        maxLines = 2
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    val locale = LocalConfiguration.current.locales[0]
-                    val date = remember(entry.timestamp, locale) {
-                        SimpleDateFormat("MMM dd, HH:mm", locale).format(Date(entry.timestamp))
-                    }
-                    Text(date, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-                    val detail = when {
-                        missing -> stringResource(R.string.file_missing)
-                        !entry.isDownloaded -> entry.url
-                        entry.sizeBytes > 0 -> String.format(locale, "%.2f MB", entry.sizeBytes / (1024.0 * 1024.0))
-                        else -> stringResource(R.string.unknown_size)
-                    }
-                    Text(
-                        detail,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = if (missing) colors.error else colors.onSurfaceVariant,
-                        maxLines = 2
-                    )
-                }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                if (entry.isDownloaded && !missing) {
-                    IconButton(onOpen) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.open_file), tint = colors.primary) }
-                    IconButton(onShare) { Icon(Icons.Filled.Share, stringResource(R.string.share_file), tint = colors.primary) }
-                } else {
-                    IconButton(onRefetch) { Icon(Icons.Filled.Refresh, stringResource(R.string.refetch_link), tint = colors.primary) }
-                }
-                IconButton(onDelete) { Icon(Icons.Filled.Delete, stringResource(R.string.delete_record), tint = colors.error) }
-            }
-        }
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(8.dp))
     }
 }

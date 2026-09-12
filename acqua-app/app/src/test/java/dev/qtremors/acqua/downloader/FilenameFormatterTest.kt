@@ -7,6 +7,17 @@ import java.util.Date
 
 class FilenameFormatterTest {
     @Test
+    fun `only collections include filename indexes`() {
+        fun filename(count: Int, index: Int) = FilenameFormatter.format(
+            pattern = "{title}_{index}", username = null, width = 0, height = 0,
+            index = index, fileExtension = "jpg", title = "Photo", itemCount = count
+        )
+        assertEquals("Photo.jpg", filename(1, 0))
+        assertEquals("Photo_1.jpg", filename(3, 0))
+        assertEquals("Photo_3.jpg", filename(3, 2))
+    }
+
+    @Test
     fun `default filename does not add an Acqua prefix`() {
         val name = FilenameFormatter.format(
             pattern = FilenameFormatter.DEFAULT_PATTERN,
@@ -34,7 +45,7 @@ class FilenameFormatterTest {
             now = Date(0)
         )
 
-        assertEquals("acqua_owner_1.png", name)
+        assertEquals("acqua_owner.png", name)
     }
 
     @Test
@@ -160,7 +171,7 @@ class FilenameFormatterTest {
             assertEquals("Uploader.mp3", filename(title, "...", "Uploader"))
             val generated = filename(title, "...", "/")
             assertTrue(generated.startsWith("download_"))
-            assertTrue(generated.endsWith("_1.mp3"))
+            assertTrue(Regex("download_[0-9]{8}_[0-9]{6}\\.mp3").matches(generated))
         }
     }
 }

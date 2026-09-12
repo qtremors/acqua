@@ -401,4 +401,65 @@
     <string name="insecure_connection">Connection is not secure</string>
     <string name="edit_url">Edit address</string>
     <string name="back_to_home">Return to start page</string>
+
+    <string name="hist_search">Search this category</string>
+    <string name="hist_no_matches">No matching results in this category</string>
+    <string name="hist_downloads">Downloads</string>
+    <string name="hist_unavailable">Unavailable</string>
+    <string name="hist_file_unavailable">File unavailable</string>
+    <string name="hist_file_missing">File missing</string>
+    <string name="hist_remove">Remove from history</string>
+    <string name="hist_undo">Undo</string>
+    <plurals name="hist_removed">
+        <item quantity="one">%1$d record removed. Files kept.</item>
+        <item quantity="other">%1$d records removed. Files kept.</item>
+    </plurals>
+    <string name="hist_failed">Could not update history. Please try again.</string>
+    <string name="hist_load_failed">Could not load history.</string>
+    <string name="hist_retry">Retry</string>
+    <string name="hist_options">History options</string>
+    <string name="hist_sort">Sort: %1$s</string>
+    <string name="hist_statistics">History statistics</string>
+    <string name="hist_group">Group files by source</string>
+    <string name="hist_group_help">Groups downloads from the same source on the same day.</string>
+    <string name="hist_group_count">%1$d files from %2$s</string>
+    <string name="hist_expand">Expand group</string>
+    <string name="hist_collapse">Collapse group</string>
+    <string name="hist_select">Select items</string>
+    <string name="hist_selected">%1$d selected</string>
+    <string name="hist_select_all">Select all results</string>
+    <string name="hist_cancel_selection">Cancel selection</string>
+    <string name="hist_select_item">Select %1$s</string>
+    <string name="hist_item_options">Options for %1$s</string>
+    <string name="hist_share_selected">Share selected files</string>
+    <string name="hist_share_hint">Select available files only to share.</string>
+    <string name="hist_details">Details</string>
+    <string name="hist_source">Source</string>
+    <string name="hist_open_source">Open original link</string>
+    <string name="hist_copy_link">Copy source link</string>
+    <string name="hist_location">Storage location</string>
+    <string name="hist_filename">Filename</string>
+    <string name="hist_date">Recorded</string>
+    <string name="hist_size">Size</string>
+    <string name="hist_status">Status</string>
+    <string name="hist_available">Available</string>
+    <string name="hist_today">Today</string>
+    <string name="hist_yesterday">Yesterday</string>
+    <string name="hist_earlier">Earlier</string>
+    <string name="hist_reset">Reset filters</string>
+    <string name="hist_show_links">Show links</string>
+    <string name="hist_no_downloads">No downloaded media yet</string>
+    <string name="hist_no_photos">No photos yet</string>
+    <string name="hist_no_videos">No videos yet</string>
+    <string name="hist_no_audio">No audio yet</string>
+    <string name="hist_no_links">No links yet</string>
+    <string name="hist_no_unavailable">All recorded files are available</string>
+    <string name="hist_empty_help">Downloads and fetched links appear here. Removing records keeps your files.</string>
+    <string name="hist_search_help">Try other keywords or reset the category filter.</string>
+    <string name="hist_category_help">Choose another category to see your other records.</string>
+    <plurals name="hist_unavailable_count">
+        <item quantity="one">%1$d unavailable file</item>
+        <item quantity="other">%1$d unavailable files</item>
+    </plurals>
+
 </resources>

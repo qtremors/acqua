@@ -120,7 +120,8 @@ class YtDlpDownloadWorker(
         MediaStorage(applicationContext, history, settings, downloader).save(
             media,
             request.itemIndex,
-            request.sourceUrl
+            request.sourceUrl,
+            itemCount = request.itemCount
         ) { downloaded, total ->
             val percent = if (total > 0L) downloaded * 100f / total else 0f
             setProgressAsync(DownloadWorkData.progress(percent, 0L, downloaded, total))

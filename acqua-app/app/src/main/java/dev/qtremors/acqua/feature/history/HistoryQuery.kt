@@ -2,7 +2,7 @@ package dev.qtremors.acqua.feature.history
 
 import dev.qtremors.acqua.data.history.HistoryEntry
 
-enum class HistoryFilter { MEDIA, PHOTOS, VIDEOS, AUDIO, LINKS }
+enum class HistoryFilter { MEDIA, PHOTOS, VIDEOS, AUDIO, LINKS, UNAVAILABLE }
 
 enum class HistorySort { NEWEST, OLDEST, LARGEST }
 
@@ -53,13 +53,14 @@ data class HistorySummary(
         HistoryFilter.VIDEOS -> videos
         HistoryFilter.AUDIO -> audio
         HistoryFilter.LINKS -> links
+        HistoryFilter.UNAVAILABLE -> missing
     }
 }
 
-internal fun List<HistoryEntry>.applyHistoryQuery(query: HistoryQuery): List<HistoryEntry> {
+internal fun List<HistoryEntry>.applyHistoryQuery(query: HistoryQuery, unavailableIds: Set<String> = emptySet()): List<HistoryEntry> {
     val terms = query.normalizedTerms
     val filtered = asSequence()
-        .filter { entry -> entry.matches(query.filter) }
+        .filter { entry -> if (query.filter == HistoryFilter.UNAVAILABLE) entry.id in unavailableIds else entry.matches(query.filter) }
         .filter { entry -> terms.all(entry::matchesTerm) }
 
     val comparator = when (query.sort) {
@@ -124,6 +125,7 @@ private fun HistoryEntry.matches(filter: HistoryFilter): Boolean = when (filter)
     HistoryFilter.VIDEOS -> isDownloaded && isVideo && !isAudio
     HistoryFilter.AUDIO -> isAudio
     HistoryFilter.LINKS -> !isDownloaded
+    HistoryFilter.UNAVAILABLE -> false
 }
 
 private fun HistoryEntry.matchesTerm(term: String): Boolean {

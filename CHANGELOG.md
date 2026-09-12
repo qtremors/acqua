@@ -2,6 +2,21 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.1] - 2026-09-12
+
+### Changed
+
+- Make History easier to browse with compact tappable rows, persistent search and filters, date sections, and optional source grouping.
+- Add History multi-select sharing and record removal with Undo, while keeping downloaded files.
+- Add file details, source-link actions, readable storage locations, and an unavailable-files filter with retry actions.
+- Refresh History when downloads finish and show clear loading, failure, and category-specific empty states.
+- Omit filename indexes for single media items and retain carousel numbering in previews and downloads.
+- Automatically select Acqua for pasted Instagram posts and yt-dlp for reels, while allowing manual engine changes.
+- Hide browser controls when scrolling down and reveal them when scrolling up.
+- Keep carousel extraction running through slide URL changes and recognize role-based Next controls.
+- Bound browser extraction callbacks, handle extraction failures, and detach browser views before releasing them.
+- Prevent a focused browser page from crashing when returning Home, and move saved-site disk work off the UI thread.
+
 ## [0.2.0] - 2026-09-10
 
 ### Changed

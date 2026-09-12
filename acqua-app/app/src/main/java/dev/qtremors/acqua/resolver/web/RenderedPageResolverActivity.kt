@@ -606,10 +606,12 @@ class RenderedPageResolverActivity : ComponentActivity() {
 
               const isStory = isInstagram && path.indexOf('/stories/') === 0;
               if (isInstagram && !isStory && !singleVideoRoute && article) {
-                const nextButton = Array.from(article.querySelectorAll('button')).find(function(button) {
+                const nextButton = Array.from(article.querySelectorAll('button, [role="button"]')).find(function(button) {
                   const labelled = button.matches('[aria-label]') ? button : button.querySelector('[aria-label]');
                   const label = ((labelled && labelled.getAttribute('aria-label')) || '').toLowerCase();
-                  return label === 'next' || label.indexOf('next') >= 0;
+                  const rect = button.getBoundingClientRect();
+                  return rect.width > 0 && rect.height > 0 && button.getAttribute('aria-disabled') !== 'true' &&
+                    (label === 'next' || label.indexOf('next') >= 0);
                 });
                 if (nextButton && !nextButton.disabled) {
                   nextButton.click();
