@@ -7,6 +7,11 @@ import dev.qtremors.acqua.data.session.BrowserDataManager
 import dev.qtremors.acqua.data.session.InstagramSessionStore
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
+import dev.qtremors.acqua.data.updater.AppUpdater
+import dev.qtremors.acqua.data.updater.GitHubApiClient
+import dev.qtremors.acqua.data.updater.GitHubAuthRepository
+import dev.qtremors.acqua.data.updater.InstalledAppMatcher
+import dev.qtremors.acqua.data.updater.TrackedRepoRepository
 import dev.qtremors.acqua.domain.MediaResolutionService
 import dev.qtremors.acqua.downloader.YtDlpEngine
 import dev.qtremors.acqua.downloader.YtDlpDownloadCoordinator
@@ -38,5 +43,9 @@ class MainDependencies(context: Context) {
     val themePreferences = dev.qtremors.acqua.ui.theme.ThemePreferences(context)
     val onboardingPreferences = dev.qtremors.acqua.data.onboarding.OnboardingPreferences(context)
     val backupManager = dev.qtremors.acqua.data.backup.PreferencesBackupManager(context)
-    val appUpdater = dev.qtremors.acqua.data.updater.AppUpdater(context)
+    val appUpdater = AppUpdater(context)
+    val trackedRepos = TrackedRepoRepository(context)
+    val githubAuth = GitHubAuthRepository(context)
+    val githubApi = GitHubApiClient(tokenProvider = { githubAuth.token })
+    val installedAppMatcher = InstalledAppMatcher(context)
 }

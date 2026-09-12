@@ -34,8 +34,10 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -68,6 +70,8 @@ import dev.qtremors.acqua.feature.history.HistoryScreen
 import dev.qtremors.acqua.feature.history.HistoryViewModel
 import dev.qtremors.acqua.feature.settings.SettingsScreen
 import dev.qtremors.acqua.feature.settings.SettingsViewModel
+import dev.qtremors.acqua.feature.updater.AppUpdatesScreen
+import dev.qtremors.acqua.feature.updater.AppUpdatesViewModel
 import dev.qtremors.acqua.platform.FileActions
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
@@ -82,6 +86,7 @@ fun DashboardScreen(
     browserViewModel: BrowserViewModel,
     historyViewModel: HistoryViewModel,
     settingsViewModel: SettingsViewModel,
+    appUpdatesViewModel: AppUpdatesViewModel,
     mediaDownloader: MediaDownloader,
     fileActions: FileActions,
     initialUrl: String,
@@ -99,7 +104,7 @@ fun DashboardScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 4 })
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 5 })
     var overlay by remember { mutableStateOf<AboutDestination?>(null) }
     var showAddWebsiteDialog by remember { mutableStateOf(false) }
     var showManageWebsiteDialog by remember { mutableStateOf(false) }
@@ -107,6 +112,8 @@ fun DashboardScreen(
     val browserState by browserViewModel.state.collectAsState()
     val downloaderState by downloaderViewModel.state.collectAsState()
     val historyState by historyViewModel.state.collectAsState()
+    val appUpdatesState by appUpdatesViewModel.state.collectAsState()
+    val trackedRepos by appUpdatesViewModel.trackedRepos.collectAsState()
 
     BackHandler(enabled = overlay != null || pagerState.currentPage != 0) {
         if (overlay == AboutDestination.NOTICES || overlay == AboutDestination.LICENSE) {
@@ -137,7 +144,13 @@ fun DashboardScreen(
     val isBrowsingWebsite = pagerState.currentPage == 1 && browserState.currentUrl != null && overlay == null
 
     // Context-aware Floating Action Button for each tab
-    val currentFabAction = remember(pagerState.currentPage, downloaderState, browserState) {
+    val currentFabAction = remember(
+        pagerState.currentPage,
+        downloaderState,
+        browserState,
+        appUpdatesState,
+        trackedRepos
+    ) {
         when (pagerState.currentPage) {
             0 -> {
                 val hasMedia = !downloaderState.media.isNullOrEmpty()
@@ -187,6 +200,22 @@ fun DashboardScreen(
                 )
             }
             3 -> {
+                val pendingUpdate = trackedRepos.firstOrNull { it.isUpdateAvailable }
+                if (appUpdatesState.hasRefreshed && pendingUpdate != null) {
+                    AcquaFabAction(
+                        icon = Icons.Filled.SystemUpdate,
+                        contentDescriptionRes = R.string.update,
+                        onClick = { appUpdatesViewModel.download(pendingUpdate) }
+                    )
+                } else {
+                    AcquaFabAction(
+                        icon = Icons.Filled.Refresh,
+                        contentDescriptionRes = R.string.check_for_updates,
+                        onClick = appUpdatesViewModel::refresh
+                    )
+                }
+            }
+            4 -> {
                 AcquaFabAction(
                     icon = Icons.Filled.Sync,
                     contentDescriptionRes = R.string.check_for_updates,
@@ -273,6 +302,11 @@ fun DashboardScreen(
                                 pagerState.animateScrollToPage(0)
                             }
                         },
+                        contentPadding = screenPadding,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    3 -> AppUpdatesScreen(
+                        viewModel = appUpdatesViewModel,
                         contentPadding = screenPadding,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -402,11 +436,21 @@ fun DashboardScreen(
                             }
                         ),
                         AcquaTabItem(
+                            icon = Icons.Filled.SystemUpdate,
+                            labelRes = R.string.app_updates_title,
+                            onClick = {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(3)
+                                }
+                            },
+                            hasBadge = trackedRepos.any { it.isUpdateAvailable }
+                        ),
+                        AcquaTabItem(
                             icon = Icons.Filled.Settings,
                             labelRes = R.string.settings,
                             onClick = {
                                 coroutineScope.launch {
-                                    pagerState.animateScrollToPage(3)
+                                    pagerState.animateScrollToPage(4)
                                 }
                             }
                         )

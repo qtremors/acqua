@@ -22,6 +22,7 @@ class AppUpdaterTest {
         assertEquals(listOf(0, 1, 6), AppUpdater.parseVersionComponents("v0.1.6"))
         assertEquals(listOf(1, 0, 0), AppUpdater.parseVersionComponents("V1.0.0-release"))
         assertEquals(listOf(2, 4, 10), AppUpdater.parseVersionComponents("2.4.10+build.42"))
+        assertEquals(listOf(3, 2, 1), AppUpdater.parseVersionComponents("release-3.2.1"))
     }
 
     @Test
@@ -32,6 +33,8 @@ class AppUpdaterTest {
         assertTrue(AppUpdater.compareVersions("0.1.5", "0.1.6") < 0)
         assertEquals(0, AppUpdater.compareVersions("0.1.5", "0.1.5"))
         assertEquals(0, AppUpdater.compareVersions("v0.1.5", "0.1.5"))
+        assertTrue(AppUpdater.compareVersions("1.0.0", "1.0.0-beta.2") > 0)
+        assertTrue(AppUpdater.compareVersions("1.0.0-rc1", "1.0.0-beta.2") > 0)
     }
 
     @Test
@@ -99,6 +102,17 @@ class AppUpdaterTest {
         val selected = AppUpdater.selectBestApkAsset(assets, arrayOf("x86"))
 
         assertEquals("acqua-x86.apk", selected?.name)
+    }
+
+    @Test
+    fun `abi selection accepts underscore separators`() {
+        val assets = listOf(
+            GitHubAsset("sample_arm64-v8a_release.apk", "https://example.com/arm64.apk"),
+            GitHubAsset("sample_x86_64_release.apk", "https://example.com/x86.apk")
+        )
+
+        assertEquals("sample_arm64-v8a_release.apk", AppUpdater.selectBestApkAsset(assets, arrayOf("arm64-v8a"))?.name)
+        assertEquals("sample_x86_64_release.apk", AppUpdater.selectBestApkAsset(assets, arrayOf("x86_64"))?.name)
     }
 
     @Test

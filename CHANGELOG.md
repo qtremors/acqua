@@ -2,6 +2,22 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.2] - 2026-09-12
+
+### Added
+
+- Track public or private GitHub repositories with APK releases, including pre-release selection, automatic device-architecture matching, and optional installed-app linking.
+- Browse available updates, release notes, and repository READMEs from a dedicated navigation tab, then download and open compatible APKs in Android's installer with visible progress and resumable transfers.
+- Start with Acqua, Arcile, Filion, EarnSlate, Material Design, and Osyster tracked by default, while keeping every repository removable.
+- Refresh from the navigation action and switch it to Update when an update is available.
+- Add repositories from a focused link field positioned directly above the keyboard.
+- Add encrypted personal access token support for authenticated GitHub requests, with tokens excluded from app backups and repository export files.
+- Import and export tracked-repository lists without changing installed apps.
+
+### Changed
+
+- Verify package identity, version, Android compatibility, and signing certificates before updating a linked installed app.
+
 ## [0.2.1] - 2026-09-12
 
 ### Changed

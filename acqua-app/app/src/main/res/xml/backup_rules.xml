@@ -7,5 +7,6 @@
 -->
 <full-backup-content>
     <exclude domain="sharedpref" path="acqua_secure_sessions.xml"/>
+    <exclude domain="sharedpref" path="acqua_github_auth.xml"/>
     <exclude domain="root" path="app_webview"/>
 </full-backup-content>

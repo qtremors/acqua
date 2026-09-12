@@ -41,6 +41,7 @@ import dev.qtremors.acqua.feature.downloader.DownloaderViewModel
 import dev.qtremors.acqua.feature.downloader.PendingBrowserResolution
 import dev.qtremors.acqua.feature.history.HistoryViewModel
 import dev.qtremors.acqua.feature.settings.SettingsViewModel
+import dev.qtremors.acqua.feature.updater.AppUpdatesViewModel
 import dev.qtremors.acqua.resolver.instagram.ExpiredSessionException
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
 import dev.qtremors.acqua.ui.theme.AcquaTheme
@@ -237,6 +238,19 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             )
+                            val appUpdates: AppUpdatesViewModel = viewModel(
+                                factory = remember {
+                                    ViewModelFactory {
+                                        AppUpdatesViewModel(
+                                            dependencies.trackedRepos,
+                                            dependencies.githubApi,
+                                            dependencies.githubAuth,
+                                            dependencies.installedAppMatcher,
+                                            dependencies.appUpdater
+                                        )
+                                    }
+                                }
+                            )
                             val settingsState by settings.state.collectAsStateWithLifecycle()
                             SecureWindowEffect(enabled = settingsState.screenProtectionEnabled)
                             DashboardScreen(
@@ -244,6 +258,7 @@ class MainActivity : ComponentActivity() {
                                 browser,
                                 history,
                                 settings,
+                                appUpdates,
                                 dependencies.mediaDownloader,
                                 dependencies.fileActions,
                                 initialUrl,

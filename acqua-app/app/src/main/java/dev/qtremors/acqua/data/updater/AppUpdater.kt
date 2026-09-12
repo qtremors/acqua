@@ -30,8 +30,10 @@ class AppUpdater(
         const val GITHUB_RELEASES_URL = "https://api.github.com/repos/qtremors/acqua/releases/latest"
 
         fun parseVersionComponents(version: String): List<Int> {
-            val clean = version.trim().removePrefix("v").removePrefix("V").split("-", "+")[0]
-            return clean.split(".").mapNotNull { it.toIntOrNull() }
+            val clean = version.trim()
+                .replace(Regex("^(?:v|release[-_])", RegexOption.IGNORE_CASE), "")
+                .substringBefore('+')
+            return Regex("\\d+").findAll(clean.substringBefore('-')).map { it.value.toInt() }.toList()
         }
 
         fun compareVersions(version1: String, version2: String): Int {
@@ -43,12 +45,11 @@ class AppUpdater(
                 val p2 = v2.getOrElse(i) { 0 }
                 if (p1 != p2) return p1.compareTo(p2)
             }
-            return 0
+            return preReleaseRank(version1).compareTo(preReleaseRank(version2))
         }
 
         fun deriveVersionCode(versionName: String): Int {
-            val clean = versionName.trim().removePrefix("v").removePrefix("V").split("-", "+")[0]
-            val digits = clean.replace(".", "").filter { it.isDigit() }
+            val digits = parseVersionComponents(versionName).joinToString("")
             return digits.toIntOrNull() ?: 0
         }
 
@@ -57,11 +58,12 @@ class AppUpdater(
             if (apkAssets.isEmpty()) return null
 
             for (abi in supportedAbis) {
-                val normalizedAbi = abi.lowercase()
+                val normalizedAbi = normalizeAssetName(abi)
+                val architectureSuffixGuard = if (normalizedAbi == "x86") "(?!-64)" else ""
                 val abiPattern = Regex(
-                    "(?<![a-z0-9_])${Regex.escape(normalizedAbi)}(?![a-z0-9_])"
+                    "(?<![a-z0-9])${Regex.escape(normalizedAbi)}$architectureSuffixGuard(?![a-z0-9])"
                 )
-                val match = apkAssets.firstOrNull { abiPattern.containsMatchIn(it.name.lowercase()) }
+                val match = apkAssets.firstOrNull { abiPattern.containsMatchIn(normalizeAssetName(it.name)) }
                 if (match != null) return match
             }
 
@@ -71,10 +73,24 @@ class AppUpdater(
             if (universalMatch != null) return universalMatch
 
             val knownAbiPatterns = listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86").map { abi ->
-                Regex("(?<![a-z0-9_])${Regex.escape(abi)}(?![a-z0-9_])")
+                Regex("(?<![a-z0-9])${Regex.escape(normalizeAssetName(abi))}(?![a-z0-9])")
             }
             return apkAssets.firstOrNull { asset ->
-                knownAbiPatterns.none { it.containsMatchIn(asset.name.lowercase()) }
+                knownAbiPatterns.none { it.containsMatchIn(normalizeAssetName(asset.name)) }
+            }
+        }
+
+        private fun normalizeAssetName(value: String): String = value.lowercase()
+            .replace("x86_64", "x86-64")
+            .replace('_', '-')
+
+        private fun preReleaseRank(version: String): Int {
+            val normalized = version.lowercase().substringBefore('+')
+            return when {
+                "alpha" in normalized -> 0
+                "beta" in normalized -> 1
+                Regex("(?:^|[-_.])rc(?:[-_.]?\\d+)?").containsMatchIn(normalized) -> 2
+                else -> 3
             }
         }
     }
@@ -155,41 +171,60 @@ class AppUpdater(
         fileName: String,
         expectedSizeBytes: Long = 0L,
         expectedVersionCode: Int? = null,
+        expectedPackageName: String? = context.packageName,
+        requireNewerThanInstalled: Boolean = true,
+        authorizationToken: String? = null,
         onProgress: (bytesDownloaded: Long, totalBytes: Long, progressPercent: Int) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
-            val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
-            updatesDir.listFiles()?.forEach { it.delete() }
-
-            val safeFileName = fileName.substringAfterLast('/').substringAfterLast('\\')
-            require(safeFileName.isNotBlank() && safeFileName.endsWith(".apk", ignoreCase = true)) {
+            val requestedFileName = fileName.substringAfterLast('/').substringAfterLast('\\')
+            require(requestedFileName.isNotBlank() && requestedFileName.endsWith(".apk", ignoreCase = true)) {
                 "Update asset is not an APK"
             }
+            val baseName = requestedFileName.dropLast(4).replace(Regex("[^A-Za-z0-9._-]"), "_")
+            val safeFileName = "$baseName-${downloadUrl.hashCode().toUInt().toString(16)}.apk"
+            val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
             val targetFile = File(updatesDir, safeFileName)
             val partialFile = File(updatesDir, ".$safeFileName.part")
-            val request = Request.Builder()
+            updatesDir.listFiles()?.filter {
+                it != targetFile && it != partialFile && System.currentTimeMillis() - it.lastModified() > 86_400_000L
+            }?.forEach(File::delete)
+            targetFile.delete()
+            if (expectedSizeBytes > 0L && partialFile.length() >= expectedSizeBytes) partialFile.delete()
+
+            val existingBytes = partialFile.length()
+            val requestBuilder = Request.Builder()
                 .url(downloadUrl)
                 .header("User-Agent", "Acqua-App/${BuildConfig.VERSION_NAME}")
-                .build()
+                .header("Accept", "application/octet-stream")
+            if (existingBytes > 0L) requestBuilder.header("Range", "bytes=$existingBytes-")
+            authorizationToken?.takeIf(String::isNotBlank)?.let {
+                requestBuilder.header("Authorization", "Bearer $it")
+            }
 
             try {
-                httpClient.newCall(request).execute().use { response ->
+                httpClient.newCall(requestBuilder.build()).execute().use { response ->
                     if (!response.isSuccessful) {
                         error("Failed to download APK: HTTP ${response.code}")
                     }
                     val body = response.body ?: error("Download body is null")
                     val contentLength = body.contentLength()
+                    val resumed = response.code == 206 && existingBytes > 0L
+                    if (!resumed && existingBytes > 0L) partialFile.delete()
+                    val initialBytes = if (resumed) existingBytes else 0L
 
                     body.byteStream().use { input: InputStream ->
-                        FileOutputStream(partialFile).use { output: FileOutputStream ->
+                        FileOutputStream(partialFile, resumed).use { output: FileOutputStream ->
                             val buffer = ByteArray(8192)
                             var bytesRead: Int
-                            var totalRead = 0L
+                            var totalRead = initialBytes
 
                             while (input.read(buffer).also { bytesRead = it } != -1) {
                                 output.write(buffer, 0, bytesRead)
                                 totalRead += bytesRead
-                                val progressTotal = contentLength.takeIf { it > 0 } ?: expectedSizeBytes
+                                val progressTotal = expectedSizeBytes.takeIf { it > 0 }
+                                    ?: contentLength.takeIf { it > 0 }?.plus(initialBytes)
+                                    ?: 0L
                                 val percent = if (progressTotal > 0) {
                                     ((totalRead * 100) / progressTotal).toInt().coerceIn(0, 100)
                                 } else 0
@@ -201,16 +236,21 @@ class AppUpdater(
 
                     require(partialFile.length() > 0L) { "Downloaded APK is empty" }
                     if (contentLength > 0L) {
-                        require(partialFile.length() == contentLength) { "Downloaded APK is incomplete" }
+                        require(partialFile.length() == contentLength + initialBytes) { "Downloaded APK is incomplete" }
                     }
                     if (expectedSizeBytes > 0L) {
                         require(partialFile.length() == expectedSizeBytes) { "Downloaded APK size does not match the release" }
                     }
                 }
-                validateApk(partialFile, expectedVersionCode).getOrThrow()
+                validateApk(
+                    partialFile,
+                    expectedVersionCode = expectedVersionCode,
+                    expectedPackageName = expectedPackageName,
+                    requireNewerThanInstalled = requireNewerThanInstalled
+                ).getOrThrow()
                 require(partialFile.renameTo(targetFile)) { "Could not finalize downloaded APK" }
             } catch (error: Throwable) {
-                partialFile.delete()
+                if (error !is java.io.IOException) partialFile.delete()
                 throw error
             }
 
@@ -242,8 +282,16 @@ class AppUpdater(
         }
     }
 
-    fun installApk(apkFile: File): Result<Unit> = runCatching {
-        validateApk(apkFile).getOrThrow()
+    fun installApk(
+        apkFile: File,
+        expectedPackageName: String? = context.packageName,
+        requireNewerThanInstalled: Boolean = true
+    ): Result<Unit> = runCatching {
+        validateApk(
+            apkFile,
+            expectedPackageName = expectedPackageName,
+            requireNewerThanInstalled = requireNewerThanInstalled
+        ).getOrThrow()
         val apkUri = FileProvider.getUriForFile(
             context,
             "${context.packageName}.fileprovider",
@@ -256,7 +304,12 @@ class AppUpdater(
         context.startActivity(intent)
     }
 
-    fun validateApk(apkFile: File, expectedVersionCode: Int? = null): Result<Unit> = runCatching {
+    fun validateApk(
+        apkFile: File,
+        expectedVersionCode: Int? = null,
+        expectedPackageName: String? = context.packageName,
+        requireNewerThanInstalled: Boolean = true
+    ): Result<Unit> = runCatching {
         require(apkFile.isFile && apkFile.length() > 0L) { "Downloaded APK is unavailable" }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             PackageManager.GET_SIGNING_CERTIFICATES
@@ -267,9 +320,10 @@ class AppUpdater(
         @Suppress("DEPRECATION")
         val archive = context.packageManager.getPackageArchiveInfo(apkFile.absolutePath, flags)
             ?: error("Downloaded file is not a valid APK")
-        require(archive.packageName == context.packageName) { "Downloaded APK belongs to a different app" }
+        if (expectedPackageName != null) {
+            require(archive.packageName == expectedPackageName) { "Downloaded APK belongs to a different app" }
+        }
         val archiveVersionCode = archive.compatVersionCode()
-        require(archiveVersionCode > BuildConfig.VERSION_CODE) { "Downloaded APK is not a newer version" }
         if (expectedVersionCode != null && expectedVersionCode > 0) {
             require(archiveVersionCode == expectedVersionCode.toLong()) {
                 "Downloaded APK version does not match the release"
@@ -278,12 +332,23 @@ class AppUpdater(
         val minSdk = archive.applicationInfo?.minSdkVersion ?: 1
         require(minSdk <= Build.VERSION.SDK_INT) { "Downloaded APK requires a newer Android version" }
 
-        @Suppress("DEPRECATION")
-        val installed = context.packageManager.getPackageInfo(context.packageName, flags)
-        val archiveDigests = archive.signingCertificates().mapTo(hashSetOf(), ::sha256)
-        val installedDigests = installed.signingCertificates().mapTo(hashSetOf(), ::sha256)
-        require(archiveDigests.isNotEmpty() && archiveDigests.any { it in installedDigests }) {
-            "Downloaded APK signature does not match the installed app"
+        val installedPackage = expectedPackageName?.let { packageName ->
+            runCatching {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(packageName, flags)
+            }.getOrNull()
+        }
+        if (installedPackage != null) {
+            if (requireNewerThanInstalled) {
+                require(archiveVersionCode > installedPackage.compatVersionCode()) {
+                    "Downloaded APK is not a newer version"
+                }
+            }
+            val archiveDigests = archive.signingCertificates().mapTo(hashSetOf(), ::sha256)
+            val installedDigests = installedPackage.signingCertificates().mapTo(hashSetOf(), ::sha256)
+            require(archiveDigests.isNotEmpty() && archiveDigests.any { it in installedDigests }) {
+                "Downloaded APK signature does not match the installed app"
+            }
         }
     }
 
