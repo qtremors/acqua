@@ -516,4 +516,24 @@
     <string name="github_token_description">Use a fine-grained personal access token for a higher API limit or private repositories. The token is encrypted on this device and is never included in backups.</string>
     <string name="github_token">Personal access token</string>
     <string name="connect">Connect</string>
+
+    <string name="github_tracker">GitHub Tracker</string>
+    <string name="downloads_title">Downloads</string>
+    <string name="tab_downloader">Downloader</string>
+    <string name="tab_progress_history">Progress &amp; History</string>
+    <string name="active_downloads_header">Active downloads</string>
+    <string name="completed_downloads_header">Completed</string>
+    <string name="about_action_github">GitHub</string>
+    <string name="about_action_releases">Releases</string>
+    <string name="about_action_issues">Issues</string>
+    <string name="about_action_updates">Updates</string>
+    <string name="settings_title">Settings</string>
+    <string name="about_acqua">About Acqua</string>
+    <string name="about_acqua_description">Version info, device details, open-source notices, and licenses</string>
+    <string name="ytdlp_engine_title">yt-dlp Engine</string>
+    <string name="ytdlp_engine_subtitle">Core extraction and media downloader</string>
+    <string name="webview_engine_subtitle">Browser runtime and web media detection</string>
+    <string name="about_action_privacy">Privacy</string>
+    <string name="about_action_notices">Notices</string>
+    <string name="about_action_license">License</string>
 </resources>

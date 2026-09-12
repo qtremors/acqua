@@ -27,14 +27,20 @@ import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.history.HistoryEntry
 import dev.qtremors.acqua.platform.FileActions
 import dev.qtremors.acqua.domain.WebLink
+import dev.qtremors.acqua.downloader.DownloadQueueSnapshot
 import dev.qtremors.acqua.ui.scrollbar.AcquaFastScrollbar
 import dev.qtremors.acqua.ui.scrollbar.LazyListScrollbarState
 
 @Composable
 fun HistoryScreen(
-    viewModel: HistoryViewModel, fileActions: FileActions, active: Boolean,
-    onRefetch: (String) -> Unit, modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues()
+    viewModel: HistoryViewModel,
+    fileActions: FileActions,
+    active: Boolean,
+    onRefetch: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(),
+    activeQueue: DownloadQueueSnapshot? = null,
+    onCancelActiveDownload: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
@@ -156,6 +162,14 @@ fun HistoryScreen(
             }
             Box(Modifier.weight(1f)) {
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (activeQueue != null && activeQueue.activeItems.isNotEmpty() && onCancelActiveDownload != null) {
+                        item("active_downloads") {
+                            ActiveDownloadsSection(
+                                queue = activeQueue,
+                                onCancel = onCancelActiveDownload
+                            )
+                        }
+                    }
                     if (visible.isEmpty() && !state.isLoading && !state.loadFailed) item("empty") {
                         val title = when {
                             state.entries.isEmpty() -> R.string.no_history

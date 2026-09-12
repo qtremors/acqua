@@ -62,13 +62,14 @@ import dev.qtremors.acqua.feature.about.AboutDestination
 import dev.qtremors.acqua.feature.about.AboutScreen
 import dev.qtremors.acqua.feature.about.LegalDocumentScreen
 import dev.qtremors.acqua.feature.about.OpenSourceNoticesScreen
+import dev.qtremors.acqua.feature.settings.SettingsScreen
 import dev.qtremors.acqua.feature.browser.BrowserScreen
 import dev.qtremors.acqua.feature.browser.BrowserViewModel
+import dev.qtremors.acqua.feature.downloader.DownloadHubScreen
 import dev.qtremors.acqua.feature.downloader.DownloaderScreen
 import dev.qtremors.acqua.feature.downloader.DownloaderViewModel
 import dev.qtremors.acqua.feature.history.HistoryScreen
 import dev.qtremors.acqua.feature.history.HistoryViewModel
-import dev.qtremors.acqua.feature.settings.SettingsScreen
 import dev.qtremors.acqua.feature.settings.SettingsViewModel
 import dev.qtremors.acqua.feature.updater.AppUpdatesScreen
 import dev.qtremors.acqua.feature.updater.AppUpdatesViewModel
@@ -104,7 +105,7 @@ fun DashboardScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 5 })
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
     var overlay by remember { mutableStateOf<AboutDestination?>(null) }
     var showAddWebsiteDialog by remember { mutableStateOf(false) }
     var showManageWebsiteDialog by remember { mutableStateOf(false) }
@@ -117,8 +118,10 @@ fun DashboardScreen(
 
     BackHandler(enabled = overlay != null || pagerState.currentPage != 0) {
         if (overlay == AboutDestination.NOTICES || overlay == AboutDestination.LICENSE) {
-            overlay = AboutDestination.ABOUT
+            overlay = AboutDestination.SETTINGS
         } else if (overlay == AboutDestination.ABOUT) {
+            overlay = AboutDestination.SETTINGS
+        } else if (overlay == AboutDestination.SETTINGS) {
             overlay = null
         } else if (pagerState.currentPage != 0) {
             coroutineScope.launch {
@@ -193,13 +196,6 @@ fun DashboardScreen(
                 )
             }
             2 -> {
-                AcquaFabAction(
-                    icon = Icons.Filled.FolderOpen,
-                    contentDescriptionRes = R.string.open_downloads_folder,
-                    onClick = { fileActions.openDownloads() }
-                )
-            }
-            3 -> {
                 val pendingUpdate = trackedRepos.firstOrNull { it.isUpdateAvailable }
                 if (appUpdatesState.hasRefreshed && pendingUpdate != null) {
                     AcquaFabAction(
@@ -214,16 +210,6 @@ fun DashboardScreen(
                         onClick = appUpdatesViewModel::refresh
                     )
                 }
-            }
-            4 -> {
-                AcquaFabAction(
-                    icon = Icons.Filled.Sync,
-                    contentDescriptionRes = R.string.check_for_updates,
-                    onClick = {
-                        settingsViewModel.updateYtDlp(force = true)
-                        Toast.makeText(context, R.string.checking_for_updates, Toast.LENGTH_SHORT).show()
-                    }
-                )
             }
             else -> null
         }
@@ -257,9 +243,11 @@ fun DashboardScreen(
                 userScrollEnabled = !isBrowsingWebsite && overlay == null
             ) { page ->
                 when (page) {
-                    0 -> DownloaderScreen(
-                        viewModel = downloaderViewModel,
+                    0 -> DownloadHubScreen(
+                        downloaderViewModel = downloaderViewModel,
+                        historyViewModel = historyViewModel,
                         mediaDownloader = mediaDownloader,
+                        fileActions = fileActions,
                         useBrowserSessions = browserState.useSessions,
                         sessionsInitialized = browserState.initialized,
                         browserRequestRevision = downloadRequestRevision,
@@ -271,9 +259,9 @@ fun DashboardScreen(
                                 pagerState.animateScrollToPage(1)
                             }
                         },
+                        onOpenAbout = { overlay = AboutDestination.SETTINGS },
                         contentPadding = screenPadding,
-                        modifier = Modifier.fillMaxSize(),
-                        onOpenAbout = { overlay = AboutDestination.ABOUT }
+                        modifier = Modifier.fillMaxSize()
                     )
                     1 -> BrowserScreen(
                         viewModel = browserViewModel,
@@ -292,30 +280,8 @@ fun DashboardScreen(
                             top = if (isBrowsingWebsite) 0.dp else statusBarTop
                         )
                     )
-                    2 -> HistoryScreen(
-                        historyViewModel,
-                        fileActions,
-                        active = pagerState.currentPage == 2,
-                        onRefetch = {
-                            downloaderViewModel.updateUrl(it)
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(0)
-                            }
-                        },
-                        contentPadding = screenPadding,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    3 -> AppUpdatesScreen(
+                    else -> AppUpdatesScreen(
                         viewModel = appUpdatesViewModel,
-                        contentPadding = screenPadding,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                    else -> SettingsScreen(
-                        settingsViewModel,
-                        backupManager = backupManager,
-                        themeState = currentThemeState,
-                        onThemeChange = onThemeChange,
-                        onOpenAbout = { overlay = AboutDestination.ABOUT },
                         contentPadding = screenPadding,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -342,7 +308,15 @@ fun DashboardScreen(
                         AnimatedContent(
                             targetState = overlay,
                             transitionSpec = {
-                                if (targetState == AboutDestination.NOTICES || targetState == AboutDestination.LICENSE) {
+                                val order = listOf(
+                                    AboutDestination.SETTINGS,
+                                    AboutDestination.NOTICES,
+                                    AboutDestination.LICENSE,
+                                    AboutDestination.ABOUT
+                                )
+                                val targetIndex = order.indexOf(targetState)
+                                val initialIndex = order.indexOf(initialState)
+                                if (targetIndex > initialIndex) {
                                     (slideInHorizontally { it } + fadeIn()).togetherWith(
                                         slideOutHorizontally { -it } + fadeOut()
                                     )
@@ -355,8 +329,19 @@ fun DashboardScreen(
                             label = "about_overlay_subdestination"
                         ) { destination ->
                             when (destination) {
-                                AboutDestination.ABOUT -> AboutScreen(
+                                AboutDestination.SETTINGS -> SettingsScreen(
+                                    viewModel = settingsViewModel,
+                                    backupManager = backupManager,
+                                    themeState = currentThemeState,
+                                    onThemeChange = onThemeChange,
                                     appUpdater = appUpdater,
+                                    onOpenNotices = { overlay = AboutDestination.NOTICES },
+                                    onOpenLicense = { overlay = AboutDestination.LICENSE },
+                                    onOpenAbout = { overlay = AboutDestination.ABOUT },
+                                    contentPadding = screenPadding,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                                AboutDestination.ABOUT -> AboutScreen(
                                     onOpenNotices = { overlay = AboutDestination.NOTICES },
                                     onOpenLicense = { overlay = AboutDestination.LICENSE },
                                     contentPadding = screenPadding,
@@ -383,20 +368,19 @@ fun DashboardScreen(
                                 .zIndex(1f),
                             title = stringResource(
                                 when (overlay) {
+                                    AboutDestination.SETTINGS -> R.string.settings_title
                                     AboutDestination.ABOUT -> R.string.about_title
                                     AboutDestination.NOTICES -> R.string.about_open_source_notices
                                     AboutDestination.LICENSE -> R.string.about_license
-                                    else -> R.string.about_title
+                                    else -> R.string.settings_title
                                 }
                             ),
                             onBackClick = {
-                                overlay = if (
-                                    overlay == AboutDestination.NOTICES ||
-                                    overlay == AboutDestination.LICENSE
-                                ) {
-                                    AboutDestination.ABOUT
-                                } else {
-                                    null
+                                overlay = when (overlay) {
+                                    AboutDestination.NOTICES,
+                                    AboutDestination.LICENSE -> AboutDestination.SETTINGS
+                                    AboutDestination.ABOUT -> AboutDestination.SETTINGS
+                                    else -> null
                                 }
                             }
                         )
@@ -406,7 +390,7 @@ fun DashboardScreen(
 
             // Modern Expressive Floating Toolbar Navigation Shell for Main Tabs
             if (overlay == null && !isBrowsingWebsite) {
-                val navItems = remember {
+                val navItems = remember(trackedRepos) {
                     listOf(
                         AcquaTabItem(
                             icon = Icons.Filled.Download,
@@ -427,32 +411,14 @@ fun DashboardScreen(
                             }
                         ),
                         AcquaTabItem(
-                            icon = Icons.Filled.History,
-                            labelRes = R.string.history,
+                            icon = Icons.Filled.SystemUpdate,
+                            labelRes = R.string.github_tracker,
                             onClick = {
                                 coroutineScope.launch {
                                     pagerState.animateScrollToPage(2)
                                 }
-                            }
-                        ),
-                        AcquaTabItem(
-                            icon = Icons.Filled.SystemUpdate,
-                            labelRes = R.string.app_updates_title,
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(3)
-                                }
                             },
                             hasBadge = trackedRepos.any { it.isUpdateAvailable }
-                        ),
-                        AcquaTabItem(
-                            icon = Icons.Filled.Settings,
-                            labelRes = R.string.settings,
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(4)
-                                }
-                            }
                         )
                     )
                 }

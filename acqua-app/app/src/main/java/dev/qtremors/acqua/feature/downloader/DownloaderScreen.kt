@@ -143,7 +143,9 @@ fun DownloaderScreen(
     contentPadding: PaddingValues = PaddingValues(),
     onMediaSaved: () -> Unit = {},
     showLinkEditor: Boolean = true,
-    onOpenAbout: () -> Unit = {}
+    onOpenAbout: () -> Unit = {},
+    showHeaderCard: Boolean = true,
+    onStatusClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
@@ -250,13 +252,13 @@ fun DownloaderScreen(
         state = pullRefreshState,
         indicator = { },
         modifier = modifier.fillMaxSize(),
-        enabled = showLinkEditor
+        enabled = showLinkEditor && showHeaderCard
     ) {
         Column(
             modifier = Modifier.fillMaxSize().imePadding(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (showLinkEditor) {
+            if (showLinkEditor && showHeaderCard) {
                 Card(
                     onClick = {
                         context.performHaptic(HapticSignal.CLICK)
@@ -286,7 +288,7 @@ fun DownloaderScreen(
                         ) {
                             Spacer(modifier = Modifier.height(statusBarPadding + 4.dp))
                             val targetHeaderTitle = if (displayFraction > 0.2f || thresholdPassed) {
-                                stringResource(R.string.about_title)
+                                stringResource(R.string.settings_title)
                             } else {
                                 stringResource(R.string.app_name)
                             }
@@ -324,7 +326,7 @@ fun DownloaderScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(top = if (showLinkEditor) 4.dp else contentPadding.calculateTopPadding())
+                    .padding(top = if (showLinkEditor && showHeaderCard) 4.dp else contentPadding.calculateTopPadding())
             ) {
                 val boxMaxHeight = maxHeight
                 Box(
@@ -371,6 +373,7 @@ fun DownloaderScreen(
                 CompactDownloadStatus(
                     state = state,
                     onCancel = viewModel::cancelActiveDownload,
+                    onClick = onStatusClick,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
@@ -1062,6 +1065,7 @@ private fun downloadProgressDetails(
 private fun CompactDownloadStatus(
     state: DownloaderUiState,
     onCancel: () -> Unit,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = MaterialTheme.colorScheme
@@ -1083,6 +1087,8 @@ private fun CompactDownloadStatus(
     val progress = (state.downloadProgress / 100f).coerceIn(0f, 1f)
 
     ElevatedCard(
+        onClick = { onClick?.invoke() },
+        enabled = onClick != null,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = colors.secondaryContainer)

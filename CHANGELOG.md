@@ -2,6 +2,18 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.3] - 2026-09-12
+
+### Changed
+
+- Streamline bottom navigation to 3 core tabs: Download, Browser, and GitHub Tracker.
+- Unify the Download screen with dedicated sub-tabs for the Downloader and live Progress & History.
+- Display active in-flight downloads with live progress, byte counters, ETA, and cancellation controls directly above completed history records.
+- Open the Settings overlay directly when pulling down or tapping the top brand header card, showing "Settings" as the drag destination indicator.
+- Feature the brand hero in Settings with dynamic pull-to-expand logo growth that scales to cover the viewport, application ID and version chips on a single horizontal row wrapped in grouped containers, quick action buttons grouped three per container (Issues, GitHub, Releases and Notices, Privacy, License) with a Check for updates action container, and semantically tailored icons.
+- Navigate directly to Open-Source Notices and License from the Settings hero buttons and return immediately to Settings upon dismissal, removing redundant intermediate About screens.
+- Open the Progress & History tab directly by tapping the active download status card on the Downloader screen.
+
 ## [0.2.2] - 2026-09-12
 
 ### Added

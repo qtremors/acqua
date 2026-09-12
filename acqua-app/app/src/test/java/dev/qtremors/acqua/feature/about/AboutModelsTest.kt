@@ -232,6 +232,7 @@ class AboutModelsTest {
     fun `about destinations include only local app pages`() {
         assertEquals(
             listOf(
+                AboutDestination.SETTINGS,
                 AboutDestination.ABOUT,
                 AboutDestination.NOTICES,
                 AboutDestination.LICENSE

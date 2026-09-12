@@ -1,6 +1,7 @@
 package dev.qtremors.acqua.feature.about
 
 enum class AboutDestination {
+    SETTINGS,
     ABOUT,
     NOTICES,
     LICENSE
