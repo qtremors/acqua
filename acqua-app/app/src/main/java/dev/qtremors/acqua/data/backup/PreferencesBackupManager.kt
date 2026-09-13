@@ -2,6 +2,7 @@ package dev.qtremors.acqua.data.backup
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import android.net.Uri
 import android.util.Base64
 import androidx.datastore.core.DataStore
@@ -11,7 +12,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.onboarding.onboardingDataStore
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
-import dev.qtremors.acqua.ui.theme.themeDataStore
+import dev.qtremors.acqua.settings.themeDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
@@ -24,7 +25,12 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
 
-class PreferencesBackupManager(private val context: Context) {
+interface PreferencesBackupGateway {
+    suspend fun preview(uri: Uri): Result<PreferencesBackupPreview>
+    suspend fun restoreFrom(uri: Uri): Result<PreferencesBackupOperationResult>
+}
+
+class PreferencesBackupManager(private val context: Context) : PreferencesBackupGateway {
 
     companion object {
         const val CURRENT_SCHEMA_VERSION = 2
@@ -65,7 +71,7 @@ class PreferencesBackupManager(private val context: Context) {
 
     suspend fun exportTo(uri: Uri): Result<PreferencesBackupOperationResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val failures = mutableListOf<PreferencesBackupFailure>()
+            val failedStores = mutableListOf<String>()
             var totalBytes = 0L
             val stores = livePreferenceStores().mapNotNull { (storeName, store) ->
                 runCatching {
@@ -79,11 +85,8 @@ class PreferencesBackupManager(private val context: Context) {
                         decodedSizeBytes = bytes.size,
                         sha256 = bytes.sha256()
                     )
-                }.getOrElse { error ->
-                    failures += PreferencesBackupFailure(
-                        storeName.displayName(),
-                        error.message ?: context.getString(R.string.settings_backup_store_read_failed)
-                    )
+                }.getOrElse {
+                    failedStores += storeName
                     null
                 }
             }.toMutableList()
@@ -98,15 +101,12 @@ class PreferencesBackupManager(private val context: Context) {
                     decodedSizeBytes = bytes.size,
                     sha256 = bytes.sha256()
                 )
-            }.onFailure { error ->
-                failures += PreferencesBackupFailure(
-                    APP_SETTINGS_STORE_NAME.displayName(),
-                    error.message ?: context.getString(R.string.settings_backup_store_read_failed)
-                )
+            }.onFailure {
+                failedStores += APP_SETTINGS_STORE_NAME
             }
 
-            require(failures.isEmpty()) {
-                failures.joinToString("; ") { "${it.storeName}: ${it.message}" }
+            require(failedStores.isEmpty()) {
+                "Unable to read ${failedStores.size} preference store(s)"
             }
 
             val payload = PreferencesBackupPayload(
@@ -128,13 +128,14 @@ class PreferencesBackupManager(private val context: Context) {
             } ?: error("Unable to open backup destination")
 
             PreferencesBackupOperationResult(
-                items = stores.map { PreferencesBackupItem(it.name, it.name.displayName(), PreferencesBackupItemStatus.Exported) },
-                failures = failures
+                items = stores.map {
+                    PreferencesBackupItem(it.name, it.name.displayName(), PreferencesBackupItemStatus.Exported)
+                }
             )
         }
     }
 
-    suspend fun preview(uri: Uri): Result<PreferencesBackupPreview> = withContext(Dispatchers.IO) {
+    override suspend fun preview(uri: Uri): Result<PreferencesBackupPreview> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = readPayload(uri)
             validatePayload(payload)
@@ -157,7 +158,7 @@ class PreferencesBackupManager(private val context: Context) {
         }
     }
 
-    suspend fun restoreFrom(uri: Uri): Result<PreferencesBackupOperationResult> = withContext(Dispatchers.IO) {
+    override suspend fun restoreFrom(uri: Uri): Result<PreferencesBackupOperationResult> = withContext(Dispatchers.IO) {
         runCatching {
             val payload = readPayload(uri)
             validatePayload(payload)
@@ -206,7 +207,6 @@ class PreferencesBackupManager(private val context: Context) {
                         }
                     )
                 },
-                failures = emptyList()
             )
         }
     }
@@ -302,20 +302,21 @@ class PreferencesBackupManager(private val context: Context) {
     }
 
     private fun replaceSharedPreferences(preferences: SharedPreferences, values: Map<String, Any?>) {
-        val editor = preferences.edit().clear()
-        values.forEach { (key, value) ->
-            when (value) {
-                is String -> editor.putString(key, value)
-                is Set<*> -> editor.putStringSet(key, value.filterIsInstance<String>().toSet())
-                is Int -> editor.putInt(key, value)
-                is Long -> editor.putLong(key, value)
-                is Float -> editor.putFloat(key, value)
-                is Boolean -> editor.putBoolean(key, value)
-                null -> Unit
-                else -> error("$key has an unsupported preference type")
+        preferences.edit(commit = true) {
+            clear()
+            values.forEach { (key, value) ->
+                when (value) {
+                    is String -> putString(key, value)
+                    is Set<*> -> putStringSet(key, value.filterIsInstance<String>().toSet())
+                    is Int -> putInt(key, value)
+                    is Long -> putLong(key, value)
+                    is Float -> putFloat(key, value)
+                    is Boolean -> putBoolean(key, value)
+                    null -> Unit
+                    else -> error("$key has an unsupported preference type")
+                }
             }
         }
-        check(editor.commit()) { "Unable to commit app settings" }
     }
 
     private fun Any?.toSharedPreferenceValue(key: String): SharedPreferenceValue = when (this) {

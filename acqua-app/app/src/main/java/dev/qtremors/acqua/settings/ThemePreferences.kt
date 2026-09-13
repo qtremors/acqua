@@ -1,4 +1,9 @@
-package dev.qtremors.acqua.ui.theme
+package dev.qtremors.acqua.settings
+
+import dev.qtremors.acqua.ui.theme.AccentColor
+import dev.qtremors.acqua.ui.theme.ThemeMode
+import dev.qtremors.acqua.ui.theme.ThemePreset
+import dev.qtremors.acqua.ui.theme.ThemeState
 
 import android.content.Context
 import androidx.datastore.core.DataStore

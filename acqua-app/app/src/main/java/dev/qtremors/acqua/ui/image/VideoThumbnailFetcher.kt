@@ -1,6 +1,7 @@
 package dev.qtremors.acqua.ui.image
 
 import android.graphics.Bitmap
+import androidx.core.graphics.scale
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.util.Size
@@ -70,11 +71,9 @@ class VideoThumbnailFetcher(
                             targetSize.toFloat() / frame.height.coerceAtLeast(1),
                             1f
                         )
-                        if (scale >= 1f) frame else Bitmap.createScaledBitmap(
-                            frame,
+                        if (scale >= 1f) frame else frame.scale(
                             (frame.width * scale).toInt().coerceAtLeast(1),
-                            (frame.height * scale).toInt().coerceAtLeast(1),
-                            true
+                            (frame.height * scale).toInt().coerceAtLeast(1)
                         ).also { scaled ->
                             if (scaled !== frame) frame.recycle()
                         }

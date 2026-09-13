@@ -7,11 +7,12 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 
-class MediaDownloaderTest {
+class HttpMediaClientTest {
     @Test
     fun `partial HTTP response is rejected`() {
         MockWebServer().use { server ->
@@ -24,7 +25,7 @@ class MediaDownloaderTest {
             val item = ResolvedMedia(server.url("media.mp4").toString(), MediaKind.VIDEO)
 
             assertThrows(IllegalStateException::class.java) {
-                MediaDownloader().downloadToStream(item, ByteArrayOutputStream())
+                HttpMediaClient().downloadToStream(item, ByteArrayOutputStream())
             }
         }
     }
@@ -35,7 +36,7 @@ class MediaDownloaderTest {
             val payload = byteArrayOf(1, 2, 3, 4)
             server.enqueue(MockResponse().setBody(okio.Buffer().write(payload)))
 
-            val actual = MediaDownloader().fetchBytes(
+            val actual = HttpMediaClient().fetchBytes(
                 ResolvedMedia(server.url("preview.jpg").toString(), MediaKind.IMAGE)
             )
 
@@ -53,7 +54,7 @@ class MediaDownloaderTest {
             val item = ResolvedMedia(server.url("preview.jpg").toString(), MediaKind.IMAGE)
 
             assertThrows(IllegalStateException::class.java) {
-                MediaDownloader().fetchBytes(item)
+                HttpMediaClient().fetchBytes(item)
             }
         }
     }
@@ -66,7 +67,7 @@ class MediaDownloaderTest {
             val directory = Files.createTempDirectory("acqua-preview-test").toFile()
             val target = java.io.File(directory, "preview")
             try {
-                MediaDownloader().fetchPreviewToFile(
+                HttpMediaClient().fetchPreviewToFile(
                     ResolvedMedia(server.url("preview.jpg").toString(), MediaKind.IMAGE),
                     target,
                     maxBytes = payload.size.toLong()
@@ -88,7 +89,7 @@ class MediaDownloaderTest {
             val target = java.io.File(directory, "preview")
             try {
                 assertThrows(IllegalStateException::class.java) {
-                    MediaDownloader().fetchPreviewToFile(
+                    HttpMediaClient().fetchPreviewToFile(
                         ResolvedMedia(server.url("preview.jpg").toString(), MediaKind.IMAGE),
                         target,
                         maxBytes = 4L
@@ -114,7 +115,7 @@ class MediaDownloaderTest {
             var downloaded = 0L
             var total = 0L
 
-            MediaDownloader().downloadToStream(
+            HttpMediaClient().downloadToStream(
                 ResolvedMedia(server.url("photo.jpg").toString(), MediaKind.IMAGE),
                 ByteArrayOutputStream()
             ) { bytesWritten, totalBytes ->
@@ -125,5 +126,15 @@ class MediaDownloaderTest {
             assertEquals(jpeg.size.toLong(), downloaded)
             assertEquals(jpeg.size.toLong(), total)
         }
+    }
+
+    @Test
+    fun `partial inspection does not mistake range length for full file size`() {
+        assertNull(resolvedContentLength(206, "bytes 0-65535/*", 65_536L))
+    }
+
+    @Test
+    fun `partial inspection uses total length from content range`() {
+        assertEquals(7_654_321L, resolvedContentLength(206, "bytes 0-65535/7654321", 65_536L))
     }
 }

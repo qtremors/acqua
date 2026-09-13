@@ -24,7 +24,7 @@ object YtDlpRuntime {
                 FFmpeg.getInstance().init(context.applicationContext)
                 initialized = true
             } catch (error: Throwable) {
-                Log.e(TAG, "Unable to initialize the yt-dlp runtime", error)
+                Log.e(TAG, "Unable to initialize the yt-dlp runtime", SafeDiagnostics.redact(error))
                 throw error
             }
         }

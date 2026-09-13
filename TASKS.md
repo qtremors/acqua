@@ -17,7 +17,7 @@
   - **Fix:** Extract the web injection script into a standalone, testable `.js` asset; replace full-page `innerHTML` regex scans with targeted DOM element checks; and decouple DOM parsing from the Android Activity lifecycle into a modular web extraction engine.
   - **Verification:** Run unit and instrumentation tests for `RenderedPageResolverActivity` across large media pages; profile heap memory allocations in Android Studio profiler to confirm absence of large repeated `innerHTML` string copies.
 
-- [ ] **ARCH-0002 - Add Enforced Architecture Boundary Tests** `[High]`
+- [x] **ARCH-0002 - Add Enforced Architecture Boundary Tests** `[High]`
   - **Location:** `acqua-app/app/src/test/java/dev/qtremors/acqua/ArchitectureBoundaryTest.kt` `acqua-app/app/build.gradle.kts` `acqua-app/gradle/libs.versions.toml` `acqua-app/settings.gradle.kts`
   - **Problem:** Acqua describes package-level clean MVVM boundaries, but no automated rule prevents domain code from gaining Android dependencies, shared UI from importing feature/data implementations, features from importing unrelated features, ViewModels from owning platform details, or module dependencies from reversing direction. The single `:app` module currently allows every production class to reach every other class.
   - **Impact:** Architectural regressions compile successfully, feature independence declines silently, and later module extraction becomes an expensive graph rewrite instead of a mechanical move.
@@ -31,7 +31,7 @@
   - **Fix:** Put navigation and cross-feature mapping in the app shell, expose small route/request contracts, and choose explicit ownership for composite flows. Treat About/legal as Settings-owned or app-owned, treat Downloader and History as one Downloads feature or coordinate them from the shell, and have Browser emit a neutral download request instead of starting Downloader code. Move shared settings/download option contracts below both data and features, and keep data independent of UI packages.
   - **Verification:** Add zero-baseline architecture rules that reject feature-to-feature imports and data-to-UI imports; generate the production dependency graph and confirm it is acyclic with all feature integration passing through app-shell contracts.
 
-- [ ] **ARCH-0004 - Centralize Dependency Composition And Worker Execution** `[High]`
+- [x] **ARCH-0004 - Centralize Dependency Composition And Worker Execution** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/AcquaApp.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/MainDependencies.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/MainActivity.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloadActivity.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadWorker.kt`
   - **Problem:** `MainActivity` and `DownloadActivity` each create separate `MainDependencies` graphs, browser/resolver activities construct repositories independently, and `YtDlpDownloadWorker` constructs settings, history, network, storage, and runtime implementations inside `doWork`. ViewModels depend mostly on concrete repositories and engines instead of narrow contracts.
   - **Impact:** Object lifetime and state ownership are inconsistent, expensive services can be duplicated, worker behavior is difficult to substitute in tests, and dependency direction is controlled by construction sites scattered throughout the app.
@@ -73,7 +73,7 @@
   - **Fix:** Model permission outcomes as typed UI state, show rationale before re-request where appropriate, distinguish temporary and permanent denial, provide a settings action, and explain notification-denial behavior before starting long-running work.
   - **Verification:** Test first denial, second/permanent denial, grant, revocation from Settings, activity recreation while the dialog is open, and notification denial on API 33+ across `MainActivity` and browser-launched `DownloadActivity`.
 
-- [ ] **STORAGE-0002 - Record The Actual MediaStore Destination Name** `[Medium]`
+- [x] **STORAGE-0002 - Record The Actual MediaStore Destination Name** `[Medium]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/platform/storage/MediaStorage.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/data/history/HistoryRepository.kt`
   - **Problem:** MediaStore saves record the requested `fileName` in history without querying the inserted row after provider-side collision handling. Unlike the legacy path's explicit `uniqueFile`, Android 10+ providers may choose a different display name, leaving history metadata out of sync with the saved file.
   - **Impact:** Users can see an incorrect filename in History and search for or share a record whose displayed metadata does not match the actual Downloads item.
@@ -121,7 +121,7 @@
 
 ### Security / Privacy Tasks
 
-- [ ] **SEC-0001 - Keep Browsing And Download History Out Of Automatic Backup** `[High]`
+- [x] **SEC-0001 - Keep Browsing And Download History Out Of Automatic Backup** `[High]`
   - **Location:** `acqua-app/app/src/main/AndroidManifest.xml` `acqua-app/app/src/main/res/xml/backup_rules.xml` `acqua-app/app/src/main/res/xml/data_extraction_rules.xml` `acqua-app/app/src/main/java/dev/qtremors/acqua/data/history/HistoryRepository.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/data/session/SavedWebsiteRepository.kt` `PRIVACY.md`
   - **Problem:** `android:allowBackup="true"` excludes encrypted sessions and WebView files but still permits cloud backup and device transfer of `acqua_history.db`, saved website origins, the last visited origin, browser UI preferences, and source/thumbnail URLs. The privacy policy says this information is processed on-device and does not disclose Android backup transfer.
   - **Impact:** Sensitive browsing and download metadata can leave the device through platform backup contrary to the documented privacy boundary and user expectations for a privacy-focused downloader.
@@ -135,7 +135,7 @@
   - **Fix:** Persist a size-bounded local thumbnail at download time or show a local type placeholder. Define retention and cleanup for cached thumbnails, remove remote thumbnail URLs when no longer needed, and require an explicit user action for any network refresh.
   - **Verification:** Populate history with remote video/audio thumbnails, disable network and inspect traffic while opening and scrolling History, and confirm zero third-party requests; then delete and clear records and verify associated local thumbnail artifacts are removed.
 
-- [ ] **SEC-0003 - Separate Untrusted Diagnostics From User-Facing Errors** `[Medium]`
+- [x] **SEC-0003 - Separate Untrusted Diagnostics From User-Facing Errors** `[Medium]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/resolver/instagram/InstagramResolver.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloaderViewModel.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadWorker.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/data/network/MediaDownloader.kt`
   - **Problem:** Instagram HTTP response snippets and arbitrary exception messages are composed into errors that the downloader displays and lets users copy. Internal English exception text is also used directly as UI copy. Remote bodies can contain account-specific data, unstable server details, markup, or long identifiers that should not cross the diagnostic boundary.
   - **Impact:** Sensitive response content can be exposed on screen or clipboard, error UX is inconsistent and unlocalizable, and internal implementation details become part of the public contract.
@@ -151,14 +151,14 @@
 
 ### Performance Tasks
 
-- [ ] **PERF-0001 - Bound And Sample All Preview Bitmap Decoding** `[High]`
+- [x] **PERF-0001 - Bound And Sample All Preview Bitmap Decoding** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/data/network/MediaDownloader.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/MediaPreviewCard.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/history/HistoryScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/browser/BrowserScreen.kt`
   - **Problem:** Preview responses are buffered up to 16 MiB and decoded at source resolution with `BitmapFactory.decodeByteArray` or `decodeStream`. The compressed-byte cap does not bound decoded pixel memory, and history rows can retain multiple full-resolution bitmaps while scrolling.
   - **Impact:** Large or maliciously dimensioned images can cause severe jank, memory churn, or an out-of-memory crash; ordinary high-resolution thumbnails waste memory and network bandwidth.
   - **Fix:** Use a lifecycle-aware image pipeline or a shared decoder that validates format/dimensions, caps pixels, performs bounds-first sampled decoding to the measured target size, coalesces requests, applies a bounded cache, and cancels work when content leaves composition. Reject decompression-bomb dimensions before allocation.
   - **Verification:** Test very large dimensions, high compression ratios, malformed images, 16 MiB payload boundaries, rapid pager changes, and long history scrolling under a constrained heap; use memory profiling to confirm bounded allocations and no OOM or stale decode work.
 
-- [ ] **PERF-0002 - Remove Native Runtime Update Work From Initial App Startup** `[High]`
+- [x] **PERF-0002 - Remove Native Runtime Update Work From Initial App Startup** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/MainActivity.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/settings/SettingsViewModel.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpMaintenance.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpRuntime.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/MainDependencies.kt`
   - **Problem:** `MainActivity` creates ViewModels for every tab during first composition, and `SettingsViewModel.init` immediately runs yt-dlp maintenance. With the default auto-update setting this initializes the yt-dlp and FFmpeg runtime and may perform network/update work even when the user only wants another tab.
   - **Impact:** Cold start performs avoidable native extraction, filesystem cleanup, CPU, and network work, increasing time to first useful frame, memory usage, and launch-time variability.
@@ -172,7 +172,7 @@
   - **Fix:** Keep a process-scoped database, add explicit migrations and indexes based on measured queries, page ordered results, compute summaries/query results off the main thread, and bound or incrementally refresh existence checks instead of synchronously probing every record.
   - **Verification:** Seed realistic databases at 1,000, 10,000, and 100,000 entries with slow/missing content URIs; benchmark open, search, sort, scroll, delete, and summary updates and inspect query plans to confirm bounded memory and responsive first content.
 
-- [ ] **PERF-0004 - Throttle Persistent Progress And Notification Updates** `[High]`
+- [x] **PERF-0004 - Throttle Persistent Progress And Notification Updates** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/data/network/MediaDownloader.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadWorker.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/DownloadNotificationController.kt`
   - **Problem:** Direct downloads invoke progress after every `DEFAULT_BUFFER_SIZE` read, and the worker responds with both `setProgressAsync` and `NotificationManager.notify` for every chunk. A large file can therefore generate hundreds of thousands of WorkManager database writes/futures and notification updates.
   - **Impact:** Progress bookkeeping can dominate download I/O, increase battery use, bloat scheduling work, and make large downloads slower or less reliable.
@@ -188,21 +188,21 @@
 
 ### Reliability Tasks
 
-- [ ] **REL-0001 - Bound And Serialize Multi-Item Direct Downloads** `[High]`
+- [x] **REL-0001 - Bound And Serialize Multi-Item Direct Downloads** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadCoordinator.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloaderViewModel.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/DownloadQueueModels.kt` `README.md`
   - **Problem:** `downloadAll` enqueues every direct carousel item as a separately named unique work request, so all items are eligible to run concurrently. This bypasses the `DIRECT_WORK_QUEUE` chain used by processed downloads and contradicts the documented controlled, ordered queue.
   - **Impact:** Large carousels can saturate connections, storage, WorkManager, memory, and notification surfaces; aggregate progress and cancellation become harder to trust, especially on slow networks and low-end devices.
   - **Fix:** Put direct batch items into one durable ordered chain or a queue with an explicit small concurrency policy, preserve per-item retry/idempotency, and make aggregate progress and partial failure behavior reflect that policy. Align documentation after behavior is verified.
   - **Verification:** Enqueue the maximum candidate count against a controllable slow server and assert the concurrency ceiling, stable item order, bounded retries, accurate aggregate progress, cancellation of queued/running items, and clear partial-success reporting after process restart.
 
-- [ ] **REL-0002 - Adopt A Target-SDK-Compliant Long-Running Transfer Strategy** `[High]`
+- [x] **REL-0002 - Adopt A Target-SDK-Compliant Long-Running Transfer Strategy** `[High]`
   - **Location:** `acqua-app/app/src/main/AndroidManifest.xml` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadWorker.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/DownloadNotificationController.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadCoordinator.kt` `acqua-app/app/build.gradle.kts`
   - **Problem:** The target-37 app runs every download and local media-processing phase as a WorkManager long-running worker using `FOREGROUND_SERVICE_TYPE_DATA_SYNC`. Android 15 limits `dataSync` foreground-service time, and Android 16 counts long-running WorkManager workers against job quota. The implementation has no quota/timeout recovery path and does not distinguish user-initiated transfer from local media processing.
   - **Impact:** Long or repeated downloads can be denied, stopped, or crash after platform limits are exhausted, leaving users with failed work and partial temporary output on supported target devices.
   - **Fix:** Investigate and implement the appropriate user-initiated data transfer job or direct foreground-service path for user-started downloads, and use the correct media-processing type/phase where applicable. Add durable phase/checkpoint state, timeout/quota-specific errors, startup cleanup/recovery, and a fallback policy for older API levels.
   - **Verification:** On Android 15, 16, and 17 devices/emulators, force shortened foreground-service timeouts and exhausted job quota, then test long download, processing, queued work, app backgrounding, process kill, retry, cancellation, and recovery without orphaned pending MediaStore rows or cache files.
 
-- [ ] **REL-0003 - Propagate Cancellation Into Direct Network Calls** `[High]`
+- [x] **REL-0003 - Propagate Cancellation Into Direct Network Calls** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadWorker.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/data/network/MediaDownloader.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/platform/storage/MediaStorage.kt`
   - **Problem:** Direct workers execute a synchronous OkHttp call and blocking copy loop inside `withContext(Dispatchers.IO)`, but the active `Call` is never cancelled when WorkManager cancels the coroutine and the loop has no cooperative cancellation check. The notification action can mark work cancelled while socket I/O and destination writes continue until the call returns or fails.
   - **Impact:** Cancellation is delayed or misleading, wastes data and battery, and can leave pending MediaStore entries or legacy partial files alive longer than users expect.
@@ -299,7 +299,7 @@
 
 ### Testing / Release Tasks
 
-- [ ] **TEST-0001 - Add WorkManager Download Integration And Recovery Tests** `[High]`
+- [x] **TEST-0001 - Add WorkManager Download Integration And Recovery Tests** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadWorker.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/downloader/YtDlpDownloadCoordinator.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/platform/storage/MediaStorage.kt` `acqua-app/app/src/test` `acqua-app/app/src/androidTest`
   - **Problem:** Existing tests cover serialization, format selection, network detection, and repository basics, but no test executes the worker/coordinator lifecycle with constraints, foreground setup, retry, cancellation, process recreation, partial storage writes, or queue recovery.
   - **Impact:** The app's highest-risk persistent download path can regress while unit tests, lint, and compilation remain green.

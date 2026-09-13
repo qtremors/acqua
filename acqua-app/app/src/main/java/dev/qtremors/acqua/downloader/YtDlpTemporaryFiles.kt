@@ -37,4 +37,10 @@ internal object YtDlpTemporaryFiles {
             if (directory.listFiles().isNullOrEmpty()) directory.delete()
         }
     }
+
+    fun cleanupAfterProcessRestart(context: Context) {
+        listOf(TASK_DIRECTORY, COOKIE_DIRECTORY).forEach { directoryName ->
+            File(context.cacheDir, directoryName).deleteRecursively()
+        }
+    }
 }

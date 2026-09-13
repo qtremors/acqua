@@ -14,12 +14,14 @@ import androidx.core.app.NotificationCompat
 import androidx.work.ForegroundInfo
 import androidx.work.WorkManager
 import dev.qtremors.acqua.R
+import dev.qtremors.acqua.domain.MediaKind
 import java.util.UUID
 
 /** Owns foreground-service and completion notification policy for a single background download. */
 internal class DownloadNotificationController(
     context: Context,
-    private val workId: UUID
+    private val workId: UUID,
+    private val cancelIntentOverride: PendingIntent? = null
 ) {
     private val applicationContext = context.applicationContext
     private val notificationManager =
@@ -48,19 +50,35 @@ internal class DownloadNotificationController(
         progress: Float,
         etaSeconds: Long,
         downloadedBytes: Long,
-        totalBytes: Long
+        totalBytes: Long,
+        phase: DownloadPhase = DownloadPhase.TRANSFER
     ): ForegroundInfo {
         val notification = buildNotification(title, progress, etaSeconds, downloadedBytes, totalBytes)
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val serviceType = if (
+                Build.VERSION.SDK_INT >= 35 && phase == DownloadPhase.PROCESSING
+            ) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            }
             ForegroundInfo(
                 notificationId,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                serviceType
             )
         } else {
             ForegroundInfo(notificationId, notification)
         }
     }
+
+    fun progressNotification(
+        title: String?,
+        progress: Float,
+        etaSeconds: Long,
+        downloadedBytes: Long,
+        totalBytes: Long
+    ): Notification = buildNotification(title, progress, etaSeconds, downloadedBytes, totalBytes)
 
     fun update(
         title: String?,
@@ -80,14 +98,15 @@ internal class DownloadNotificationController(
     fun complete(
         title: String?,
         uri: Uri? = null,
-        mimeType: String? = null
+        mimeType: String? = null,
+        mediaKind: MediaKind? = null
     ) {
         runCatching {
             notificationManager.cancel(notificationId)
 
             val contentIntent = uri?.let { targetUri ->
                 val viewIntent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(targetUri, mimeType ?: "video/*")
+                    setDataAndType(targetUri, mimeType ?: mediaKind.mimeTypeWildcard())
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
@@ -117,7 +136,7 @@ internal class DownloadNotificationController(
             val notificationBuilder = NotificationCompat.Builder(applicationContext, COMPLETED_CHANNEL_ID)
                 .setSmallIcon(R.drawable.acqua_monochrome)
                 .setContentTitle(displayTitle)
-                .setContentText(applicationContext.getString(R.string.saved_to_downloads))
+                .setContentText(applicationContext.getString(mediaKind.downloadedMessage()))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setOngoing(false)
                 .setAutoCancel(true)
@@ -152,7 +171,8 @@ internal class DownloadNotificationController(
         .addAction(
             0,
             applicationContext.getString(R.string.cancel_download),
-            WorkManager.getInstance(applicationContext).createCancelPendingIntent(workId)
+            cancelIntentOverride
+                ?: WorkManager.getInstance(applicationContext).createCancelPendingIntent(workId)
         )
         .build()
 
@@ -183,4 +203,18 @@ internal class DownloadNotificationController(
         const val CHANNEL_ID = "acqua_media_downloads"
         const val COMPLETED_CHANNEL_ID = "acqua_completed_downloads"
     }
+}
+
+private fun MediaKind?.downloadedMessage(): Int = when (this) {
+    MediaKind.VIDEO -> R.string.video_downloaded
+    MediaKind.IMAGE -> R.string.image_downloaded
+    MediaKind.AUDIO -> R.string.audio_downloaded
+    null -> R.string.media_downloaded
+}
+
+private fun MediaKind?.mimeTypeWildcard(): String = when (this) {
+    MediaKind.VIDEO -> "video/*"
+    MediaKind.IMAGE -> "image/*"
+    MediaKind.AUDIO -> "audio/*"
+    null -> "application/octet-stream"
 }

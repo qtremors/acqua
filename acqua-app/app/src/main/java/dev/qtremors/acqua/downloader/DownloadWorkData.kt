@@ -1,12 +1,13 @@
 package dev.qtremors.acqua.downloader
 
+import android.os.PersistableBundle
 import androidx.work.Data
 import dev.qtremors.acqua.domain.MediaBackend
 import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.ResolvedMedia
 
 /**
- * Stable serialization boundary between the UI process and [YtDlpDownloadWorker].
+ * Stable serialization boundary between the UI process and [DownloadWorker].
  *
  * WorkManager can recreate a worker long after the screen that scheduled it has
  * disappeared. Keeping all request encoding and defensive decoding here prevents
@@ -46,6 +47,7 @@ internal object DownloadWorkData {
     const val KEY_DOWNLOADED_BYTES = "downloaded_bytes"
     const val KEY_TOTAL_BYTES = "total_bytes"
     const val KEY_ERROR = "error"
+    const val KEY_PHASE = "phase"
 
     fun processedRequest(
         media: ResolvedMedia,
@@ -134,17 +136,48 @@ internal object DownloadWorkData {
         )
     }
 
+    fun toPersistableBundle(data: Data): PersistableBundle = PersistableBundle().apply {
+        data.keyValueMap.forEach { (key, value) ->
+            when (value) {
+                is String -> putString(key, value)
+                is Int -> putInt(key, value)
+                is Long -> putLong(key, value)
+                is Boolean -> putBoolean(key, value)
+                null -> Unit
+                else -> error("Unsupported persistent download value for '$key'.")
+            }
+        }
+    }
+
+    fun fromPersistableBundle(bundle: PersistableBundle): Data = Data.Builder().apply {
+        bundle.keySet().forEach { key ->
+            when (key) {
+                in STRING_KEYS -> bundle.getString(key)?.let { putString(key, it) }
+                in INT_KEYS -> putInt(key, bundle.getInt(key))
+                in LONG_KEYS -> putLong(key, bundle.getLong(key))
+                in BOOLEAN_KEYS -> putBoolean(key, bundle.getBoolean(key))
+            }
+        }
+    }.build()
+
     fun progress(
         progress: Float,
         etaSeconds: Long = 0L,
         downloadedBytes: Long = 0L,
-        totalBytes: Long = 0L
+        totalBytes: Long = 0L,
+        phase: DownloadPhase = DownloadPhase.TRANSFER
     ): Data = Data.Builder()
         .putFloat(KEY_PROGRESS, progress.coerceIn(0f, 100f))
         .putLong(KEY_ETA_SECONDS, etaSeconds.coerceAtLeast(0L))
         .putLong(KEY_DOWNLOADED_BYTES, downloadedBytes.coerceAtLeast(0L))
         .putLong(KEY_TOTAL_BYTES, totalBytes.coerceAtLeast(0L))
+        .putString(KEY_PHASE, phase.name)
         .build()
+
+    fun phase(data: Data): DownloadPhase = enumValueOrDefault(
+        data.getString(KEY_PHASE),
+        DownloadPhase.QUEUED
+    )
 
     fun error(message: String?): Data = Data.Builder()
         .putString(KEY_ERROR, message?.takeIf(String::isNotBlank) ?: DEFAULT_ERROR)
@@ -183,7 +216,48 @@ internal object DownloadWorkData {
     private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, default: T): T =
         value?.let { candidate -> enumValues<T>().firstOrNull { it.name == candidate } } ?: default
 
-    private const val DEFAULT_ERROR = "The background download failed."
+    private val STRING_KEYS = setOf(
+        KEY_MEDIA_URL,
+        KEY_BACKEND,
+        KEY_SOURCE_URL,
+        KEY_CONTENT_TYPE,
+        KEY_AUDIO_FORMAT,
+        KEY_MEDIA_KIND,
+        KEY_THUMBNAIL_URL,
+        KEY_USERNAME,
+        KEY_TITLE,
+        KEY_ARTIST,
+        KEY_ALBUM,
+        KEY_REFERER,
+        KEY_MIME_TYPE,
+        KEY_FILE_EXTENSION,
+        KEY_ERROR,
+        KEY_PHASE
+    )
+    private val INT_KEYS = setOf(
+        KEY_MAXIMUM_VIDEO_QUALITY,
+        KEY_ITEM_INDEX,
+        KEY_ITEM_COUNT,
+        KEY_MEDIA_WIDTH,
+        KEY_MEDIA_HEIGHT,
+        KEY_OUTPUT_WIDTH,
+        KEY_OUTPUT_HEIGHT
+    )
+    private val LONG_KEYS = setOf(
+        KEY_SOURCE_TIMESTAMP_MILLIS,
+        KEY_FILE_SIZE,
+        KEY_ETA_SECONDS,
+        KEY_DOWNLOADED_BYTES,
+        KEY_TOTAL_BYTES
+    )
+    private val BOOLEAN_KEYS = setOf(
+        KEY_EMBED_METADATA,
+        KEY_EMBED_THUMBNAIL,
+        KEY_BROWSER_SESSION_AUTHORIZED,
+        KEY_IS_VIDEO
+    )
+
+    private const val DEFAULT_ERROR = "download_error_unknown"
 }
 
 internal data class DownloadWorkRequest(

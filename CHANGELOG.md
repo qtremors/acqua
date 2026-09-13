@@ -2,6 +2,20 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.5] - 2026-09-13
+
+### Changed
+
+- Serialize download work, throttle progress updates, and make direct transfers cancellation-aware.
+- Run user-started transfers through Android 14 data-transfer jobs with serialized fallback, durable phase recovery, and correct media-processing service classification.
+
+### Fixed
+
+- Store final MediaStore filenames, bound preview image decoding, and remove interrupted pending rows and temporary processing files after process restart.
+- Keep backup, onboarding, and download failures localized while excluding private identifiers from diagnostics.
+- Exclude private browsing and download state from Android backup and device transfer.
+- Prevent recursive WorkManager initialization while creating the application dependency graph.
+
 ## [0.2.4] - 2026-09-13
 
 ### Changed

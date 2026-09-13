@@ -5,14 +5,22 @@ import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.ResolvedMedia
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.File
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
-class MediaDownloader(
+class HttpMediaClient(
     private val client: OkHttpClient = defaultClient()
 ) {
     private data class ScopedRequestCookies(val host: String, val value: String)
@@ -50,6 +58,51 @@ class MediaDownloader(
         }
 
         return client.newCall(buildRequest(item.url, item.referer, requestCookies)).execute().use { response ->
+            copyResponse(item, response, output, onProgress) { false }
+        }
+    }
+
+    suspend fun downloadToStreamCancellable(
+        item: ResolvedMedia,
+        output: OutputStream,
+        requestCookies: String? = item.requestCookies,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): Long {
+        if (hasEmbeddedByteRange(item.url)) {
+            error("A partial browser media segment cannot be saved as a complete file.")
+        }
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(buildRequest(item.url, item.referer, requestCookies))
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(e)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    try {
+                        val bytes = response.use {
+                            copyResponse(item, it, output, onProgress) { !continuation.isActive }
+                        }
+                        if (continuation.isActive) continuation.resume(bytes)
+                    } catch (cancelled: CancellationException) {
+                        if (continuation.isActive) continuation.cancel(cancelled)
+                    } catch (error: Throwable) {
+                        if (continuation.isActive) continuation.resumeWithException(error)
+                    }
+                }
+            })
+        }
+    }
+
+    private fun copyResponse(
+        item: ResolvedMedia,
+        response: Response,
+        output: OutputStream,
+        onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit,
+        isCancelled: () -> Boolean
+    ): Long {
+            if (isCancelled()) throw CancellationException("Media download cancelled")
             if (response.code == 206) {
                 error("The media server returned only part of the file (HTTP 206).")
             }
@@ -75,6 +128,7 @@ class MediaDownloader(
             onProgress(bytesWritten, expectedLength)
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             while (true) {
+                if (isCancelled()) throw CancellationException("Media download cancelled")
                 val read = stream.read(buffer)
                 if (read <= 0) break
                 output.write(buffer, 0, read)
@@ -84,8 +138,7 @@ class MediaDownloader(
             if (expectedLength >= 0L && bytesWritten != expectedLength) {
                 error("The media download ended before the complete file was received.")
             }
-            bytesWritten
-        }
+            return bytesWritten
     }
 
     fun validateAndResolveMetadata(item: ResolvedMedia): ResolvedMedia? {
@@ -97,12 +150,11 @@ class MediaDownloader(
 
             client.newCall(request).execute().use { response ->
                 if (response.code != 206 && !response.isSuccessful) return@use null
-                val totalSize = response.header("Content-Range")
-                    ?.substringAfterLast('/')
-                    ?.trim()
-                    ?.toLongOrNull()
-                    ?: response.header("Content-Length")?.toLongOrNull()
-                    ?: 0L
+                val totalSize = resolvedContentLength(
+                    statusCode = response.code,
+                    contentRange = response.header("Content-Range"),
+                    contentLength = response.body?.contentLength() ?: -1L
+                ) ?: 0L
                 val bytes = response.body?.byteStream()?.readPrefix(signatureByteCount)
                     ?: return@use null
                 val format = MediaContentDetector.detect(
@@ -232,8 +284,10 @@ class MediaDownloader(
         const val DEFAULT_CACHED_PREVIEW_BYTES = 8L * 1024L * 1024L
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(2, TimeUnit.MINUTES)
             .followRedirects(true)
             .addNetworkInterceptor { chain ->
                 val request = chain.request()
@@ -250,4 +304,17 @@ class MediaDownloader(
             }
             .build()
     }
+}
+
+internal fun resolvedContentLength(
+    statusCode: Int,
+    contentRange: String?,
+    contentLength: Long
+): Long? {
+    val rangeTotalSize = contentRange
+        ?.substringAfterLast('/')
+        ?.trim()
+        ?.toLongOrNull()
+        ?.takeIf { it > 0L }
+    return rangeTotalSize ?: contentLength.takeIf { statusCode != 206 && it > 0L }
 }

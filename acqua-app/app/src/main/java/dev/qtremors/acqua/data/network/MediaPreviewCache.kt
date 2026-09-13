@@ -2,19 +2,19 @@ package dev.qtremors.acqua.data.network
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import dev.qtremors.acqua.domain.ResolvedMedia
+import dev.qtremors.acqua.platform.image.BoundedBitmapDecoder
 import java.io.File
 import java.security.MessageDigest
 
 class MediaPreviewCache(
     context: Context,
-    private val downloader: MediaDownloader
+    private val downloader: HttpMediaClient
 ) {
     private val directory = File(context.applicationContext.cacheDir, CACHE_DIRECTORY)
     private val lock = Any()
 
-    fun loadBitmap(item: ResolvedMedia, maxWidth: Int, maxHeight: Int): Bitmap? = synchronized(lock) {
+    fun loadBitmap(item: ResolvedMedia, maxWidth: Int, maxHeight: Int): MediaPreviewBitmap? = synchronized(lock) {
         val cacheFile = File(directory, cacheKey(item))
         runCatching {
             prune()
@@ -28,19 +28,10 @@ class MediaPreviewCache(
         }.getOrNull()
     }
 
-    private fun decodeSampled(file: File, maxWidth: Int, maxHeight: Int): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(file.absolutePath, bounds)
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-        if (bounds.outWidth > MAX_SOURCE_DIMENSION || bounds.outHeight > MAX_SOURCE_DIMENSION) return null
-        var sampleSize = 1
-        while (bounds.outWidth / sampleSize > maxWidth || bounds.outHeight / sampleSize > maxHeight) {
-            sampleSize *= 2
-        }
-        return BitmapFactory.decodeFile(
-            file.absolutePath,
-            BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        )
+    private fun decodeSampled(file: File, maxWidth: Int, maxHeight: Int): MediaPreviewBitmap? {
+        val bounds = BoundedBitmapDecoder.bounds(file) ?: return null
+        val bitmap = BoundedBitmapDecoder.decode(file, maxWidth, maxHeight) ?: return null
+        return MediaPreviewBitmap(bitmap, bounds.width, bounds.height)
     }
 
     private fun prune() {
@@ -63,8 +54,13 @@ class MediaPreviewCache(
     private companion object {
         const val CACHE_DIRECTORY = "media-previews"
         const val MAX_FILE_COUNT = 48
-        const val MAX_SOURCE_DIMENSION = 100_000
         const val MAX_FILE_BYTES = 8L * 1024L * 1024L
         const val MAX_CACHE_BYTES = 64L * 1024L * 1024L
     }
 }
+
+data class MediaPreviewBitmap(
+    val bitmap: Bitmap,
+    val sourceWidth: Int,
+    val sourceHeight: Int
+)

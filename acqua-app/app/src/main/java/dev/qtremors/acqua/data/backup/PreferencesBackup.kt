@@ -63,12 +63,6 @@ data class PreferencesBackupPreview(
     val items: List<PreferencesBackupItem>
 )
 
-data class PreferencesBackupFailure(
-    val storeName: String,
-    val message: String
-)
-
 data class PreferencesBackupOperationResult(
-    val items: List<PreferencesBackupItem>,
-    val failures: List<PreferencesBackupFailure> = emptyList()
+    val items: List<PreferencesBackupItem>
 )

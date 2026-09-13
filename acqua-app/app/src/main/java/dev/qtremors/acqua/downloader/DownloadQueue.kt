@@ -9,6 +9,14 @@ enum class DownloadQueueState {
     CANCELLED
 }
 
+enum class DownloadPhase {
+    QUEUED,
+    TRANSFER,
+    PROCESSING,
+    FINALIZING,
+    COMPLETE
+}
+
 data class DownloadQueueItem(
     val id: String,
     val state: DownloadQueueState,
@@ -16,7 +24,8 @@ data class DownloadQueueItem(
     val etaSeconds: Long = 0L,
     val downloadedBytes: Long = 0L,
     val totalBytes: Long = 0L,
-    val error: String? = null
+    val error: String? = null,
+    val phase: DownloadPhase = DownloadPhase.QUEUED
 ) {
     val isActive: Boolean
         get() = state == DownloadQueueState.QUEUED ||

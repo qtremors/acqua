@@ -2,10 +2,12 @@ package dev.qtremors.acqua.platform.storage
 
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Size
 import androidx.core.content.FileProvider
 import androidx.annotation.RequiresApi
 import dev.qtremors.acqua.data.history.HistoryEntry
@@ -13,7 +15,7 @@ import dev.qtremors.acqua.data.history.HistoryRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.DownloadContentType
-import dev.qtremors.acqua.data.network.MediaDownloader
+import dev.qtremors.acqua.data.network.HttpMediaClient
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.MediaKind
 import java.io.File
@@ -23,11 +25,11 @@ class MediaStorage(
     context: Context,
     private val historyRepository: HistoryRepository,
     private val settingsRepository: AppSettingsRepository,
-    private val mediaDownloader: MediaDownloader
+    private val mediaDownloader: HttpMediaClient
 ) {
     private val appContext = context.applicationContext
 
-    fun save(
+    suspend fun save(
         item: ResolvedMedia,
         index: Int,
         sourceUrl: String,
@@ -90,7 +92,7 @@ class MediaStorage(
         }
     }
 
-    fun saveProcessedFile(
+    suspend fun saveProcessedFile(
         sourceFile: File,
         media: ResolvedMedia,
         contentType: DownloadContentType,
@@ -127,23 +129,27 @@ class MediaStorage(
                 put(MediaStore.Downloads.MIME_TYPE, mimeType)
                 put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
                 put(MediaStore.Downloads.IS_PENDING, 1)
-                putSourceTimestamp(media.sourceTimestampMillis, includeDateTaken = !isAudio)
             }
             val resolver = appContext.contentResolver
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                 ?: error("Could not create the destination file in Downloads.")
+            PendingMediaStoreRegistry.track(appContext, uri)
             try {
                 resolver.openOutputStream(uri)?.use { output ->
                     sourceFile.inputStream().use { input -> input.copyTo(output) }
                 } ?: error("Could not open the destination media file.")
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
-                values.putSourceTimestamp(media.sourceTimestampMillis, includeDateTaken = !isAudio)
+                values.putDownloadTimestamp(System.currentTimeMillis(), includeDateTaken = !isAudio)
                 resolver.update(uri, values, null, null)
-                recordProcessedDownload(media, sourceUrl, uri, fileName, mimeType, sourceFile.length(), !isAudio)
+                warmThumbnail(uri, enabled = !isAudio)
+                val finalName = queryDisplayName(uri, fileName)
+                recordProcessedDownload(sourceUrl, uri, finalName, mimeType, sourceFile.length(), !isAudio)
+                PendingMediaStoreRegistry.complete(appContext, uri)
                 uri
             } catch (error: Exception) {
                 resolver.delete(uri, null, null)
+                PendingMediaStoreRegistry.complete(appContext, uri)
                 throw error
             }
         } else {
@@ -157,19 +163,20 @@ class MediaStorage(
             }
             val target = uniqueFile(targetDirectory, fileName)
             sourceFile.copyTo(target, overwrite = true)
-            media.sourceTimestampMillis?.let(target::setLastModified)
+            target.setLastModified(System.currentTimeMillis())
+            scanLegacyFile(target, mimeType)
             val uri = FileProvider.getUriForFile(
                 appContext,
                 "${appContext.packageName}.fileprovider",
                 target
             )
-            recordProcessedDownload(media, sourceUrl, uri, target.name, mimeType, target.length(), !isAudio)
+            recordProcessedDownload(sourceUrl, uri, target.name, mimeType, target.length(), !isAudio)
             uri
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
-    private fun saveWithMediaStore(
+    private suspend fun saveWithMediaStore(
         item: ResolvedMedia,
         sourceUrl: String,
         relativePath: String,
@@ -183,31 +190,35 @@ class MediaStorage(
             put(MediaStore.Downloads.MIME_TYPE, mimeType)
             put(MediaStore.Downloads.RELATIVE_PATH, relativePath)
             put(MediaStore.Downloads.IS_PENDING, 1)
-            putSourceTimestamp(item.sourceTimestampMillis, includeDateTaken = true)
         }
         val resolver = appContext.contentResolver
         val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: error("Could not create the destination file in Downloads.")
+        PendingMediaStoreRegistry.track(appContext, uri)
 
         return try {
             val bytesDownloaded = resolver.openOutputStream(uri)?.use { output ->
-                mediaDownloader.downloadToStream(item, output, requestCookies, onProgress)
+                mediaDownloader.downloadToStreamCancellable(item, output, requestCookies, onProgress)
             } ?: error("Could not open the destination media file.")
 
             values.clear()
             values.put(MediaStore.Downloads.IS_PENDING, 0)
-            values.putSourceTimestamp(item.sourceTimestampMillis, includeDateTaken = true)
+            values.putDownloadTimestamp(System.currentTimeMillis(), includeDateTaken = !item.isAudio)
             resolver.update(uri, values, null, null)
-            recordDownload(item, sourceUrl, uri, fileName, mimeType, bytesDownloaded)
+            warmThumbnail(uri, enabled = !item.isAudio)
+            val finalName = queryDisplayName(uri, fileName)
+            recordDownload(item, sourceUrl, uri, finalName, mimeType, bytesDownloaded)
+            PendingMediaStoreRegistry.complete(appContext, uri)
             uri
         } catch (error: Exception) {
             resolver.delete(uri, null, null)
+            PendingMediaStoreRegistry.complete(appContext, uri)
             throw error
         }
     }
 
     @Suppress("DEPRECATION")
-    private fun saveLegacy(
+    private suspend fun saveLegacy(
         item: ResolvedMedia,
         sourceUrl: String,
         baseFolder: String,
@@ -227,9 +238,10 @@ class MediaStorage(
 
         return try {
             val bytesDownloaded = file.outputStream().use { output ->
-                mediaDownloader.downloadToStream(item, output, requestCookies, onProgress)
+                mediaDownloader.downloadToStreamCancellable(item, output, requestCookies, onProgress)
             }
-            item.sourceTimestampMillis?.let(file::setLastModified)
+            file.setLastModified(System.currentTimeMillis())
+            scanLegacyFile(file, mimeType)
             val uri = FileProvider.getUriForFile(
                 appContext,
                 "${appContext.packageName}.fileprovider",
@@ -262,13 +274,12 @@ class MediaStorage(
                 mimeType = mimeType,
                 sizeBytes = bytesDownloaded,
                 isDownloaded = true,
-                thumbnailUrl = item.thumbnailUrl ?: item.previewUrl
+                thumbnailUrl = null
             )
         )
     }
 
     private fun recordProcessedDownload(
-        media: ResolvedMedia,
         sourceUrl: String,
         uri: Uri,
         fileName: String,
@@ -287,7 +298,7 @@ class MediaStorage(
                 mimeType = mimeType,
                 sizeBytes = bytesDownloaded,
                 isDownloaded = true,
-                thumbnailUrl = media.thumbnailUrl
+                thumbnailUrl = null
             )
         )
     }
@@ -315,9 +326,48 @@ class MediaStorage(
         error("Could not create a unique destination filename.")
     }
 
-    private fun ContentValues.putSourceTimestamp(timestampMillis: Long?, includeDateTaken: Boolean) {
-        val timestamp = timestampMillis?.takeIf { it > 0L } ?: return
-        put(MediaStore.MediaColumns.DATE_MODIFIED, timestamp / 1_000L)
-        if (includeDateTaken) put("datetaken", timestamp)
+    private fun ContentValues.putDownloadTimestamp(timestampMillis: Long, includeDateTaken: Boolean) {
+        val timestampSeconds = timestampMillis / 1_000L
+        put(MediaStore.MediaColumns.DATE_ADDED, timestampSeconds)
+        put(MediaStore.MediaColumns.DATE_MODIFIED, timestampSeconds)
+        if (includeDateTaken) put("datetaken", timestampMillis)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.Q)
+    private fun warmThumbnail(uri: Uri, enabled: Boolean) {
+        if (!enabled) return
+        runCatching {
+            appContext.contentResolver.loadThumbnail(uri, Size(THUMBNAIL_SIZE, THUMBNAIL_SIZE), null)
+                .recycle()
+        }
+    }
+
+    private fun scanLegacyFile(file: File, mimeType: String) {
+        MediaScannerConnection.scanFile(
+            appContext,
+            arrayOf(file.absolutePath),
+            arrayOf(mimeType),
+            null
+        )
+    }
+
+    private fun queryDisplayName(uri: Uri, fallback: String): String {
+        return runCatching {
+            appContext.contentResolver.query(
+                uri,
+                arrayOf(MediaStore.MediaColumns.DISPLAY_NAME),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME))
+                    ?.takeIf(String::isNotBlank)
+            }
+        }.getOrNull() ?: fallback
+    }
+
+    private companion object {
+        const val THUMBNAIL_SIZE = 512
     }
 }

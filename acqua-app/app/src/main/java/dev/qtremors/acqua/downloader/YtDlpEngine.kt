@@ -249,9 +249,10 @@ class YtDlpEngine(context: Context) {
         ?.removePrefix("ERROR:")
         ?.trim()
         ?: stderr.lineSequence().map(String::trim).lastOrNull(String::isNotBlank)
-        ?: "yt-dlp could not process this link."
+        ?: YT_DLP_FALLBACK_DIAGNOSTIC
 
     private companion object {
+        const val YT_DLP_FALLBACK_DIAGNOSTIC = "yt-dlp produced no diagnostic output"
         val SIDECAR_EXTENSIONS = setOf(
             "part", "ytdl", "json", "jpg", "jpeg", "png", "webp", "vtt", "srt", "ass", "lrc"
         )

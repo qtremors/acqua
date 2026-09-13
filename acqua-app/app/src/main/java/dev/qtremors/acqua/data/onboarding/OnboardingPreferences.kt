@@ -24,7 +24,13 @@ data class OnboardingState(
     val notificationPermissionHandled: Boolean = false
 )
 
-class OnboardingPreferences(private val context: Context) {
+interface OnboardingStateStore {
+    val onboardingState: Flow<OnboardingState>
+    suspend fun completeOnboarding(versionCode: Int, markNotificationHandled: Boolean = true)
+    suspend fun setNotificationHandled(handled: Boolean)
+}
+
+class OnboardingPreferences(private val context: Context) : OnboardingStateStore {
 
     companion object {
         val KEY_IS_COMPLETED = booleanPreferencesKey("is_completed")
@@ -32,7 +38,7 @@ class OnboardingPreferences(private val context: Context) {
         val KEY_NOTIFICATION_HANDLED = booleanPreferencesKey("notification_handled")
     }
 
-    val onboardingState: Flow<OnboardingState> = context.onboardingDataStore.data.map { preferences ->
+    override val onboardingState: Flow<OnboardingState> = context.onboardingDataStore.data.map { preferences ->
         OnboardingState(
             isCompleted = preferences[KEY_IS_COMPLETED] ?: false,
             completedVersionCode = preferences[KEY_COMPLETED_VERSION_CODE] ?: 0,
@@ -40,7 +46,7 @@ class OnboardingPreferences(private val context: Context) {
         )
     }
 
-    suspend fun completeOnboarding(versionCode: Int, markNotificationHandled: Boolean = true) {
+    override suspend fun completeOnboarding(versionCode: Int, markNotificationHandled: Boolean) {
         context.onboardingDataStore.edit { preferences ->
             preferences[KEY_IS_COMPLETED] = true
             preferences[KEY_COMPLETED_VERSION_CODE] = versionCode
@@ -50,7 +56,7 @@ class OnboardingPreferences(private val context: Context) {
         }
     }
 
-    suspend fun setNotificationHandled(handled: Boolean) {
+    override suspend fun setNotificationHandled(handled: Boolean) {
         context.onboardingDataStore.edit { preferences ->
             preferences[KEY_NOTIFICATION_HANDLED] = handled
         }

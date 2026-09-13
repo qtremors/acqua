@@ -9,7 +9,12 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35])
 class DownloadWorkDataTest {
     @Test
     fun `direct requests retain collection size for background filenames`() {
@@ -188,6 +193,42 @@ class DownloadWorkDataTest {
         assertEquals(12L, above.getLong(DownloadWorkData.KEY_ETA_SECONDS, -1L))
         assertEquals(8_000L, above.getLong(DownloadWorkData.KEY_DOWNLOADED_BYTES, -1L))
         assertEquals(10_000L, above.getLong(DownloadWorkData.KEY_TOTAL_BYTES, -1L))
+        assertEquals(DownloadPhase.TRANSFER, DownloadWorkData.phase(above))
+    }
+
+    @Test
+    fun `persistable job extras round trip every request value`() {
+        val original = DownloadWorkData.processedRequest(
+            completeMedia(MediaBackend.YT_DLP),
+            completeMedia(MediaBackend.YT_DLP).copy(width = 640, height = 360),
+            YtDlpDownloadOptions(
+                contentType = DownloadContentType.AUDIO,
+                maximumVideoHeight = 720,
+                audioFormat = AudioOutputFormat.M4A,
+                embedMetadata = false,
+                embedThumbnail = true
+            ),
+            SOURCE_URL
+        )
+
+        val restored = DownloadWorkData.fromPersistableBundle(
+            DownloadWorkData.toPersistableBundle(original)
+        )
+
+        assertEquals(original.keyValueMap, restored.keyValueMap)
+        assertEquals(DownloadWorkData.decode(original), DownloadWorkData.decode(restored))
+    }
+
+    @Test
+    fun `unknown persistent extras are ignored`() {
+        val bundle = DownloadWorkData.toPersistableBundle(minimumData().build()).apply {
+            putString("future_value", "ignored")
+        }
+
+        val restored = DownloadWorkData.fromPersistableBundle(bundle)
+
+        assertNull(restored.getString("future_value"))
+        assertEquals(MEDIA_URL, restored.getString(DownloadWorkData.KEY_MEDIA_URL))
     }
 
     @Test
@@ -203,11 +244,11 @@ class DownloadWorkDataTest {
         val missing = DownloadWorkData.error(null)
 
         assertEquals(
-            "The background download failed.",
+            "download_error_unknown",
             empty.getString(DownloadWorkData.KEY_ERROR)
         )
         assertEquals(
-            "The background download failed.",
+            "download_error_unknown",
             missing.getString(DownloadWorkData.KEY_ERROR)
         )
     }

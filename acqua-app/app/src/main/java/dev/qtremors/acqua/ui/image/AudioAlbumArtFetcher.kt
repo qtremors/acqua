@@ -1,6 +1,5 @@
 package dev.qtremors.acqua.ui.image
 
-import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.util.Size
@@ -15,6 +14,7 @@ import coil.request.Options
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import dev.qtremors.acqua.platform.image.BoundedBitmapDecoder
 import kotlin.coroutines.CoroutineContext
 
 class AudioAlbumArtFetcher(
@@ -50,25 +50,8 @@ class AudioAlbumArtFetcher(
                 retriever.setDataSource(file.absolutePath)
             }
             val art = retriever.embeddedPicture
-            if (art != null) {
-                val decodeOptions = BitmapFactory.Options().apply {
-                    inJustDecodeBounds = true
-                }
-                BitmapFactory.decodeByteArray(art, 0, art.size, decodeOptions)
-
-                var sampleSize = 1
-                while (decodeOptions.outWidth / sampleSize > targetSize ||
-                    decodeOptions.outHeight / sampleSize > targetSize
-                ) {
-                    sampleSize *= 2
-                }
-
-                decodeOptions.apply {
-                    inJustDecodeBounds = false
-                    inSampleSize = sampleSize
-                }
-
-                val bitmap = BitmapFactory.decodeByteArray(art, 0, art.size, decodeOptions)
+            if (art != null && art.size <= MAX_EMBEDDED_ART_BYTES) {
+                val bitmap = BoundedBitmapDecoder.decode(art, targetSize, targetSize)
                     ?: return@withContext null
                 DrawableResult(
                     drawable = bitmap.toDrawable(context.resources),
@@ -104,5 +87,9 @@ class AudioAlbumArtFetcher(
                 null
             }
         }
+    }
+
+    private companion object {
+        const val MAX_EMBEDDED_ART_BYTES = 8 * 1024 * 1024
     }
 }
