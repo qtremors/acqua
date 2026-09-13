@@ -23,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.feature.onboarding.OnboardingRestoreState
+import dev.qtremors.acqua.feature.onboarding.OnboardingRestoreFailure
 
 @Composable
 fun OnboardingRestoreDialog(
@@ -127,7 +128,12 @@ fun OnboardingRestoreDialog(
                 title = { Text(stringResource(R.string.restore_backup)) },
                 text = {
                     Text(
-                        text = stringResource(R.string.backup_failed, state.message),
+                        text = stringResource(
+                            when (state.failure) {
+                                OnboardingRestoreFailure.INSPECT -> R.string.backup_inspect_failed
+                                OnboardingRestoreFailure.RESTORE -> R.string.backup_restore_failed
+                            }
+                        ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error
                     )

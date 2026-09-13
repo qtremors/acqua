@@ -3,8 +3,8 @@ package dev.qtremors.acqua.feature.onboarding
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dev.qtremors.acqua.data.backup.PreferencesBackupManager
-import dev.qtremors.acqua.data.onboarding.OnboardingPreferences
+import dev.qtremors.acqua.data.backup.PreferencesBackupGateway
+import dev.qtremors.acqua.data.onboarding.OnboardingStateStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,8 +33,8 @@ data class OnboardingUiState(
 }
 
 class OnboardingViewModel(
-    private val onboardingPreferences: OnboardingPreferences,
-    private val backupManager: PreferencesBackupManager,
+    private val onboardingPreferences: OnboardingStateStore,
+    private val backupManager: PreferencesBackupGateway,
     private val appVersionCode: Int = 15
 ) : ViewModel() {
 
@@ -111,13 +111,11 @@ class OnboardingViewModel(
                         it.copy(restoreState = OnboardingRestoreState.Preview(preview))
                     }
                 },
-                onFailure = { error ->
+                onFailure = {
                     pendingRestoreUri = null
                     _state.update {
                         it.copy(
-                            restoreState = OnboardingRestoreState.Error(
-                                error.message ?: "Failed to inspect backup file"
-                            )
+                            restoreState = OnboardingRestoreState.Error(OnboardingRestoreFailure.INSPECT)
                         )
                     }
                 }
@@ -143,12 +141,10 @@ class OnboardingViewModel(
                         )
                     }
                 },
-                onFailure = { error ->
+                onFailure = {
                     _state.update {
                         it.copy(
-                            restoreState = OnboardingRestoreState.Error(
-                                error.message ?: "Failed to restore settings backup"
-                            )
+                            restoreState = OnboardingRestoreState.Error(OnboardingRestoreFailure.RESTORE)
                         )
                     }
                 }

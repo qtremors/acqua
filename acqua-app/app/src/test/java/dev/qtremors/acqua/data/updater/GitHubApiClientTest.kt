@@ -67,5 +67,37 @@ class GitHubApiClientTest {
 
         assertTrue(error is GitHubApiException)
         assertEquals(1_800_000_000L, (error as GitHubApiException).rateLimitResetEpochSeconds)
+        assertEquals("GitHub rate limit reached", error.message)
+        assertTrue("Remote response bodies must not enter diagnostics", "rate limited" !in error.message.orEmpty())
+    }
+
+    @Test
+    fun `release pagination stops after a short page`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody(releasesJson(100)))
+        server.enqueue(MockResponse().setResponseCode(200).setBody(releasesJson(2)))
+        val api = GitHubApiClient(apiBaseUrl = server.url("/").toString().trimEnd('/'))
+
+        assertEquals(102, api.getReleases("owner", "sample").size)
+        assertEquals("/repos/owner/sample/releases?per_page=100&page=1", server.takeRequest().path)
+        assertEquals("/repos/owner/sample/releases?per_page=100&page=2", server.takeRequest().path)
+        assertEquals(2, server.requestCount)
+    }
+
+    @Test
+    fun `release pagination has a hard page limit`() = runBlocking {
+        repeat(5) { server.enqueue(MockResponse().setResponseCode(200).setBody(releasesJson(100))) }
+        val api = GitHubApiClient(apiBaseUrl = server.url("/").toString().trimEnd('/'))
+
+        assertEquals(500, api.getReleases("owner", "sample").size)
+        assertEquals(5, server.requestCount)
+    }
+
+    private fun releasesJson(count: Int): String = buildString {
+        append('[')
+        repeat(count) { index ->
+            if (index > 0) append(',')
+            append("""{"tag_name":"v$index","html_url":"https://github.com/owner/sample/releases/tag/v$index"}""")
+        }
+        append(']')
     }
 }

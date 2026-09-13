@@ -24,6 +24,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -84,8 +86,9 @@ fun SettingsSwitchRow(
             ) {
                 Switch(
                     checked = checked,
-                    onCheckedChange = onCheckedChange,
-                    enabled = enabled
+                    onCheckedChange = null,
+                    enabled = enabled,
+                    modifier = Modifier.clearAndSetSemantics { }
                 )
             }
         },
@@ -95,6 +98,7 @@ fun SettingsSwitchRow(
         modifier = modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
+            .semantics(mergeDescendants = true) { }
     )
 }
 

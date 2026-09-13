@@ -8,6 +8,7 @@ import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.YtDlpMaintenance
 import dev.qtremors.acqua.downloader.YtDlpFailure
+import dev.qtremors.acqua.downloader.SafeDiagnostics
 import dev.qtremors.acqua.downloader.YtDlpUpdateStatus
 import dev.qtremors.acqua.downloader.toYtDlpFailure
 import kotlinx.coroutines.CancellationException
@@ -39,14 +40,20 @@ class SettingsViewModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(repository.readSettingsUiState())
     val state = mutableState.asStateFlow()
+    private var hasLoadedYtDlpStatus = false
 
     init {
-        updateYtDlp(force = false)
         viewModelScope.launch {
             repository.screenProtectionEnabledFlow().collect { enabled ->
                 mutableState.value = mutableState.value.copy(screenProtectionEnabled = enabled)
             }
         }
+    }
+
+    fun loadYtDlpStatus() {
+        if (hasLoadedYtDlpStatus) return
+        hasLoadedYtDlpStatus = true
+        updateYtDlp(force = false)
     }
 
     fun setBaseFolder(value: String) {
@@ -136,7 +143,7 @@ class SettingsViewModel(
             } catch (error: Throwable) {
                 if (error is VirtualMachineError || error is ThreadDeath) throw error
                 val failure = error.toYtDlpFailure()
-                Log.e(TAG, "yt-dlp update failed (${failure.name})", error)
+                Log.e(TAG, "yt-dlp update failed (${failure.name})", SafeDiagnostics.redact(error))
                 mutableState.value = mutableState.value.copy(
                     isUpdatingYtDlp = false,
                     ytDlpUpdateError = failure

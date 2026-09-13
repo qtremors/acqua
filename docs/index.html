@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#07131b">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; connect-src 'self' https://api.github.com; style-src 'self'; font-src 'self'; img-src 'self' data: https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests">
   <meta name="description" content="Acqua is a private, expressive Android media downloader.">
   <meta property="og:title" content="Acqua: Media, simply saved">
   <meta property="og:description" content="Paste a supported media link, preview it, and save it to your Android device.">
@@ -11,9 +12,7 @@
   <meta property="og:url" content="https://qtremors.github.io/acqua/">
   <title>Acqua: Media, simply saved</title>
   <link rel="icon" type="image/svg+xml" href="assets/Acqua.svg">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Manrope:wght@500;600;700;800&amp;display=swap" rel="stylesheet">
+  <script src="boot.js"></script>
   <link rel="stylesheet" href="styles.css">
   <script src="scripts.js" defer></script>
 </head>
@@ -23,7 +22,7 @@
   <header class="site-header" data-header>
     <nav class="nav shell" aria-label="Main navigation">
       <a class="brand" href="#top" aria-label="Acqua home">
-        <span class="brand-mark"><img src="assets/Acqua.svg" alt=""></span>
+        <span class="brand-mark"><img src="assets/Acqua.svg" width="34" height="34" alt=""></span>
         <span>Acqua</span>
       </a>
 
@@ -52,26 +51,26 @@
           <p>Paste a supported link, preview what you found, and save it your way. Acqua keeps the whole experience simple, private, and yours.</p>
 
           <div class="stats-pills" aria-label="Acqua GitHub statistics">
-            <a href="https://github.com/qtremors/acqua" target="_blank" rel="noopener noreferrer" class="stat-pill" aria-label="Acqua repository stars and forks" title="GitHub repository">
+            <a href="https://github.com/qtremors/acqua" target="_blank" rel="noopener noreferrer" class="stat-pill" title="GitHub repository">
               <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"></path><path d="M9 18c-4.51 2-5-2-7-2"></path></svg>
               <div class="stat-group">
                 <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                <span id="gh-stars" aria-label="GitHub stars">--</span>
+                <span id="gh-stars"><span class="sr-only">GitHub stars: </span><span data-stat-value>Unavailable</span></span>
               </div>
               <div class="stat-group">
                 <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>
-                <span id="gh-forks" aria-label="GitHub forks">--</span>
+                <span id="gh-forks"><span class="sr-only">GitHub forks: </span><span data-stat-value>Unavailable</span></span>
               </div>
             </a>
-            <a href="https://github.com/qtremors/acqua/releases" target="_blank" rel="noopener noreferrer" class="stat-pill" aria-label="Acqua total and latest release downloads" title="Release downloads">
+            <a href="https://github.com/qtremors/acqua/releases" target="_blank" rel="noopener noreferrer" class="stat-pill" title="Release downloads">
               <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
               <div class="stat-group">
                 <span class="stat-tag">Total</span>
-                <span id="gh-total-downloads" aria-label="Total release downloads">--</span>
+                <span id="gh-total-downloads"><span class="sr-only">Total release downloads: </span><span data-stat-value>Unavailable</span></span>
               </div>
               <div class="stat-group">
                 <span class="stat-tag">Latest</span>
-                <span id="gh-latest-downloads" aria-label="Latest release downloads">--</span>
+                <span id="gh-latest-downloads"><span class="sr-only">Latest release downloads: </span><span data-stat-value>Unavailable</span></span>
               </div>
             </a>
           </div>
@@ -88,7 +87,7 @@
         <div class="hero-visual reveal" aria-label="Acqua download flow">
           <div class="logo-stage">
             <div class="logo-halo" aria-hidden="true"></div>
-            <img src="assets/Acqua.svg" alt="Acqua logo">
+            <img src="assets/Acqua.svg" width="360" height="360" alt="Acqua logo">
           </div>
           <div class="float-card link-card">
             <span class="float-icon" aria-hidden="true">⌁</span>
@@ -272,7 +271,7 @@
 
     <section class="download-section">
       <div class="shell download-card reveal">
-        <div class="download-mark"><img src="assets/Acqua.svg" alt=""></div>
+        <div class="download-mark"><img src="assets/Acqua.svg" width="72" height="72" alt=""></div>
         <div>
           <span class="kicker" data-latest-release>Latest release</span>
           <h2>Ready when you are.</h2>
@@ -287,7 +286,7 @@
     <div class="shell footer-grid">
       <div class="footer-brand-col">
         <a class="brand" href="#top" aria-label="Back to top">
-          <span class="brand-mark"><img src="assets/Acqua.svg" alt=""></span>
+          <span class="brand-mark"><img src="assets/Acqua.svg" width="34" height="34" alt=""></span>
           <span>Acqua</span>
         </a>
         <p class="footer-desc">

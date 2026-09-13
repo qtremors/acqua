@@ -3,8 +3,8 @@ package dev.qtremors.acqua.platform
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
+import androidx.core.net.toUri
 import androidx.webkit.WebViewCompat
 
 data class WebViewProviderInfo(
@@ -29,10 +29,10 @@ object WebViewUpdateManager {
     fun openUpdatePage(context: Context, providerPackage: String?): Boolean {
         val packageName = providerPackage?.takeIf(String::isNotBlank) ?: DEFAULT_PROVIDER_PACKAGE
         val intents = listOf(
-            Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+            Intent(Intent.ACTION_VIEW, "market://details?id=$packageName".toUri())
                 .setPackage(PLAY_STORE_PACKAGE),
-            Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName")),
-            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+            Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=$packageName".toUri()),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:$packageName".toUri()),
             Intent(Settings.ACTION_WEBVIEW_SETTINGS)
         )
         return intents.any { intent ->

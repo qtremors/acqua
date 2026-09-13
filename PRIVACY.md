@@ -1,6 +1,6 @@
 # Acqua Privacy Policy
 
-Last updated: August 1, 2026
+Last updated: September 12, 2026
 
 Acqua is a privacy-focused Android media downloader. It does not include ads,
 analytics, telemetry, or an Acqua-operated account service.
@@ -44,6 +44,13 @@ normal application-storage rules.
 Downloaded files are saved to Android's shared Downloads storage. Clearing
 Acqua's history removes history records but does not delete downloaded files.
 Files in shared storage remain until you remove them yourself.
+
+History previews are generated only from the downloaded file. Opening History
+does not reload saved thumbnail URLs from third-party media hosts.
+
+Acqua disables Android cloud backup and device-transfer backup for all of its
+app-private data. Browsing history, download history, saved websites, settings,
+cookies, and sessions therefore are not transferred through Android backup.
 
 ## Permissions
 

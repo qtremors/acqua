@@ -57,25 +57,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
-import dev.qtremors.acqua.data.backup.PreferencesBackupManager
-import dev.qtremors.acqua.data.updater.AppUpdater
-import dev.qtremors.acqua.feature.settings.SettingsViewModel
+import dev.qtremors.acqua.appinfo.AboutExternalLink
 import dev.qtremors.acqua.ui.components.SettingsActionRow
 import dev.qtremors.acqua.ui.components.SettingsSection
-import dev.qtremors.acqua.ui.theme.ThemeState
 import kotlinx.coroutines.launch
 
 @Composable
 fun AboutScreen(
     onOpenNotices: () -> Unit,
+    modifier: Modifier = Modifier,
     onOpenLicense: () -> Unit = {},
-    settingsViewModel: SettingsViewModel? = null,
-    backupManager: PreferencesBackupManager? = null,
-    themeState: ThemeState = ThemeState(),
-    onThemeChange: (ThemeState) -> Unit = {},
-    appUpdater: AppUpdater? = null,
-    contentPadding: PaddingValues = PaddingValues(),
-    modifier: Modifier = Modifier
+    contentPadding: PaddingValues = PaddingValues()
 ) {
     val uriHandler = LocalUriHandler.current
     val colors = MaterialTheme.colorScheme

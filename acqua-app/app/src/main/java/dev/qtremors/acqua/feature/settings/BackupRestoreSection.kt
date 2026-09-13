@@ -30,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
@@ -47,11 +46,10 @@ import java.util.Locale
 @Composable
 fun BackupRestoreSection(
     backupManager: PreferencesBackupManager,
-    onRestoreCompleted: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onRestoreCompleted: () -> Unit = {}
 ) {
     val context = LocalContext.current
-    val resources = LocalResources.current
     val coroutineScope = rememberCoroutineScope()
 
     var isBusy by remember { mutableStateOf(false) }
@@ -69,9 +67,9 @@ fun BackupRestoreSection(
                     isBusy = false
                     Toast.makeText(context, R.string.backup_exported_success, Toast.LENGTH_SHORT).show()
                 },
-                onFailure = { error ->
+                onFailure = {
                     isBusy = false
-                    Toast.makeText(context, resources.getString(R.string.backup_failed, error.message), Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, R.string.backup_export_failed, Toast.LENGTH_LONG).show()
                 }
             )
         }
@@ -89,9 +87,9 @@ fun BackupRestoreSection(
                     pendingRestoreUri = uri
                     restorePreview = preview
                 },
-                onFailure = { error ->
+                onFailure = {
                     isBusy = false
-                    Toast.makeText(context, resources.getString(R.string.backup_failed, error.message), Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, R.string.backup_inspect_failed, Toast.LENGTH_LONG).show()
                 }
             )
         }
@@ -200,9 +198,9 @@ fun BackupRestoreSection(
                                     isBusy = false
                                     Toast.makeText(context, R.string.backup_restored_success, Toast.LENGTH_SHORT).show()
                                 },
-                                onFailure = { error ->
+                                onFailure = {
                                     isBusy = false
-                                    Toast.makeText(context, resources.getString(R.string.backup_failed, error.message), Toast.LENGTH_LONG).show()
+                                    Toast.makeText(context, R.string.backup_restore_failed, Toast.LENGTH_LONG).show()
                                 }
                             )
                         }

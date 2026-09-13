@@ -1,5 +1,10 @@
 package dev.qtremors.acqua.feature.about
 
+import dev.qtremors.acqua.appinfo.AboutBuildInfo
+import dev.qtremors.acqua.appinfo.AboutDestination
+import dev.qtremors.acqua.appinfo.AboutExternalLink
+import dev.qtremors.acqua.appinfo.deviceDescription
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

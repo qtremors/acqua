@@ -21,7 +21,10 @@ sealed interface OnboardingRestoreState {
         val requiresRestart: Boolean = false
     ) : OnboardingRestoreState
 
-    data class Error(
-        val message: String
-    ) : OnboardingRestoreState
+    data class Error(val failure: OnboardingRestoreFailure) : OnboardingRestoreState
+}
+
+enum class OnboardingRestoreFailure {
+    INSPECT,
+    RESTORE
 }

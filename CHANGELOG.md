@@ -2,6 +2,19 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.9] - 2026-09-13
+
+### Changed
+
+- Refine accent-color selection, app information, open-source notices, and backup feedback.
+- Improve website navigation accessibility and progressively enhance reveal animations.
+
+### Fixed
+
+- Make the website usable without JavaScript and cache public repository statistics without layout thrashing.
+- Enforce strict release-link validation and a restrictive website content security policy.
+- Keep user-facing resource selection deterministic across updater, onboarding, and settings state changes.
+
 ## [0.2.8] - 2026-09-13
 
 ### Added
