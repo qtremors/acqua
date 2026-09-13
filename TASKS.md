@@ -112,7 +112,7 @@
 
 ### Backend Tasks
 
-- [ ] **API-0001 - Resilient GitHub API Client Timeout And Pagination Guard** `[Medium]`
+- [x] **API-0001 - Resilient GitHub API Client Timeout And Pagination Guard** `[Medium]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/data/updater/GitHubApiClient.kt` `docs/scripts.js`
   - **Problem:** `GitHubApiClient` in the app executes blocking OkHttp network calls without custom connect/read/write timeouts, and `getReleases` fetches only a fixed 30 items without cursor or pagination support. In parallel, `docs/scripts.js` iterates releases without backoff or rate-limit tracking headers (`X-RateLimit-Remaining`, `X-RateLimit-Reset`).
   - **Impact:** Unstable network connections can cause updater hangs or silent update detection failures, while app and web clients handle GitHub API versioning and rate-limiting inconsistently.

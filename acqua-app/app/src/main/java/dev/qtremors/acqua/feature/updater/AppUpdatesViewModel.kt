@@ -3,18 +3,19 @@ package dev.qtremors.acqua.feature.updater
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.qtremors.acqua.data.updater.AppUpdater
-import dev.qtremors.acqua.data.updater.GitHubApiClient
+import dev.qtremors.acqua.data.updater.GitHubRepositoryService
 import dev.qtremors.acqua.data.updater.GitHubApiException
 import dev.qtremors.acqua.data.updater.GitHubAsset
-import dev.qtremors.acqua.data.updater.GitHubAuthRepository
+import dev.qtremors.acqua.data.updater.GitHubAuthStore
 import dev.qtremors.acqua.data.updater.GitHubRelease
 import dev.qtremors.acqua.data.updater.GitHubRepositoryInfo
 import dev.qtremors.acqua.data.updater.InstalledApp
-import dev.qtremors.acqua.data.updater.InstalledAppMatcher
+import dev.qtremors.acqua.data.updater.InstalledAppCatalog
 import dev.qtremors.acqua.data.updater.TrackedRepo
-import dev.qtremors.acqua.data.updater.TrackedRepoRepository
-import dev.qtremors.acqua.data.updater.UpdateDownloadState
+import dev.qtremors.acqua.data.updater.TrackedRepoStore
+import dev.qtremors.acqua.data.updater.AppUpdateGateway
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,8 +26,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.DateFormat
-import java.util.Date
 
 data class RepoPreview(
     val repository: GitHubRepositoryInfo,
@@ -53,15 +52,16 @@ data class AppUpdatesUiState(
     val downloadStates: Map<String, UpdateDownloadState> = emptyMap(),
     val authenticatedUser: String? = null,
     val isSavingToken: Boolean = false,
-    val message: String? = null
+    val message: AppUpdateNotice? = null
 )
 
 class AppUpdatesViewModel(
-    private val repository: TrackedRepoRepository,
-    private val api: GitHubApiClient,
-    private val auth: GitHubAuthRepository,
-    private val matcher: InstalledAppMatcher,
-    private val updater: AppUpdater
+    private val repository: TrackedRepoStore,
+    private val api: GitHubRepositoryService,
+    private val auth: GitHubAuthStore,
+    private val matcher: InstalledAppCatalog,
+    private val updater: AppUpdateGateway,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
     private var previewJob: Job? = null
     val trackedRepos: StateFlow<List<TrackedRepo>> = repository.trackedRepos
@@ -86,7 +86,7 @@ class AppUpdatesViewModel(
     fun searchRepository(query: String, allowPreReleases: Boolean = false) {
         val parsed = parseRepoQuery(query)
         if (parsed == null) {
-            showMessage("Enter a repository as owner/name or paste its GitHub URL")
+            showMessage(AppUpdateNotice.Failure(AppUpdateFailure.INVALID_REPOSITORY))
             return
         }
         _state.value = _state.value.copy(isSearching = true, preview = null, message = null)
@@ -97,7 +97,7 @@ class AppUpdatesViewModel(
                 val info = api.getRepoInfo(owner, name)
                 val release = releaseFor(owner, name, allowPreReleases)
                 val apks = release.assets.filter { it.name.endsWith(".apk", true) }
-                require(apks.isNotEmpty()) { "The latest release does not contain an APK" }
+                if (apks.isEmpty()) throw AppUpdateWorkflowException(AppUpdateFailure.NO_APK)
                 val readme = runCatching { api.getReadme(owner, name) }.getOrDefault("")
                 val linkedApp = matcher.findBestMatch(info.name)
                 _state.value = _state.value.copy(
@@ -117,7 +117,7 @@ class AppUpdatesViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                _state.value = _state.value.copy(isSearching = false, message = userMessage(error))
+                _state.value = _state.value.copy(isSearching = false, message = noticeFor(error))
             }
         }
     }
@@ -130,7 +130,7 @@ class AppUpdatesViewModel(
                 val info = api.getRepoInfo(repo.owner, repo.name)
                 val release = releaseFor(repo.owner, repo.name, repo.allowPreReleases)
                 val apks = release.assets.filter { it.name.endsWith(".apk", true) }
-                require(apks.isNotEmpty()) { "The latest release does not contain an APK" }
+                if (apks.isEmpty()) throw AppUpdateWorkflowException(AppUpdateFailure.NO_APK)
                 val linked = repo.mappedPackageName?.let(matcher::installedVersion)
                 val selected = repo.selectedApkName.takeIf { choice ->
                     choice == TrackedRepo.AUTO_APK || apks.any { it.name == choice }
@@ -154,7 +154,7 @@ class AppUpdatesViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
-                _state.value = _state.value.copy(isSearching = false, message = userMessage(error))
+                _state.value = _state.value.copy(isSearching = false, message = noticeFor(error))
             }
         }
     }
@@ -176,7 +176,7 @@ class AppUpdatesViewModel(
         val asset = preview.apkAssets.firstOrNull {
             preview.selectedApkName != TrackedRepo.AUTO_APK && it.name == preview.selectedApkName
         } ?: AppUpdater.selectBestApkAsset(preview.apkAssets)
-            ?: return showMessage("Choose an APK asset")
+            ?: return showMessage(AppUpdateNotice.Failure(AppUpdateFailure.NO_APK))
         viewModelScope.launch {
             val info = preview.repository
             val installed = preview.linkedApp
@@ -208,14 +208,14 @@ class AppUpdatesViewModel(
                     notificationsEnabled = preview.notificationsEnabled
                 )
             )
-            _state.value = _state.value.copy(preview = null, message = "Repository is now tracked")
+            _state.value = _state.value.copy(preview = null, message = AppUpdateNotice.RepositoryTracked)
         }
     }
 
     fun removeRepo(repo: TrackedRepo) {
         viewModelScope.launch {
             repository.removeRepo(repo.fullName)
-            _state.value = _state.value.copy(message = "Stopped tracking ${repo.fullName}")
+            _state.value = _state.value.copy(message = AppUpdateNotice.RepositoryUntracked(repo.fullName))
         }
     }
 
@@ -276,23 +276,25 @@ class AppUpdatesViewModel(
             _state.value = _state.value.copy(
                 isRefreshing = false,
                 hasRefreshed = true,
-                message = firstError?.let(::userMessage)
-                    ?: "Checked ${updated.size} ${if (updated.size == 1) "repository" else "repositories"}"
+                message = firstError?.let(::noticeFor)
+                    ?: AppUpdateNotice.RefreshComplete(updated.size)
             )
         }
     }
 
     fun download(repo: TrackedRepo) {
-        if (repo.downloadUrl == null && repo.downloadApiUrl == null) return showMessage("No compatible APK is available")
+        if (repo.downloadUrl == null && repo.downloadApiUrl == null) {
+            return showMessage(AppUpdateNotice.Failure(AppUpdateFailure.NO_APK))
+        }
         when (val download = _state.value.downloadStates[repo.fullName]) {
             is UpdateDownloadState.Downloading -> return
             is UpdateDownloadState.Downloaded -> return install(repo, download.apkFile)
             else -> Unit
         }
         viewModelScope.launch {
-            val token = withContext(Dispatchers.IO) { auth.token }
+            val token = withContext(ioDispatcher) { auth.token }
             val url = (if (!token.isNullOrBlank()) repo.downloadApiUrl ?: repo.downloadUrl else repo.downloadUrl)
-                ?: return@launch showMessage("No compatible APK is available")
+                ?: return@launch showMessage(AppUpdateNotice.Failure(AppUpdateFailure.NO_APK))
             _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Downloading(0, repo.apkSizeBytes, 0))
             updater.downloadUpdate(
                 downloadUrl = url,
@@ -316,7 +318,7 @@ class AppUpdatesViewModel(
                 onFailure = { error ->
                     _state.value = _state.value.withDownload(
                         repo.fullName,
-                        UpdateDownloadState.Error(error.message ?: "Download failed")
+                        UpdateDownloadState.Error(AppUpdateFailure.DOWNLOAD)
                     )
                 }
             )
@@ -328,33 +330,33 @@ class AppUpdatesViewModel(
             file,
             expectedPackageName = repo.mappedPackageName,
             requireNewerThanInstalled = repo.installedVersionName != null
-        ).onFailure { showMessage(it.message ?: "Could not open the installer") }
+        ).onFailure { showMessage(AppUpdateNotice.Failure(AppUpdateFailure.INSTALL)) }
     }
 
     fun canInstallPackages(): Boolean = updater.canRequestPackageInstalls()
     fun openInstallPermissionSettings() = updater.openInstallPermissionSettings()
 
     fun saveToken(token: String) {
-        if (token.isBlank()) return showMessage("Enter a GitHub token")
+        if (token.isBlank()) return showMessage(AppUpdateNotice.Failure(AppUpdateFailure.GITHUB_REQUEST))
         _state.value = _state.value.copy(isSavingToken = true, message = null)
         viewModelScope.launch {
             try {
                 val user = api.getCurrentUser(token.trim())
-                withContext(Dispatchers.IO) { auth.saveToken(token, user.login) }
+                withContext(ioDispatcher) { auth.saveToken(token, user.login) }
                 _state.value = _state.value.copy(
                     authenticatedUser = user.login,
                     isSavingToken = false,
-                    message = "Connected as @${user.login}"
+                    message = AppUpdateNotice.Connected(user.login)
                 )
             } catch (error: Throwable) {
-                _state.value = _state.value.copy(isSavingToken = false, message = userMessage(error))
+                _state.value = _state.value.copy(isSavingToken = false, message = noticeFor(error))
             }
         }
     }
 
     fun signOut() {
         auth.signOut()
-        _state.value = _state.value.copy(authenticatedUser = null, message = "GitHub token removed")
+        _state.value = _state.value.copy(authenticatedUser = null, message = AppUpdateNotice.TokenRemoved)
     }
 
     suspend fun exportBackup(): String = repository.exportBackup()
@@ -363,7 +365,7 @@ class AppUpdatesViewModel(
     private suspend fun releaseFor(owner: String, name: String, allowPreReleases: Boolean): GitHubRelease {
         return if (allowPreReleases) {
             api.getReleases(owner, name).firstOrNull { !it.draft }
-                ?: error("No published releases were found")
+                ?: throw AppUpdateWorkflowException(AppUpdateFailure.NO_RELEASE)
         } else {
             api.getLatestRelease(owner, name)
         }
@@ -379,18 +381,16 @@ class AppUpdatesViewModel(
         _state.value.preview?.let { _state.value = _state.value.copy(preview = it.block()) }
     }
 
-    private fun showMessage(message: String) { _state.value = _state.value.copy(message = message) }
+    private fun showMessage(message: AppUpdateNotice) { _state.value = _state.value.copy(message = message) }
 
-    private fun userMessage(error: Throwable): String = when (error) {
+    private fun noticeFor(error: Throwable): AppUpdateNotice = when (error) {
+        is AppUpdateWorkflowException -> AppUpdateNotice.Failure(error.reason)
         is GitHubApiException -> if (error.statusCode == 403 || error.statusCode == 429) {
-            val reset = error.rateLimitResetEpochSeconds?.let {
-                DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it * 1_000L))
-            }
-            if (reset != null) "GitHub rate limit reached. Try again after $reset" else "GitHub rate limit reached. Add a token or try again later"
+            AppUpdateNotice.RateLimited(error.rateLimitResetEpochSeconds)
         } else if (error.statusCode == 404) {
-            "Repository or release not found"
-        } else error.message ?: "GitHub request failed"
-        else -> error.message ?: "Something went wrong"
+            AppUpdateNotice.Failure(AppUpdateFailure.NOT_FOUND)
+        } else AppUpdateNotice.Failure(AppUpdateFailure.GITHUB_REQUEST)
+        else -> AppUpdateNotice.Failure(AppUpdateFailure.UNKNOWN)
     }
 
     private fun AppUpdatesUiState.withDownload(name: String, value: UpdateDownloadState) =
@@ -412,3 +412,5 @@ class AppUpdatesViewModel(
         }
     }
 }
+
+private class AppUpdateWorkflowException(val reason: AppUpdateFailure) : Exception()

@@ -8,8 +8,8 @@ import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class InstalledAppMatcher(private val context: Context) {
-    suspend fun installedApps(): List<InstalledApp> = withContext(Dispatchers.IO) {
+class InstalledAppMatcher(private val context: Context) : InstalledAppCatalog {
+    override suspend fun installedApps(): List<InstalledApp> = withContext(Dispatchers.IO) {
         val packageManager = context.packageManager
         val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         @Suppress("DEPRECATION")
@@ -28,17 +28,17 @@ class InstalledAppMatcher(private val context: Context) {
         }.distinctBy(InstalledApp::packageName).sortedBy { it.appName.lowercase() }
     }
 
-    suspend fun findBestMatch(repoName: String): InstalledApp? {
+    override suspend fun findBestMatch(repoName: String): InstalledApp? {
         return findBestMatch(repoName, installedApps())
     }
 
-    fun findBestMatch(repoName: String, apps: List<InstalledApp>): InstalledApp? {
+    override fun findBestMatch(repoName: String, apps: List<InstalledApp>): InstalledApp? {
         val target = normalize(repoName)
         return apps.maxByOrNull { app -> matchScore(target, normalize(app.appName)) }
             ?.takeIf { matchScore(target, normalize(it.appName)) >= 70 }
     }
 
-    fun installedVersion(packageName: String): InstalledApp? = runCatching {
+    override fun installedVersion(packageName: String): InstalledApp? = runCatching {
         val packageManager = context.packageManager
         val info = packageInfo(packageManager, packageName)
         InstalledApp(

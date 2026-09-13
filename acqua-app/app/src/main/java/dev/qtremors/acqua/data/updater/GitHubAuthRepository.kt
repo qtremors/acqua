@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import androidx.core.content.edit
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -12,28 +13,28 @@ import javax.crypto.spec.GCMParameterSpec
 
 class GitHubAuthRepository(
     context: Context
-) {
+) : GitHubAuthStore {
     private val preferences = context.getSharedPreferences("acqua_github_auth", Context.MODE_PRIVATE)
 
-    val token: String?
+    override val token: String?
         get() = preferences.getString(KEY_TOKEN, null)?.let(::decrypt)
 
-    val username: String?
+    override val username: String?
         get() = preferences.getString(KEY_USERNAME, null)
 
     val isAuthenticated: Boolean
         get() = !token.isNullOrBlank()
 
-    fun saveToken(token: String, username: String) {
+    override fun saveToken(token: String, username: String) {
         require(token.isNotBlank()) { "Token cannot be empty" }
-        preferences.edit()
-            .putString(KEY_TOKEN, encrypt(token.trim()))
-            .putString(KEY_USERNAME, username)
-            .apply()
+        preferences.edit {
+            putString(KEY_TOKEN, encrypt(token.trim()))
+            putString(KEY_USERNAME, username)
+        }
     }
 
-    fun signOut() {
-        preferences.edit().clear().apply()
+    override fun signOut() {
+        preferences.edit { clear() }
     }
 
     private fun encrypt(value: String): String {

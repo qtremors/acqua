@@ -2,6 +2,17 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.7] - 2026-09-13
+
+### Changed
+
+- Refine Settings and GitHub update management with clearer grouped controls and repository actions.
+
+### Fixed
+
+- Harden GitHub API pagination, timeout, rate-limit, and release-link handling.
+- Keep updater failures localized while excluding remote response data and private identifiers from diagnostics.
+
 ## [0.2.6] - 2026-09-13
 
 ### Added

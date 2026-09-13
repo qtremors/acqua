@@ -5,7 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.Signature
-import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
@@ -24,7 +24,7 @@ import java.security.MessageDigest
 class AppUpdater(
     private val context: Context,
     private val httpClient: OkHttpClient = OkHttpClient()
-) {
+) : AppUpdateGateway {
 
     companion object {
         const val GITHUB_RELEASES_URL = "https://api.github.com/repos/qtremors/acqua/releases/latest"
@@ -154,7 +154,7 @@ class AppUpdater(
                 latestVersionName = latestVersionName,
                 latestVersionCode = latestVersionCode,
                 isUpdateAvailable = isUpdateAvailable,
-                releaseTitle = release.name ?: "Version $latestVersionName",
+                releaseTitle = release.name ?: latestVersionName,
                 releaseNotes = release.body.orEmpty(),
                 releaseUrl = release.html_url,
                 apkName = bestAsset?.name,
@@ -166,14 +166,14 @@ class AppUpdater(
         }
     }
 
-    suspend fun downloadUpdate(
+    override suspend fun downloadUpdate(
         downloadUrl: String,
         fileName: String,
-        expectedSizeBytes: Long = 0L,
-        expectedVersionCode: Int? = null,
-        expectedPackageName: String? = context.packageName,
-        requireNewerThanInstalled: Boolean = true,
-        authorizationToken: String? = null,
+        expectedSizeBytes: Long,
+        expectedVersionCode: Int?,
+        expectedPackageName: String?,
+        requireNewerThanInstalled: Boolean,
+        authorizationToken: String?,
         onProgress: (bytesDownloaded: Long, totalBytes: Long, progressPercent: Int) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
@@ -258,7 +258,7 @@ class AppUpdater(
         }
     }
 
-    fun canRequestPackageInstalls(): Boolean {
+    override fun canRequestPackageInstalls(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.packageManager.canRequestPackageInstalls()
         } else {
@@ -266,10 +266,10 @@ class AppUpdater(
         }
     }
 
-    fun openInstallPermissionSettings() {
+    override fun openInstallPermissionSettings() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                data = Uri.parse("package:${context.packageName}")
+                data = "package:${context.packageName}".toUri()
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             runCatching { context.startActivity(intent) }.recoverCatching {
@@ -282,10 +282,10 @@ class AppUpdater(
         }
     }
 
-    fun installApk(
+    override fun installApk(
         apkFile: File,
-        expectedPackageName: String? = context.packageName,
-        requireNewerThanInstalled: Boolean = true
+        expectedPackageName: String?,
+        requireNewerThanInstalled: Boolean
     ): Result<Unit> = runCatching {
         validateApk(
             apkFile,

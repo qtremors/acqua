@@ -2,7 +2,7 @@ package dev.qtremors.acqua.feature.updater
 
 import android.content.Intent
 import android.content.ClipboardManager
-import android.net.Uri
+import androidx.core.net.toUri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.BackHandler
@@ -83,7 +83,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.ImeAction
@@ -96,7 +98,6 @@ import coil.compose.AsyncImage
 import dev.qtremors.acqua.R
 import dev.qtremors.acqua.data.updater.InstalledApp
 import dev.qtremors.acqua.data.updater.TrackedRepo
-import dev.qtremors.acqua.data.updater.UpdateDownloadState
 import dev.qtremors.acqua.ui.components.EmptyState
 import dev.qtremors.acqua.ui.components.EmptyStateVariant
 import dev.qtremors.acqua.ui.components.SettingsCardContainer
@@ -109,12 +110,13 @@ import kotlinx.coroutines.withContext
 @Composable
 fun AppUpdatesScreen(
     viewModel: AppUpdatesViewModel,
-    contentPadding: PaddingValues = PaddingValues(),
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues()
 ) {
     val state by viewModel.state.collectAsState()
     val repos by viewModel.trackedRepos.collectAsState()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     var showAddFlow by remember { mutableStateOf(false) }
     var addingNewRepo by remember { mutableStateOf(true) }
@@ -137,7 +139,7 @@ fun AppUpdatesScreen(
                 }
             }.fold(
                 { Toast.makeText(context, R.string.tracked_repos_exported, Toast.LENGTH_SHORT).show() },
-                { Toast.makeText(context, it.message ?: context.getString(R.string.export_failed), Toast.LENGTH_LONG).show() }
+                { Toast.makeText(context, R.string.export_failed, Toast.LENGTH_LONG).show() }
             )
         }
     }
@@ -153,15 +155,16 @@ fun AppUpdatesScreen(
                 }
             }.mapCatching { viewModel.importBackup(it).getOrThrow() }
                 .fold(
-                    { count -> Toast.makeText(context, context.getString(R.string.tracked_repos_imported, count), Toast.LENGTH_SHORT).show() },
-                    { Toast.makeText(context, it.message ?: context.getString(R.string.import_failed), Toast.LENGTH_LONG).show() }
+                    { count -> Toast.makeText(context, resources.getQuantityString(R.plurals.tracked_repos_imported, count, count), Toast.LENGTH_SHORT).show() },
+                    { Toast.makeText(context, R.string.import_failed, Toast.LENGTH_LONG).show() }
                 )
         }
     }
 
-    LaunchedEffect(state.message) {
-        state.message?.let {
-            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+    val localizedNotice = state.message?.localized(resources)
+    LaunchedEffect(state.message, localizedNotice) {
+        localizedNotice?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             viewModel.clearMessage()
         }
     }
@@ -195,7 +198,8 @@ fun AppUpdatesScreen(
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.app_updates_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Text(
-                        if (repos.isEmpty()) stringResource(R.string.no_tracked_repositories) else stringResource(R.string.tracked_repository_count, repos.size),
+                        if (repos.isEmpty()) stringResource(R.string.no_tracked_repositories)
+                        else pluralStringResource(R.plurals.tracked_repository_count, repos.size, repos.size),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -305,416 +309,4 @@ fun AppUpdatesScreen(
             dismissButton = { TextButton(onClick = { removeRepo = null }) { Text(stringResource(R.string.cancel)) } }
         )
     }
-}
-
-@Composable
-private fun GitHubAccessCard(
-    username: String?,
-    onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
-    onExport: () -> Unit,
-    onImport: () -> Unit
-) {
-    SettingsSection(title = stringResource(R.string.github_access)) {
-        SettingsCardContainer {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.Key, null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        username?.let { stringResource(R.string.connected_as, it) } ?: stringResource(R.string.public_access),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        if (username == null) stringResource(R.string.public_access_description) else stringResource(R.string.token_access_description),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                TextButton(onClick = if (username == null) onConnect else onDisconnect) {
-                    Text(stringResource(if (username == null) R.string.add_token else R.string.disconnect))
-                }
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onImport, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.FileUpload, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.import_label))
-                }
-                OutlinedButton(onClick = onExport, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.FileDownload, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.export_label))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun RepoSection(
-    title: String,
-    repos: List<TrackedRepo>,
-    state: AppUpdatesUiState,
-    viewModel: AppUpdatesViewModel,
-    onNotes: (TrackedRepo) -> Unit,
-    onEdit: (TrackedRepo) -> Unit,
-    onRemove: (TrackedRepo) -> Unit
-) {
-    SettingsSection(title = title) {
-        repos.forEachIndexed { index, repo ->
-            RepoCard(
-                repo = repo,
-                downloadState = state.downloadStates[repo.fullName] ?: UpdateDownloadState.Idle,
-                index = index,
-                count = repos.size,
-                onNotes = { onNotes(repo) },
-                onEdit = { onEdit(repo) },
-                onRemove = { onRemove(repo) },
-                onDownload = { viewModel.download(repo) },
-                onInstall = { file ->
-                    if (viewModel.canInstallPackages()) viewModel.install(repo, file)
-                    else viewModel.openInstallPermissionSettings()
-                }
-            )
-        }
-    }
-}
-
-@Composable
-private fun RepoCard(
-    repo: TrackedRepo,
-    downloadState: UpdateDownloadState,
-    index: Int,
-    count: Int,
-    onNotes: () -> Unit,
-    onEdit: () -> Unit,
-    onRemove: () -> Unit,
-    onDownload: () -> Unit,
-    onInstall: (java.io.File) -> Unit
-) {
-    var menu by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val iconModel = remember(repo.mappedPackageName, repo.avatarUrl) {
-        repo.mappedPackageName?.let { runCatching { context.packageManager.getApplicationIcon(it) }.getOrNull() }
-            ?: repo.avatarUrl
-    }
-    val shape = when {
-        count == 1 -> RoundedCornerShape(24.dp)
-        index == 0 -> RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp, bottomStart = 4.dp, bottomEnd = 4.dp)
-        index == count - 1 -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
-        else -> RoundedCornerShape(4.dp)
-    }
-    Surface(modifier = Modifier.fillMaxWidth(), shape = shape, color = MaterialTheme.colorScheme.surfaceContainer) {
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AsyncImage(model = iconModel, contentDescription = null, modifier = Modifier.size(44.dp))
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(repo.mappedAppName ?: repo.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(repo.fullName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options)) }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.edit)) }, leadingIcon = { Icon(Icons.Filled.Edit, null) }, onClick = { menu = false; onEdit() })
-                        DropdownMenuItem(text = { Text(stringResource(R.string.stop_tracking)) }, leadingIcon = { Icon(Icons.Filled.Delete, null) }, onClick = { menu = false; onRemove() })
-                    }
-                }
-            }
-            repo.description?.takeIf(String::isNotBlank)?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
-            }
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = if (repo.isUpdateAvailable) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest, shape = RoundedCornerShape(10.dp)) {
-                    Text(
-                        if (repo.installedVersionName == null) repo.latestTagName else "${repo.installedVersionName}  →  ${repo.latestTagName}",
-                        style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                TextButton(onClick = onNotes, enabled = !repo.latestReleaseBody.isNullOrBlank()) {
-                    Icon(Icons.Filled.Description, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.notes))
-                }
-                when (downloadState) {
-                    is UpdateDownloadState.Downloaded -> FilledTonalButton(onClick = { onInstall(downloadState.apkFile) }) { Text(stringResource(R.string.install)) }
-                    is UpdateDownloadState.Downloading -> Text("${downloadState.progressPercent}%", style = MaterialTheme.typography.labelLarge)
-                    else -> if (repo.installedVersionName != null && !repo.isUpdateAvailable) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.CheckCircle, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(5.dp)); Text(stringResource(R.string.current_version), style = MaterialTheme.typography.labelLarge)
-                        }
-                    } else FilledTonalButton(onClick = onDownload, enabled = repo.downloadUrl != null) {
-                        Text(stringResource(if (repo.installedVersionName == null) R.string.download_and_install else R.string.update))
-                    }
-                }
-            }
-            if (downloadState is UpdateDownloadState.Downloading) {
-                LinearProgressIndicator(
-                    progress = { downloadState.progressPercent / 100f },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
-            }
-            if (downloadState is UpdateDownloadState.Error) {
-                Text(downloadState.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun AddRepositoryInput(
-    query: String,
-    includePreReleases: Boolean,
-    searching: Boolean,
-    onQueryChange: (String) -> Unit,
-    onIncludePreReleasesChange: (Boolean) -> Unit,
-    onSearch: () -> Unit,
-    onDismiss: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val focusRequester = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
-
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        keyboard?.show()
-    }
-
-    Card(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(R.string.add_repository),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Close, stringResource(R.string.cancel), Modifier.size(18.dp))
-                }
-            }
-            OutlinedTextField(
-                value = query,
-                onValueChange = onQueryChange,
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
-                placeholder = { Text(stringResource(R.string.repository_address_example)) },
-                leadingIcon = { Icon(Icons.Filled.Link, stringResource(R.string.repository_address)) },
-                trailingIcon = {
-                    Row {
-                        if (query.isNotEmpty()) {
-                            IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Filled.Close, stringResource(R.string.clear_link), Modifier.size(18.dp))
-                            }
-                        }
-                        IconButton(
-                            onClick = {
-                                val clipboard = context.getSystemService(ClipboardManager::class.java)
-                                clipboard?.primaryClip?.takeIf { it.itemCount > 0 }
-                                    ?.getItemAt(0)?.text?.toString()?.let(onQueryChange)
-                            },
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(Icons.Filled.ContentPaste, stringResource(R.string.paste), Modifier.size(18.dp))
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = {
-                    if (query.isNotBlank() && !searching) {
-                        keyboard?.hide()
-                        onSearch()
-                    }
-                })
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    stringResource(R.string.include_prereleases),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f)
-                )
-                Switch(checked = includePreReleases, onCheckedChange = onIncludePreReleasesChange)
-                Spacer(Modifier.width(8.dp))
-                FilledTonalButton(
-                    onClick = {
-                        keyboard?.hide()
-                        onSearch()
-                    },
-                    enabled = query.isNotBlank() && !searching
-                ) {
-                    if (searching) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Filled.Search, stringResource(R.string.find_repository), Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.add_repository))
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ConfigureRepoBottomSheet(
-    state: AppUpdatesUiState,
-    onDismiss: () -> Unit,
-    onSelectApk: (String) -> Unit,
-    onSelectApp: (InstalledApp?) -> Unit,
-    onAllowPreReleases: (Boolean) -> Unit,
-    onSave: () -> Unit
-) {
-    val preview = state.preview ?: return
-    var apkMenu by remember { mutableStateOf(false) }
-    var appPicker by remember { mutableStateOf(false) }
-    var showReadme by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.fillMaxWidth().fillMaxHeight(0.92f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Text(stringResource(R.string.configure_repository), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AsyncImage(model = preview.repository.owner.avatar_url, contentDescription = null, modifier = Modifier.size(52.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(preview.repository.full_name, fontWeight = FontWeight.Bold)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Filled.Star, null, Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
-                            Text(stringResource(R.string.star_count, preview.repository.stargazers_count), style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                }
-                preview.repository.description?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                if (preview.readme.isNotBlank()) {
-                    OutlinedButton(onClick = { showReadme = true }, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Filled.Description, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.view_readme))
-                    }
-                }
-                HorizontalDivider()
-                Text(stringResource(R.string.apk_asset), fontWeight = FontWeight.SemiBold)
-                Box {
-                    val selectedLabel = if (preview.selectedApkName == TrackedRepo.AUTO_APK) {
-                        val match = dev.qtremors.acqua.data.updater.AppUpdater.selectBestApkAsset(preview.apkAssets)?.name
-                        stringResource(R.string.automatic_apk, match ?: stringResource(R.string.no_compatible_asset))
-                    } else preview.selectedApkName
-                    OutlinedButton(onClick = { apkMenu = true }, modifier = Modifier.fillMaxWidth()) { Text(selectedLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    DropdownMenu(expanded = apkMenu, onDismissRequest = { apkMenu = false }) {
-                        DropdownMenuItem(text = { Text(stringResource(R.string.automatic_recommended)) }, onClick = { onSelectApk(TrackedRepo.AUTO_APK); apkMenu = false })
-                        preview.apkAssets.forEach { asset ->
-                            DropdownMenuItem(text = { Text(asset.name) }, onClick = { onSelectApk(asset.name); apkMenu = false })
-                        }
-                    }
-                }
-                Text(stringResource(R.string.linked_app), fontWeight = FontWeight.SemiBold)
-                OutlinedButton(onClick = { appPicker = true }, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Apps, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(preview.linkedApp?.appName ?: stringResource(R.string.not_installed))
-                }
-                OptionSwitch(stringResource(R.string.include_prereleases), stringResource(R.string.include_prereleases_description), preview.allowPreReleases, onAllowPreReleases)
-                Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.track_repository)) }
-            Spacer(Modifier.size(24.dp))
-        }
-    }
-    if (appPicker) {
-        InstalledAppPickerSheet(state.installedApps, onDismiss = { appPicker = false }, onSelect = { onSelectApp(it); appPicker = false })
-    }
-    if (showReadme) {
-        AlertDialog(
-            onDismissRequest = { showReadme = false },
-            title = { Text(stringResource(R.string.repository_readme)) },
-            text = {
-                SelectionContainer {
-                    Text(
-                        preview.readme,
-                        modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            },
-            confirmButton = { TextButton(onClick = { showReadme = false }) { Text(stringResource(R.string.done)) } }
-        )
-    }
-}
-
-@Composable
-private fun OptionSwitch(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.Medium); Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun InstalledAppPickerSheet(apps: List<InstalledApp>, onDismiss: () -> Unit, onSelect: (InstalledApp?) -> Unit) {
-    var query by remember { mutableStateOf("") }
-    val filtered = remember(apps, query) { apps.filter { it.appName.contains(query, true) || it.packageName.contains(query, true) } }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.8f).padding(horizontal = 20.dp)) {
-            Text(stringResource(R.string.link_installed_app), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), label = { Text(stringResource(R.string.search_apps)) }, leadingIcon = { Icon(Icons.Filled.Search, null) }, singleLine = true)
-            TextButton(onClick = { onSelect(null) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.not_installed_track_only)) }
-            LazyColumn(Modifier.weight(1f)) {
-                items(filtered, key = InstalledApp::packageName) { app ->
-                    TextButton(onClick = { onSelect(app) }, modifier = Modifier.fillMaxWidth()) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text(app.appName, color = MaterialTheme.colorScheme.onSurface)
-                            Text("${app.packageName} · ${app.versionName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ReleaseNotesBottomSheet(repo: TrackedRepo, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f).padding(horizontal = 20.dp)) {
-            Text(repo.latestReleaseName ?: repo.latestTagName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(repo.fullName, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Box(Modifier.weight(1f)) {
-                SelectionContainer {
-                    Text(repo.latestReleaseBody.orEmpty(), modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 16.dp), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            repo.latestReleaseUrl?.let { url ->
-                OutlinedButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }, modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.view_release_on_github))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TokenDialog(saving: Boolean, onDismiss: () -> Unit, onSave: (String) -> Unit) {
-    var token by remember { mutableStateOf("") }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.github_token_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(stringResource(R.string.github_token_description))
-                OutlinedTextField(value = token, onValueChange = { token = it }, label = { Text(stringResource(R.string.github_token)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSave(token) }, enabled = token.isNotBlank() && !saving) { Text(stringResource(R.string.connect)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } }
-    )
 }
