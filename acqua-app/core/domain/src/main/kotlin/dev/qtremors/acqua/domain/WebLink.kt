@@ -9,19 +9,16 @@ object WebLink {
     fun normalize(input: String): String? {
         val trimmed = input.trim()
         if (trimmed.isEmpty()) return null
-
         val candidate = if (trimmed.contains(Regex("\\s"))) {
             webUrlPattern.find(trimmed)?.value ?: return null
         } else {
             trimmed
         }.trimEnd(*trailingPunctuation)
-
         val withScheme = if (candidate.startsWith("http://", true) || candidate.startsWith("https://", true)) {
             candidate
         } else {
             "https://$candidate"
         }
-
         return runCatching {
             val uri = URI(withScheme)
             require(uri.scheme.equals("https", true) || uri.scheme.equals("http", true))
@@ -63,8 +60,7 @@ object WebLink {
         return host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com")
     }
 
-    fun isYouTubeMusicUrl(url: String): Boolean =
-        host(url) == "music.youtube.com"
+    fun isYouTubeMusicUrl(url: String): Boolean = host(url) == "music.youtube.com"
 
     fun preferredEngine(input: String, fallback: DownloadEngine): DownloadEngine {
         val url = normalize(input) ?: return fallback
@@ -76,11 +72,12 @@ object WebLink {
         }
     }
 
-    // Carousel navigation changes the query without changing the Instagram post.
     fun mediaPageIdentity(input: String): String? {
         val url = normalize(input) ?: return null
         return if (isInstagramMediaUrl(url)) {
             "${host(url)}${URI(url).path.trimEnd('/')}"
-        } else url
+        } else {
+            url
+        }
     }
 }

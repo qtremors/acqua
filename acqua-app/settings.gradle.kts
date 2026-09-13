@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Acqua"
 include(":app")
+include(":core:domain")

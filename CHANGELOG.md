@@ -2,6 +2,13 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.4] - 2026-09-13
+
+### Changed
+
+- Strengthen local build verification with strict release artifact, version, dependency, string, and source-quality checks.
+- Establish enforceable domain and feature dependency boundaries without changing user data.
+
 ## [0.2.3] - 2026-09-12
 
 ### Changed

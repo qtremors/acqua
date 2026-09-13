@@ -1,20 +1,10 @@
 package dev.qtremors.acqua.domain
 
-enum class MediaKind {
-    IMAGE,
-    VIDEO,
-    AUDIO
-}
+enum class MediaKind { IMAGE, VIDEO, AUDIO }
 
-enum class MediaBackend {
-    DIRECT,
-    YT_DLP
-}
+enum class MediaBackend { DIRECT, YT_DLP }
 
-enum class DownloadEngine {
-    ACQUA,
-    YT_DLP
-}
+enum class DownloadEngine { ACQUA, YT_DLP }
 
 data class MediaFormatOption(
     val id: String,

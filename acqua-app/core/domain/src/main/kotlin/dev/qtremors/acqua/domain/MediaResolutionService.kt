@@ -25,7 +25,6 @@ class MediaResolutionService(
                 MediaResolutionFailure.INVALID_LINK,
                 "Enter a valid HTTP or HTTPS link."
             )
-
         if (engine == DownloadEngine.YT_DLP) {
             return resolveWithYtDlp(url, browserSessionsEnabled || forceBrowserResolution)
         }
@@ -35,9 +34,7 @@ class MediaResolutionService(
                 "YouTube links require the yt-dlp engine."
             )
         }
-        if (forceBrowserResolution) {
-            return validateAndSelect(url, browserResolver(url, true))
-        }
+        if (forceBrowserResolution) return validateAndSelect(url, browserResolver(url, true))
         if (!WebLink.isInstagramMediaUrl(url)) {
             if (!allowBrowserFallback) {
                 throw MediaResolutionException(
@@ -52,8 +49,7 @@ class MediaResolutionService(
             val candidates = withContext(Dispatchers.IO) {
                 sourceResolver.resolve(url).map { it.copy(referer = it.referer ?: url) }
             }
-            val selected = validateAndSelect(url, candidates)
-            return selected
+            return validateAndSelect(url, candidates)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -95,9 +91,11 @@ class MediaResolutionService(
         val uniqueCandidates = candidates.distinctBy(ResolvedMedia::url).take(MAX_CANDIDATES)
         val validated = uniqueCandidates.chunked(MAX_CONCURRENT_INSPECTIONS).flatMap { batch ->
             coroutineScope {
-                batch.map { item -> async(Dispatchers.IO) {
-                    if (item.backend == MediaBackend.YT_DLP) item else inspectMedia(item)
-                } }.awaitAll().filterNotNull()
+                batch.map { item ->
+                    async(Dispatchers.IO) {
+                        if (item.backend == MediaBackend.YT_DLP) item else inspectMedia(item)
+                    }
+                }.awaitAll().filterNotNull()
             }
         }
         if (validated.isEmpty()) {
