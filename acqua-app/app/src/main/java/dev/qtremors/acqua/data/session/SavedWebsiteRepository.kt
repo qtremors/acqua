@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import androidx.core.content.edit
 import dev.qtremors.acqua.domain.WebLink
+import dev.qtremors.acqua.platform.image.BoundedBitmapDecoder
 import org.json.JSONObject
 import java.io.File
 
@@ -99,7 +100,9 @@ class SavedWebsiteRepository(context: Context) {
 
     private fun saveIcon(host: String, icon: Bitmap) = runCatching {
         iconDirectory().mkdirs()
-        iconFile(host).outputStream().use { icon.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        val bounded = BoundedBitmapDecoder.scale(icon, ICON_SIZE_PX, ICON_SIZE_PX) ?: return@runCatching
+        iconFile(host).outputStream().use { bounded.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        if (bounded !== icon) bounded.recycle()
     }
 
     private fun iconDirectory() = File(appContext.cacheDir, ICON_DIRECTORY)
@@ -116,5 +119,6 @@ class SavedWebsiteRepository(context: Context) {
         const val LEGACY_KEY_ORIGINS = "login_origins"
         const val KEY_LAST_ORIGIN = "last_origin"
         const val ICON_DIRECTORY = "website_login_icons"
+        const val ICON_SIZE_PX = 256
     }
 }

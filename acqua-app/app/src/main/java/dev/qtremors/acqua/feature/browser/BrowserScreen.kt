@@ -6,8 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.net.Uri
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.Bundle
 import android.view.MotionEvent
@@ -39,6 +38,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -47,6 +47,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -66,6 +68,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.DesktopMac
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.MoreVert
@@ -90,7 +93,8 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -105,9 +109,12 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -123,20 +130,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.qtremors.acqua.R
-import dev.qtremors.acqua.auth.LivePageExtractionFailure
-import dev.qtremors.acqua.auth.LivePageExtractionOutcome
-import dev.qtremors.acqua.auth.LivePageMediaCollector
-import dev.qtremors.acqua.data.session.InstagramSessionStore
+import dev.qtremors.acqua.resolver.web.LivePageExtractionFailure
+import dev.qtremors.acqua.resolver.web.LivePageExtractionOutcome
+import dev.qtremors.acqua.resolver.web.LivePageMediaCollector
 import dev.qtremors.acqua.data.session.SavedInstagramSession
 import dev.qtremors.acqua.data.session.SavedWebsite
-import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import dev.qtremors.acqua.domain.BrowserDestination
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
-import dev.qtremors.acqua.feature.downloader.DownloadActivity
 import dev.qtremors.acqua.platform.HapticSignal
+import dev.qtremors.acqua.platform.image.BoundedBitmapDecoder
 import dev.qtremors.acqua.platform.performHaptic
-import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
+import dev.qtremors.acqua.resolver.web.WebExtractionEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Dispatchers
@@ -151,14 +156,12 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.io.File
 
-private const val DESKTOP_USER_AGENT =
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BrowserScreen(
     viewModel: BrowserViewModel,
     onExitToDownloader: () -> Unit,
+    onDownloadRequest: (BrowserDownloadRequest) -> Unit,
     modifier: Modifier = Modifier,
     active: Boolean = true,
     contentPadding: PaddingValues = PaddingValues(),
@@ -170,17 +173,16 @@ fun BrowserScreen(
 ) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
-    val savedWebsitesRepo = remember { SavedWebsiteRepository(context) }
 
-    var showAddDialog by remember { mutableStateOf(false) }
-    var showManageDialog by remember { mutableStateOf(false) }
-    var showBookmarksSheet by remember { mutableStateOf(false) }
-    var showMenuSheet by remember { mutableStateOf(false) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var showManageDialog by rememberSaveable { mutableStateOf(false) }
+    var showBookmarksSheet by rememberSaveable { mutableStateOf(false) }
+    var showMenuSheet by rememberSaveable { mutableStateOf(false) }
     var editingWebsite by remember { mutableStateOf<SavedWebsite?>(null) }
     var activeWebView by remember { mutableStateOf<WebView?>(null) }
-    var isEditingAddress by remember { mutableStateOf(false) }
+    var isEditingAddress by rememberSaveable { mutableStateOf(false) }
     var chromeVisible by remember(state.currentUrl?.let(WebLink::mediaPageIdentity)) { mutableStateOf(true) }
-    var searchInput by remember { mutableStateOf("") }
+    var searchInput by rememberSaveable { mutableStateOf("") }
     var extractionPending by remember { mutableStateOf(false) }
     var extractionJob by remember { mutableStateOf<Job?>(null) }
     val scope = rememberCoroutineScope()
@@ -225,8 +227,16 @@ fun BrowserScreen(
             val sourceUrl = state.currentUrl.orEmpty()
             extractionJob = scope.launch {
                 try {
-                    extractMediaFromPage(context, wv, sourceUrl, liveMediaCollector) {
-                        currentActive && WebLink.mediaPageIdentity(viewModel.state.value.currentUrl.orEmpty()) == WebLink.mediaPageIdentity(sourceUrl)
+                    extractMediaFromPage(
+                        context,
+                        wv,
+                        sourceUrl,
+                        liveMediaCollector,
+                        onDownloadRequest
+                    ) {
+                        currentActive &&
+                            WebLink.mediaPageIdentity(viewModel.state.value.currentUrl.orEmpty()) ==
+                            WebLink.mediaPageIdentity(sourceUrl)
                     }
                 } catch (error: CancellationException) {
                     throw error
@@ -329,7 +339,10 @@ fun BrowserScreen(
     if (showMenuSheet) {
         ModalBottomSheet(
             onDismissRequest = { showMenuSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = rememberBottomSheetState(
+                initialValue = SheetValue.Hidden,
+                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+            ),
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             dragHandle = { BottomSheetDefaults.DragHandle() }
@@ -408,7 +421,7 @@ fun BrowserScreen(
                     showMenuSheet = false
                     state.currentUrl?.let {
                         runCatching {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)))
+                            context.startActivity(Intent(Intent.ACTION_VIEW, it.toUri()))
                         }
                     }
                 },
@@ -475,6 +488,7 @@ fun BrowserScreen(
                         savedState = viewModel.savedWebViewState,
                         onSaveState = viewModel::saveWebViewState,
                         useSessions = state.useSessions,
+                        savedSession = state.savedSession,
                         isDesktopSite = state.isDesktopSite,
                         navigationAction = state.navigationAction,
                         onConsumeNavigationAction = { viewModel.consumeNavigationAction() },
@@ -484,16 +498,9 @@ fun BrowserScreen(
                         onProgressChanged = { progress, loading ->
                             viewModel.updateProgress(progress, loading)
                         },
-                        onIconReceived = { pageUrl, bitmap ->
-                            scope.launch(Dispatchers.IO) {
-                                savedWebsitesRepo.updateIcon(pageUrl, bitmap)
-                            }
-                        },
-                        onPageVisited = { pageUrl ->
-                            scope.launch(Dispatchers.IO) {
-                                savedWebsitesRepo.record(pageUrl)
-                            }
-                        },
+                        onIconReceived = viewModel::updateWebsiteIcon,
+                        onPageVisited = viewModel::recordVisit,
+                        onSessionCaptured = viewModel::saveSession,
                         onScrollDirection = { visible ->
                             if (!extractionPending) chromeVisible = visible
                         },
@@ -534,1237 +541,3 @@ fun BrowserScreen(
  * - Smart, compact Session Protection bar
  * - Saved Websites speed-dial grid
  */
-@Composable
-private fun BrowserStartPage(
-    state: BrowserUiState,
-    contentPadding: PaddingValues,
-    onSearchOrNavigate: (String) -> Unit,
-    onOpenWebsite: (String) -> Unit,
-    onAddWebsite: () -> Unit,
-    onEditWebsite: (SavedWebsite) -> Unit,
-    onManageWebsiteData: () -> Unit,
-    onToggleSessions: (Boolean) -> Unit
-) {
-    var query by remember { mutableStateOf("") }
-    val colors = MaterialTheme.colorScheme
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(
-                start = 18.dp,
-                end = 18.dp,
-                top = 14.dp,
-                bottom = contentPadding.calculateBottomPadding() + 28.dp
-            )
-    ) {
-        // 1. Search bar pill
-        Surface(
-            shape = RoundedCornerShape(26.dp),
-            color = colors.surfaceContainerHigh,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 16.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 4.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Search,
-                    contentDescription = null,
-                    tint = colors.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
-                )
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    placeholder = {
-                        Text(
-                            text = stringResource(R.string.browser_search_or_type_url),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant
-                        )
-                    },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledBorderColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent
-                    ),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = {
-                        if (query.isNotBlank()) onSearchOrNavigate(query.trim())
-                    }),
-                    modifier = Modifier.weight(1f)
-                )
-                if (query.isNotBlank()) {
-                    IconButton(onClick = { query = "" }) {
-                        Icon(Icons.Filled.Clear, stringResource(R.string.clear_link), tint = colors.onSurfaceVariant)
-                    }
-                }
-            }
-        }
-
-        // 2. Smart, compact Session Protection bar
-        Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = colors.surfaceContainerHigh,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 20.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 8.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (state.useSessions) colors.primary.copy(alpha = 0.15f)
-                            else colors.surfaceContainerHighest
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (state.useSessions) Icons.Filled.Lock else Icons.Filled.Security,
-                        contentDescription = null,
-                        tint = if (state.useSessions) colors.primary else colors.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.browser_sessions),
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = colors.onSurface
-                    )
-                    Text(
-                        text = if (state.useSessions) stringResource(R.string.browser_sessions_active_desc)
-                               else stringResource(R.string.browser_sessions_inactive_desc),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = colors.onSurfaceVariant
-                    )
-                }
-                IconButton(
-                    onClick = onManageWebsiteData,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.DeleteOutline,
-                        contentDescription = stringResource(R.string.manage_website_data),
-                        tint = colors.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-                Switch(
-                    checked = state.useSessions,
-                    onCheckedChange = onToggleSessions
-                )
-            }
-        }
-
-        // 3. Saved Websites Section
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = stringResource(R.string.saved_websites),
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = colors.onSurface
-            )
-            if (state.websites.isNotEmpty()) {
-                Text(
-                    text = "${state.websites.size}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = colors.primary
-                )
-            }
-        }
-
-        // Speed Dial FlowRow (wraps and shows all shortcuts nicely)
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            state.websites.forEach { website ->
-                WebsiteTile(
-                    website = website,
-                    onOpen = { onOpenWebsite(website.origin) },
-                    onEdit = { onEditWebsite(website) }
-                )
-            }
-            AddWebsiteTile(onClick = onAddWebsite)
-        }
-    }
-}
-
-/**
- * Top Address Bar when browsing a website (matching Reference Image 2):
- * - SSL lock indicator
- * - Current host or formatted URL
- * - Shield icon
- * - Smooth progress bar underneath while loading
- */
-@Composable
-private fun BrowserTopBar(
-    currentUrl: String,
-    isSecure: Boolean,
-    isLoading: Boolean,
-    progress: Int,
-    isEditing: Boolean,
-    onStartEditing: () -> Unit,
-    onCancelEditing: () -> Unit,
-    onNavigate: (String) -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-    var editingText by remember(isEditing, currentUrl) { mutableStateOf(currentUrl) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .background(colors.surfaceContainerHigh)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            if (isEditing) {
-                IconButton(onClick = onCancelEditing, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = colors.onSurface)
-                }
-                OutlinedTextField(
-                    value = editingText,
-                    onValueChange = { editingText = it },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = colors.outline
-                    ),
-                    shape = RoundedCornerShape(20.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = {
-                        if (editingText.isNotBlank()) onNavigate(editingText.trim())
-                    }),
-                    trailingIcon = {
-                        if (editingText.isNotBlank()) {
-                            IconButton(onClick = { editingText = "" }) {
-                                Icon(Icons.Filled.Clear, stringResource(R.string.clear_link))
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 6.dp)
-                )
-                IconButton(
-                    onClick = { if (editingText.isNotBlank()) onNavigate(editingText.trim()) },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(Icons.Filled.Public, stringResource(R.string.go), tint = colors.primary)
-                }
-            } else {
-                Surface(
-                    onClick = onStartEditing,
-                    shape = RoundedCornerShape(22.dp),
-                    color = colors.surfaceContainerHighest.copy(alpha = 0.6f),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 14.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (isSecure) Icons.Filled.Lock else Icons.Filled.Security,
-                            contentDescription = stringResource(if (isSecure) R.string.secure_connection else R.string.insecure_connection),
-                            tint = if (isSecure) colors.onSurfaceVariant else colors.error,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text = formatDisplayAddress(currentUrl),
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = colors.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.Security,
-                            contentDescription = stringResource(R.string.secure_connection),
-                            tint = colors.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        if (isLoading && progress < 100) {
-            LinearProgressIndicator(
-                progress = { progress / 100f },
-                color = colors.primary,
-                trackColor = colors.surfaceContainer,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.5.dp)
-            )
-        }
-    }
-}
-
-/**
- * Bottom Browser Toolbar (matching Reference Image 2):
- * - Home icon
- * - Bookmarks icon
- * - Search icon
- * - Download Page Media action
- * - 3-Dot Overflow Menu
- */
-@Composable
-private fun BrowserBottomToolbar(
-    isBookmarked: Boolean,
-    onHome: () -> Unit,
-    onToggleBookmark: () -> Unit,
-    onSearch: () -> Unit,
-    onDownloadMedia: () -> Unit,
-    onOpenMenu: () -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-
-    Surface(
-        color = colors.surfaceContainerHigh,
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceAround
-        ) {
-            // 1. Home button
-            IconButton(onClick = onHome, modifier = Modifier.size(46.dp)) {
-                Icon(Icons.Filled.Home, stringResource(R.string.home), tint = colors.onSurface)
-            }
-
-            // 2. Bookmarks button
-            IconButton(onClick = onToggleBookmark, modifier = Modifier.size(46.dp)) {
-                Icon(
-                    imageVector = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                    contentDescription = stringResource(
-                        if (isBookmarked) R.string.remove_bookmark else R.string.save_website
-                    ),
-                    tint = if (isBookmarked) colors.primary else colors.onSurface
-                )
-            }
-
-            // 3. Search button
-            IconButton(onClick = onSearch, modifier = Modifier.size(46.dp)) {
-                Icon(Icons.Filled.Search, stringResource(R.string.search_or_enter_website), tint = colors.onSurface)
-            }
-
-            // 4. Download media action
-            IconButton(onClick = onDownloadMedia, modifier = Modifier.size(46.dp)) {
-                Icon(Icons.Filled.Download, stringResource(R.string.download_page_media), tint = colors.primary)
-            }
-
-            // 5. 3-Dot Overflow Menu
-            IconButton(onClick = onOpenMenu, modifier = Modifier.size(46.dp)) {
-                Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options), tint = colors.onSurface)
-            }
-        }
-    }
-}
-
-/**
- * Material 3 Expressive Browser Overflow Menu:
- * - Header status card with website favicon, page title, host, and SSL lock badge
- * - Segmented cards grouping related actions:
- *     1. Media & Bookmarks (Download media, Bookmark toggle, Bookmarks list)
- *     2. Page Options (Desktop site switch, Session protection switch)
- *     3. Link & Tools (Copy link, Share link, Open external, Manage website data)
- *     4. Exit navigation (Return to Downloader)
- * - Pinned Bottom Quick Actions Pill (Back, Forward, Stop/Refresh, Home) right at thumb level
- */
-@Composable
-private fun BrowserExpressiveMenu(
-    currentUrl: String,
-    pageTitle: String?,
-    favicon: Bitmap?,
-    isBookmarked: Boolean,
-    isDesktopSite: Boolean,
-    useSessions: Boolean,
-    canGoBack: Boolean,
-    canGoForward: Boolean,
-    isLoading: Boolean,
-    onGoBack: () -> Unit,
-    onGoForward: () -> Unit,
-    onReload: () -> Unit,
-    onStop: () -> Unit,
-    onHome: () -> Unit,
-    onDownloadMedia: () -> Unit,
-    onToggleBookmark: () -> Unit,
-    onBookmarks: () -> Unit,
-    onToggleDesktopSite: () -> Unit,
-    onToggleSessions: () -> Unit,
-    onCopyLink: () -> Unit,
-    onShareLink: () -> Unit,
-    onClearData: () -> Unit,
-    onOpenExternal: () -> Unit,
-    onExitToDownloader: () -> Unit
-) {
-    val colors = MaterialTheme.colorScheme
-    val host = remember(currentUrl) {
-        WebLink.host(currentUrl)?.removePrefix("www.").orEmpty()
-    }
-    val isHttps = remember(currentUrl) {
-        currentUrl.startsWith("https://", ignoreCase = true)
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(bottom = 8.dp)
-    ) {
-        // Scrollable content area containing header and segmented cards
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = false)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Header Info Card (Favicon, Title, Host, Security Badge)
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = colors.surfaceContainer,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    val safeFavicon = favicon?.takeUnless { it.isRecycled }
-                    if (safeFavicon != null) {
-                        Image(
-                            bitmap = safeFavicon.asImageBitmap(),
-                            contentDescription = null,
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isHttps) colors.primaryContainer else colors.surfaceContainerHighest,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = if (isHttps) Icons.Filled.Lock else Icons.Filled.Security,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                    tint = if (isHttps) colors.onPrimaryContainer else colors.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = pageTitle?.takeIf { it.isNotBlank() } ?: host.ifBlank { currentUrl },
-                            style = MaterialTheme.typography.titleSmall,
-                            color = colors.onSurface,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = host.ifBlank { currentUrl },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-            }
-
-            // Segment 1: Media & Bookmarks
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    ExpressiveMenuItem(
-                        title = stringResource(R.string.download_page_media),
-                        icon = Icons.Filled.Download,
-                        iconTint = colors.primary,
-                        onClick = onDownloadMedia
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = colors.outlineVariant.copy(alpha = 0.35f)
-                    )
-                    ExpressiveMenuItem(
-                        title = stringResource(if (isBookmarked) R.string.remove_bookmark else R.string.save_website),
-                        icon = if (isBookmarked) Icons.Filled.Bookmark else Icons.Filled.BookmarkBorder,
-                        iconTint = if (isBookmarked) colors.primary else colors.onSurface,
-                        onClick = onToggleBookmark
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = colors.outlineVariant.copy(alpha = 0.35f)
-                    )
-                    ExpressiveMenuItem(
-                        title = stringResource(R.string.bookmarks),
-                        icon = Icons.Filled.BookmarkBorder,
-                        iconTint = colors.onSurface,
-                        onClick = onBookmarks
-                    )
-                }
-            }
-
-            // Segment 2: Page Options (Desktop site, Sessions)
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    ExpressiveMenuItem(
-                        title = stringResource(R.string.desktop_site),
-                        icon = Icons.Filled.DesktopMac,
-                        onClick = onToggleDesktopSite,
-                        trailing = {
-                            Switch(
-                                checked = isDesktopSite,
-                                onCheckedChange = { onToggleDesktopSite() }
-                            )
-                        }
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = colors.outlineVariant.copy(alpha = 0.35f)
-                    )
-                    ExpressiveMenuItem(
-                        title = stringResource(R.string.use_browser_sessions),
-                        icon = Icons.Filled.Security,
-                        onClick = onToggleSessions,
-                        trailing = {
-                            Switch(
-                                checked = useSessions,
-                                onCheckedChange = { onToggleSessions() }
-                            )
-                        }
-                    )
-                }
-            }
-
-            // Segment 3: Link & Tools
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    ExpressiveMenuItem(
-                        title = stringResource(R.string.copy_link),
-                        icon = Icons.Filled.ContentCopy,
-                        onClick = onCopyLink
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = colors.outlineVariant.copy(alpha = 0.35f)
-                    )
-                    ExpressiveMenuItem(
-                        title = stringResource(R.string.share_link),
-                        icon = Icons.Filled.Share,
-                        onClick = onShareLink
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = colors.outlineVariant.copy(alpha = 0.35f)
-                    )
-                    ExpressiveMenuItem(
-                        title = stringResource(R.string.open_in_external_browser),
-                        icon = Icons.AutoMirrored.Filled.OpenInNew,
-                        onClick = onOpenExternal
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        color = colors.outlineVariant.copy(alpha = 0.35f)
-                    )
-                    ExpressiveMenuItem(
-                        title = stringResource(R.string.manage_website_data),
-                        icon = Icons.Filled.DeleteOutline,
-                        onClick = onClearData
-                    )
-                }
-            }
-
-            // Segment 4: App Navigation
-            Card(
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = colors.surfaceContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                ExpressiveMenuItem(
-                    title = stringResource(R.string.exit_to_app),
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    iconTint = colors.primary,
-                    onClick = onExitToDownloader
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Pinned Bottom Quick Actions Pill (Back, Forward, Refresh/Stop, Home)
-        Surface(
-            shape = RoundedCornerShape(26.dp),
-            color = colors.surfaceContainerHighest,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(
-                    onClick = onGoBack,
-                    enabled = canGoBack,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.back)
-                    )
-                }
-                IconButton(
-                    onClick = onGoForward,
-                    enabled = canGoForward,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowForward,
-                        contentDescription = stringResource(R.string.forward)
-                    )
-                }
-                IconButton(
-                    onClick = { if (isLoading) onStop() else onReload() },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        if (isLoading) Icons.Filled.Clear else Icons.Filled.Refresh,
-                        contentDescription = stringResource(if (isLoading) R.string.stop else R.string.refresh)
-                    )
-                }
-                IconButton(
-                    onClick = onHome,
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    Icon(
-                        Icons.Filled.Home,
-                        contentDescription = stringResource(R.string.home)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ExpressiveMenuItem(
-    title: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    iconTint: Color = MaterialTheme.colorScheme.onSurface,
-    trailing: (@Composable () -> Unit)? = null
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconTint,
-            modifier = Modifier.size(24.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        if (trailing != null) {
-            Spacer(modifier = Modifier.width(8.dp))
-            trailing()
-        }
-    }
-}
-
-/**
- * Container hosting the interactive WebView
- */
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-private fun BrowserWebViewContainer(
-    url: String,
-    active: Boolean,
-    savedState: Bundle?,
-    onSaveState: (String?, Bundle) -> Unit,
-    useSessions: Boolean,
-    isDesktopSite: Boolean,
-    navigationAction: dev.qtremors.acqua.feature.browser.BrowserNavigationAction?,
-    onConsumeNavigationAction: () -> Unit,
-    onPageStateChanged: (url: String?, title: String?, canBack: Boolean, canForward: Boolean, isSecure: Boolean) -> Unit,
-    onProgressChanged: (progress: Int, isLoading: Boolean) -> Unit,
-    onIconReceived: (url: String, icon: Bitmap) -> Unit,
-    onPageVisited: (url: String) -> Unit,
-    onScrollDirection: (Boolean) -> Unit,
-    onWebViewReady: (WebView?) -> Unit
-) {
-    val context = LocalContext.current
-    val instagramSessions = remember { InstagramSessionStore(context) }
-    val currentUseSessions by rememberUpdatedState(useSessions)
-    val currentOnScrollDirection by rememberUpdatedState(onScrollDirection)
-
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
-    var currentLoadedUrl by remember { mutableStateOf<String?>(null) }
-
-    DisposableEffect(webViewRef) {
-        val webView = webViewRef
-        onDispose { webView?.clearFocus() }
-    }
-
-    // Handle incoming navigation actions from ViewModel
-    LaunchedEffect(navigationAction, webViewRef) {
-        val wv = webViewRef ?: return@LaunchedEffect
-        when (navigationAction) {
-            dev.qtremors.acqua.feature.browser.BrowserNavigationAction.RELOAD -> wv.reload()
-            dev.qtremors.acqua.feature.browser.BrowserNavigationAction.STOP -> wv.stopLoading()
-            dev.qtremors.acqua.feature.browser.BrowserNavigationAction.BACK -> if (wv.canGoBack()) wv.goBack()
-            dev.qtremors.acqua.feature.browser.BrowserNavigationAction.FORWARD -> if (wv.canGoForward()) wv.goForward()
-            null -> {}
-        }
-        if (navigationAction != null) onConsumeNavigationAction()
-    }
-
-    // Handle desktop mode toggle
-    LaunchedEffect(isDesktopSite, webViewRef) {
-        val wv = webViewRef ?: return@LaunchedEffect
-        val userAgent = if (isDesktopSite) DESKTOP_USER_AGENT else WebSettings.getDefaultUserAgent(context)
-        if (wv.settings.userAgentString != userAgent) {
-            wv.settings.userAgentString = userAgent
-            wv.reload()
-        }
-    }
-
-    LaunchedEffect(active, webViewRef) {
-        val wv = webViewRef ?: return@LaunchedEffect
-        if (active) {
-            wv.onResume()
-        } else {
-            wv.clearFocus()
-            wv.onPause()
-        }
-    }
-
-    AndroidView(
-        factory = { ctx ->
-            WebView(ctx).apply {
-                layoutParams = ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT
-                )
-                setBackgroundColor(android.graphics.Color.rgb(12, 16, 20))
-
-                settings.apply {
-                    javaScriptEnabled = true
-                    domStorageEnabled = true
-                    allowFileAccess = false
-                    allowContentAccess = false
-                    javaScriptCanOpenWindowsAutomatically = false
-                    setSupportMultipleWindows(false)
-                    mediaPlaybackRequiresUserGesture = true
-                    mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                    if (isDesktopSite) userAgentString = DESKTOP_USER_AGENT
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) safeBrowsingEnabled = true
-                }
-
-                var lastTouchY = 0f
-                setOnTouchListener { _, event ->
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> lastTouchY = event.y
-                        MotionEvent.ACTION_MOVE -> {
-                            val delta = event.y - lastTouchY
-                            if (kotlin.math.abs(delta) > 16 * resources.displayMetrics.density) {
-                                currentOnScrollDirection(delta > 0 || scrollY == 0)
-                                lastTouchY = event.y
-                            }
-                        }
-                    }
-                    false
-                }
-                setOnScrollChangeListener { _, _, scrollY, _, _ ->
-                    if (scrollY == 0) currentOnScrollDirection(true)
-                }
-
-                val webViewInstance = this
-                CookieManager.getInstance().apply {
-                    setAcceptCookie(true)
-                    setAcceptThirdPartyCookies(webViewInstance, false)
-                }
-
-                webChromeClient = object : WebChromeClient() {
-                    override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                        onProgressChanged(newProgress, newProgress < 100)
-                        view?.let {
-                            val activeUrl = it.url
-                            val isSecure = activeUrl?.startsWith("https://") == true
-                            onPageStateChanged(activeUrl, it.title, it.canGoBack(), it.canGoForward(), isSecure)
-                        }
-                    }
-
-                    override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
-                        super.onReceivedIcon(view, icon)
-                        if (icon != null && view?.url != null) {
-                            onIconReceived(view.url!!, icon)
-                        }
-                    }
-                }
-
-                webViewClient = object : WebViewClient() {
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                        val scheme = request.url.scheme?.lowercase()
-                        if (scheme == "http" || scheme == "https") return false
-                        return true
-                    }
-
-                    override fun onPageStarted(view: WebView, pageUrl: String?, favicon: Bitmap?) {
-                        super.onPageStarted(view, pageUrl, favicon)
-                        onProgressChanged(15, true)
-                        pageUrl?.let {
-                            currentLoadedUrl = it
-                            val isSecure = it.startsWith("https://")
-                            onPageStateChanged(it, view.title, view.canGoBack(), view.canGoForward(), isSecure)
-                            if (favicon != null) onIconReceived(it, favicon)
-                        }
-                    }
-
-                    override fun onPageFinished(view: WebView, pageUrl: String?) {
-                        super.onPageFinished(view, pageUrl)
-                        onProgressChanged(100, false)
-                        pageUrl?.let {
-                            currentLoadedUrl = it
-                            val isSecure = it.startsWith("https://")
-                            onPageStateChanged(it, view.title, view.canGoBack(), view.canGoForward(), isSecure)
-                            onPageVisited(it)
-                            if (currentUseSessions && WebLink.isInstagramHost(it)) {
-                                val cookies = CookieManager.getInstance().getCookie("https://www.instagram.com").orEmpty()
-                                if (cookies.contains("sessionid=")) {
-                                    runCatching {
-                                        instagramSessions.save(SavedInstagramSession(cookies, view.settings.userAgentString.orEmpty()))
-                                    }
-                                }
-                            }
-                            CookieManager.getInstance().flush()
-                        }
-                    }
-                }
-
-                // Inject Instagram session cookies if enabled
-                if (useSessions && WebLink.isInstagramHost(url)) {
-                    val saved = instagramSessions.load()
-                    if (saved != null) {
-                        val cookieManager = CookieManager.getInstance()
-                        saved.cookies.split(';').forEach { raw ->
-                            val parts = raw.trim().split('=', limit = 2)
-                            if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
-                                cookieManager.setCookie(
-                                    "https://www.instagram.com",
-                                    "${parts[0]}=${parts[1]}; Domain=.instagram.com; Path=/; Secure; SameSite=None"
-                                )
-                            }
-                        }
-                        cookieManager.flush()
-                    }
-                }
-
-                currentLoadedUrl = url
-                if (savedState == null || restoreState(savedState) == null) {
-                    loadUrl(url)
-                } else {
-                    onPageStateChanged(this.url, title, canGoBack(), canGoForward(), this.url?.startsWith("https://") == true)
-                }
-                webViewRef = this
-                onWebViewReady(this)
-            }
-        },
-        update = { webView ->
-            if (!url.isBlank() && url != currentLoadedUrl && url != webView.url) {
-                currentLoadedUrl = url
-                webView.loadUrl(url)
-            }
-        },
-        onRelease = { webView ->
-            webView.clearFocus()
-            val history = Bundle()
-            if (webView.saveState(history) != null) onSaveState(webView.url, history)
-            onWebViewReady(null)
-            webViewRef = null
-            webView.setOnTouchListener(null)
-            webView.setOnScrollChangeListener(null)
-            webView.stopLoading()
-            webView.onPause()
-            webView.webChromeClient = null
-            webView.webViewClient = WebViewClient()
-            (webView.parent as? ViewGroup)?.removeView(webView)
-            webView.removeAllViews()
-            webView.destroy()
-        },
-        modifier = Modifier.fillMaxSize()
-    )
-}
-
-/**
- * Format address display (e.g. x.com/home)
- */
-private fun formatDisplayAddress(url: String): String {
-    val normalized = WebLink.normalize(url) ?: url
-    val host = WebLink.host(normalized) ?: return normalized
-    val withoutScheme = normalized.removePrefix("https://").removePrefix("http://").removePrefix("www.")
-    return withoutScheme.take(45)
-}
-
-/**
- * Media Extraction Helper from live page
- */
-private suspend fun extractMediaFromPage(
-    context: Context,
-    webView: WebView,
-    sourceUrl: String,
-    collector: LivePageMediaCollector,
-    isCurrentPage: () -> Boolean
-) {
-    collector.reset()
-    while (true) {
-        // Never combine media from a new page with the original source URL.
-        if (!isCurrentPage() || WebLink.mediaPageIdentity(webView.url.orEmpty()) != WebLink.mediaPageIdentity(sourceUrl)) return
-        val rawValue = withTimeoutOrNull(2_000L) {
-            suspendCancellableCoroutine<String?> { continuation ->
-                webView.evaluateJavascript(RenderedPageResolverActivity.EXTRACTION_SCRIPT) { value ->
-                    if (continuation.isActive) continuation.resume(value)
-                }
-            }
-        }
-        if (!isCurrentPage() || WebLink.mediaPageIdentity(webView.url.orEmpty()) != WebLink.mediaPageIdentity(sourceUrl)) return
-        val payload = RenderedPageResolverActivity.decodeJavascriptResult(rawValue)
-        when (val outcome = collector.consume(payload, sourceUrl)) {
-            LivePageExtractionOutcome.Continue -> {
-                delay(500L)
-            }
-            is LivePageExtractionOutcome.Complete -> {
-                val json = JSONArray().apply {
-                    outcome.media.forEach { item ->
-                        put(
-                            JSONObject()
-                                .put("url", item.url)
-                                .put("isVideo", item.isVideo)
-                                .put("thumbnailUrl", item.thumbnailUrl)
-                                .put("width", item.width)
-                                .put("height", item.height)
-                                .put("username", item.username)
-                                .put("referer", item.referer)
-                                .put("sourceTimestampMillis", item.sourceTimestampMillis)
-                        )
-                    }
-                }
-                context.startActivity(
-                    Intent(context, DownloadActivity::class.java)
-                        .putExtra(DownloadActivity.EXTRA_URL, sourceUrl)
-                        .putExtra(DownloadActivity.EXTRA_MEDIA_JSON, json.toString())
-                )
-                return
-            }
-            is LivePageExtractionOutcome.Failed -> {
-                val msg = when (outcome.reason) {
-                    LivePageExtractionFailure.SESSION_EXPIRED -> R.string.session_expired
-                    LivePageExtractionFailure.CONTENT_UNAVAILABLE -> R.string.content_unavailable
-                    LivePageExtractionFailure.NO_MEDIA -> R.string.no_media_found
-                }
-                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                return
-            }
-        }
-    }
-}
-
-@Composable
-private fun WebsiteDialog(
-    title: Int,
-    confirmLabel: Int,
-    initialName: String = "",
-    initialUrl: String = "",
-    onDismiss: () -> Unit,
-    onSave: (String, String) -> Unit
-) {
-    var name by remember(initialName) { mutableStateOf(initialName) }
-    var url by remember(initialUrl) { mutableStateOf(initialUrl) }
-    var error by remember { mutableStateOf<Int?>(null) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
-                    name, { name = it.take(40); error = null },
-                    label = { Text(stringResource(R.string.name)) },
-                    placeholder = { Text(stringResource(R.string.website_name_hint)) },
-                    singleLine = true,
-                    isError = error == R.string.enter_name,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    url, { url = it; error = null },
-                    label = { Text(stringResource(R.string.website_url)) },
-                    placeholder = { Text(stringResource(R.string.website_url_hint)) },
-                    singleLine = true,
-                    isError = error == R.string.enter_valid_website,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val normalized = WebLink.normalize(url)
-                when {
-                    name.isBlank() -> error = R.string.enter_name
-                    normalized == null -> error = R.string.enter_valid_website
-                    else -> onSave(name.trim(), normalized)
-                }
-            }) { Text(stringResource(confirmLabel)) }
-        },
-        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
-    )
-}
-
-@Composable
-private fun ManageWebsiteDataDialog(
-    websites: List<SavedWebsite>,
-    onDismiss: () -> Unit,
-    onOpenWebsite: ((String) -> Unit)? = null,
-    onClearSelected: (Set<String>) -> Unit,
-    onClearAll: () -> Unit
-) {
-    var selected by remember(websites) { mutableStateOf(emptySet<String>()) }
-    val allOrigins = websites.mapTo(mutableSetOf(), SavedWebsite::origin)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.saved_websites)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (websites.isEmpty()) Text(stringResource(R.string.no_saved_websites)) else {
-                    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                        Text(stringResource(R.string.select_websites), style = MaterialTheme.typography.labelLarge)
-                        TextButton(onClick = { selected = if (selected == allOrigins) emptySet() else allOrigins }) {
-                            Text(stringResource(if (selected == allOrigins) R.string.deselect_all else R.string.select_all))
-                        }
-                    }
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 280.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        websites.forEach { website ->
-                            val checked = website.origin in selected
-                            Surface(
-                                onClick = {
-                                    if (onOpenWebsite != null) {
-                                        onOpenWebsite(website.origin)
-                                    } else {
-                                        selected = if (checked) selected - website.origin else selected + website.origin
-                                    }
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                color = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
-                            ) {
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(checked, onCheckedChange = {
-                                        selected = if (checked) selected - website.origin else selected + website.origin
-                                    })
-                                    Spacer(Modifier.width(8.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(website.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(website.host, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Text(
-                    stringResource(R.string.website_data_explanation),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                TextButton(onClick = onClearAll, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.clear_all_browser_data), color = MaterialTheme.colorScheme.error)
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onClearSelected(selected) }, enabled = selected.isNotEmpty()) {
-                Text(stringResource(R.string.clear_selected))
-            }
-        },
-        dismissButton = { TextButton(onDismiss) { Text(stringResource(R.string.cancel)) } }
-    )
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun WebsiteTile(
-    website: SavedWebsite,
-    onOpen: () -> Unit,
-    onEdit: () -> Unit
-) {
-    val iconKey = website.iconFile?.let { "${it.absolutePath}:${it.lastModified()}" }
-    val icon by produceState<ImageBitmap?>(null, iconKey) {
-        value = withContext(Dispatchers.IO) {
-            website.iconFile?.takeIf(File::isFile)?.let { BitmapFactory.decodeFile(it.absolutePath) }?.asImageBitmap()
-        }
-    }
-    Surface(
-        modifier = Modifier
-            .width(96.dp)
-            .height(112.dp)
-            .combinedClickable(
-                onClick = onOpen,
-                onLongClick = onEdit
-            ),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
-    ) {
-        Column(
-            Modifier.padding(10.dp),
-            Arrangement.Center,
-            Alignment.CenterHorizontally
-        ) {
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                icon?.let {
-                    Image(
-                        it,
-                        stringResource(R.string.website_icon_description, website.name, website.host),
-                        Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } ?: Icon(Icons.Filled.Public, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                website.name,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-private fun AddWebsiteTile(onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier
-            .width(96.dp)
-            .height(112.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = stringResource(R.string.save_website),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.save_website),
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}

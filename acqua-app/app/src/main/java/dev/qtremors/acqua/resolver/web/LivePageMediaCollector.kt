@@ -1,4 +1,4 @@
-package dev.qtremors.acqua.auth
+package dev.qtremors.acqua.resolver.web
 
 import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.ResolvedMedia
@@ -30,6 +30,7 @@ internal class LivePageMediaCollector(
     private var videoWidth = 0
     private var videoHeight = 0
     private val media = linkedMapOf<String, ResolvedMedia>()
+    private val capturedNetworkVideos = linkedSetOf<String>()
 
     fun reset() {
         attempts = 0
@@ -41,6 +42,16 @@ internal class LivePageMediaCollector(
         videoWidth = 0
         videoHeight = 0
         media.clear()
+        capturedNetworkVideos.clear()
+    }
+
+    fun captureNetworkVideo(url: String) {
+        if (!url.startsWith("https://") && !url.startsWith("http://")) return
+        capturedNetworkVideos.remove(url)
+        capturedNetworkVideos.add(url)
+        while (capturedNetworkVideos.size > MAX_CAPTURED_VIDEO_URLS) {
+            capturedNetworkVideos.remove(capturedNetworkVideos.first())
+        }
     }
 
     fun consume(payload: JSONObject?, sourceUrl: String): LivePageExtractionOutcome {
@@ -113,7 +124,9 @@ internal class LivePageMediaCollector(
         val urls = payload.optJSONArray("networkVideoUrls") ?: JSONArray()
         for (index in 0 until urls.length()) {
             val url = urls.optString(index)
-            if (!url.startsWith("http")) continue
+            captureNetworkVideo(url)
+        }
+        capturedNetworkVideos.forEach { url ->
             media[url] = ResolvedMedia(
                 url = url,
                 kind = MediaKind.VIDEO,
@@ -147,5 +160,9 @@ internal class LivePageMediaCollector(
         }
         val posterUrls = videos.mapNotNull(ResolvedMedia::thumbnailUrl).toSet()
         return items.filterNot { !it.isVideo && it.url in posterUrls }
+    }
+
+    private companion object {
+        const val MAX_CAPTURED_VIDEO_URLS = 12
     }
 }

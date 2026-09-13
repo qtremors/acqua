@@ -34,6 +34,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import dev.qtremors.acqua.R
+import dev.qtremors.acqua.AcquaApp
 import dev.qtremors.acqua.domain.BrowserDestination
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
@@ -42,14 +43,18 @@ import dev.qtremors.acqua.data.session.SavedInstagramSession
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.feature.downloader.DownloadActivity
-import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
+import dev.qtremors.acqua.resolver.web.LivePageExtractionFailure
+import dev.qtremors.acqua.resolver.web.LivePageExtractionOutcome
+import dev.qtremors.acqua.resolver.web.LivePageMediaCollector
+import dev.qtremors.acqua.resolver.web.WebExtractionEngine
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
 class BrowserActivity : ComponentActivity() {
-    private val savedWebsites by lazy { SavedWebsiteRepository(applicationContext) }
-    private val instagramSessions by lazy { InstagramSessionStore(applicationContext) }
+    private val dependencies by lazy { (application as AcquaApp).dependencies }
+    private val savedWebsites by lazy { dependencies.savedWebsites }
+    private val instagramSessions by lazy { dependencies.instagramSessions }
     private lateinit var webView: WebView
     private lateinit var addressBar: EditText
     private lateinit var progressBar: ProgressBar
@@ -66,7 +71,7 @@ class BrowserActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (AppSettingsRepository(this).screenProtectionEnabled()) {
+        if (dependencies.settings.screenProtectionEnabled()) {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
         isAddingLogin = intent.getBooleanExtra(EXTRA_ADD_LOGIN, false)
@@ -145,7 +150,7 @@ class BrowserActivity : ComponentActivity() {
 
         val restored = savedInstanceState?.let(webView::restoreState) != null
         if (restored) {
-            currentUrl = savedInstanceState?.getString(STATE_CURRENT_URL)
+            currentUrl = savedInstanceState.getString(STATE_CURRENT_URL)
                 ?: webView.url?.takeIf(::isBrowsablePage)
             addressBar.setText(currentUrl.orEmpty())
             webView.post(::updateNavigationControls)
@@ -406,9 +411,9 @@ class BrowserActivity : ComponentActivity() {
 
     private fun extractCurrentPageMedia(sourceUrl: String) {
         if (!downloadRequestPending || isFinishing) return
-        webView.evaluateJavascript(RenderedPageResolverActivity.EXTRACTION_SCRIPT) { rawValue ->
+        webView.evaluateJavascript(WebExtractionEngine.script(this)) { rawValue ->
             if (!downloadRequestPending || isFinishing) return@evaluateJavascript
-            val payload = RenderedPageResolverActivity.decodeJavascriptResult(rawValue)
+            val payload = WebExtractionEngine.decodeResult(rawValue)
             when (val outcome = livePageMediaCollector.consume(payload, sourceUrl)) {
                 LivePageExtractionOutcome.Continue -> continueCurrentPageExtraction(sourceUrl)
                 is LivePageExtractionOutcome.Complete -> openDownloadPreview(sourceUrl, outcome.media)

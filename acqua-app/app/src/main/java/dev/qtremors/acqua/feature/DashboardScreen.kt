@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
@@ -35,19 +36,23 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,20 +61,21 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.qtremors.acqua.R
-import dev.qtremors.acqua.data.network.MediaDownloader
+import dev.qtremors.acqua.data.network.HttpMediaClient
 import dev.qtremors.acqua.domain.ResolvedMedia
-import dev.qtremors.acqua.feature.about.AboutDestination
+import dev.qtremors.acqua.appinfo.AboutDestination
 import dev.qtremors.acqua.feature.about.AboutScreen
 import dev.qtremors.acqua.feature.about.LegalDocumentScreen
 import dev.qtremors.acqua.feature.about.OpenSourceNoticesScreen
 import dev.qtremors.acqua.feature.settings.SettingsScreen
 import dev.qtremors.acqua.feature.browser.BrowserScreen
 import dev.qtremors.acqua.feature.browser.BrowserViewModel
+import dev.qtremors.acqua.feature.browser.BrowserDownloadRequest
 import dev.qtremors.acqua.feature.downloader.DownloadHubScreen
 import dev.qtremors.acqua.feature.downloader.DownloaderScreen
 import dev.qtremors.acqua.feature.downloader.DownloaderViewModel
-import dev.qtremors.acqua.feature.history.HistoryScreen
-import dev.qtremors.acqua.feature.history.HistoryViewModel
+import dev.qtremors.acqua.feature.downloader.history.HistoryScreen
+import dev.qtremors.acqua.feature.downloader.history.HistoryViewModel
 import dev.qtremors.acqua.feature.settings.SettingsViewModel
 import dev.qtremors.acqua.feature.updater.AppUpdatesScreen
 import dev.qtremors.acqua.feature.updater.AppUpdatesViewModel
@@ -78,43 +84,70 @@ import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
 import dev.qtremors.acqua.ui.components.AcquaFabAction
 import dev.qtremors.acqua.ui.components.AcquaFloatingToolbar
+import dev.qtremors.acqua.ui.components.AcquaNavigationRail
 import dev.qtremors.acqua.ui.components.AcquaTabItem
 import kotlinx.coroutines.launch
+import androidx.window.core.layout.WindowSizeClass
+
+data class DashboardStateHolders(
+    val downloader: DownloaderViewModel,
+    val browser: BrowserViewModel,
+    val history: HistoryViewModel,
+    val settings: SettingsViewModel,
+    val updates: AppUpdatesViewModel
+)
+
+data class DashboardServices(
+    val mediaDownloader: HttpMediaClient,
+    val fileActions: FileActions,
+    val backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager?
+)
+
+data class DashboardRouteState(
+    val initialUrl: String,
+    val urlHandoff: String?,
+    val browserRevision: Int,
+    val downloadRequestRevision: Int,
+    val theme: dev.qtremors.acqua.ui.theme.ThemeState
+)
+
+data class DashboardActions(
+    val onThemeChange: (dev.qtremors.acqua.ui.theme.ThemeState) -> Unit,
+    val onUrlHandoffConsumed: () -> Unit,
+    val resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
+    val requestDownloadAccess: (needsNotification: Boolean, action: () -> Unit) -> Unit,
+    val openBrowser: (String?, Boolean, String?) -> Unit,
+    val onBrowserDownloadRequest: (BrowserDownloadRequest) -> Unit
+)
 
 @Composable
 fun DashboardScreen(
-    downloaderViewModel: DownloaderViewModel,
-    browserViewModel: BrowserViewModel,
-    historyViewModel: HistoryViewModel,
-    settingsViewModel: SettingsViewModel,
-    appUpdatesViewModel: AppUpdatesViewModel,
-    mediaDownloader: MediaDownloader,
-    fileActions: FileActions,
-    initialUrl: String,
-    urlHandoff: String?,
-    browserRevision: Int,
-    downloadRequestRevision: Int,
-    backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager? = null,
-    appUpdater: dev.qtremors.acqua.data.updater.AppUpdater? = null,
-    currentThemeState: dev.qtremors.acqua.ui.theme.ThemeState = dev.qtremors.acqua.ui.theme.ThemeState(),
-    onThemeChange: (dev.qtremors.acqua.ui.theme.ThemeState) -> Unit = {},
-    onUrlHandoffConsumed: () -> Unit,
-    resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
-    requestDownloadAccess: (needsNotification: Boolean, action: () -> Unit) -> Unit,
-    openBrowser: (String?, Boolean, String?) -> Unit
+    stateHolders: DashboardStateHolders,
+    services: DashboardServices,
+    routeState: DashboardRouteState,
+    actions: DashboardActions
 ) {
+    val (downloaderViewModel, browserViewModel, historyViewModel, settingsViewModel, appUpdatesViewModel) = stateHolders
+    val (mediaDownloader, fileActions, backupManager) = services
+    val (initialUrl, urlHandoff, browserRevision, downloadRequestRevision, currentThemeState) = routeState
+    val (onThemeChange, onUrlHandoffConsumed, resolveInBrowser, requestDownloadAccess, openBrowser, onBrowserDownloadRequest) = actions
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { 3 })
-    var overlay by remember { mutableStateOf<AboutDestination?>(null) }
-    var showAddWebsiteDialog by remember { mutableStateOf(false) }
-    var showManageWebsiteDialog by remember { mutableStateOf(false) }
+    var savedTab by rememberSaveable { mutableIntStateOf(0) }
+    val pagerState = rememberPagerState(initialPage = savedTab, pageCount = { 3 })
+    var overlay by rememberSaveable { mutableStateOf<AboutDestination?>(null) }
+    var showAddWebsiteDialog by rememberSaveable { mutableStateOf(false) }
+    var showManageWebsiteDialog by rememberSaveable { mutableStateOf(false) }
 
     val browserState by browserViewModel.state.collectAsState()
     val downloaderState by downloaderViewModel.state.collectAsState()
     val historyState by historyViewModel.state.collectAsState()
     val appUpdatesState by appUpdatesViewModel.state.collectAsState()
     val trackedRepos by appUpdatesViewModel.trackedRepos.collectAsState()
+    val adaptiveInfo = currentWindowAdaptiveInfoV2()
+    val useNavigationRail = adaptiveInfo.windowSizeClass.isWidthAtLeastBreakpoint(
+        WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND
+    )
 
     BackHandler(enabled = overlay != null || pagerState.currentPage != 0) {
         if (overlay == AboutDestination.NOTICES || overlay == AboutDestination.LICENSE) {
@@ -146,9 +179,23 @@ fun DashboardScreen(
 
     val isBrowsingWebsite = pagerState.currentPage == 1 && browserState.currentUrl != null && overlay == null
 
+    var downloadHubSubTab by rememberSaveable { mutableIntStateOf(0) }
+    var showHistorySearch by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(pagerState.currentPage) {
+        savedTab = pagerState.currentPage
+    }
+
+    LaunchedEffect(pagerState.currentPage, downloadHubSubTab) {
+        if (pagerState.currentPage != 0 || downloadHubSubTab != 1) {
+            showHistorySearch = false
+        }
+    }
+
     // Context-aware Floating Action Button for each tab
     val currentFabAction = remember(
         pagerState.currentPage,
+        downloadHubSubTab,
         downloaderState,
         browserState,
         appUpdatesState,
@@ -156,36 +203,46 @@ fun DashboardScreen(
     ) {
         when (pagerState.currentPage) {
             0 -> {
-                val hasMedia = !downloaderState.media.isNullOrEmpty()
-                val canDownload = hasMedia && !downloaderState.isSaving && !downloaderState.saved && downloaderState.savingItemIndex == null
-                if (canDownload) {
+                if (downloadHubSubTab == 1) {
                     AcquaFabAction(
-                        icon = Icons.Filled.Download,
-                        contentDescriptionRes = R.string.download,
+                        icon = Icons.Filled.Search,
+                        contentDescriptionRes = R.string.hist_search,
                         onClick = {
-                            requestDownloadAccess(true) {
-                                downloaderViewModel.downloadAll(browserState.useSessions, resolveInBrowser)
-                            }
+                            showHistorySearch = true
                         }
                     )
                 } else {
-                    AcquaFabAction(
-                        icon = Icons.Filled.ContentPaste,
-                        contentDescriptionRes = R.string.paste_link,
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()?.trim()
-                            if (!clipText.isNullOrBlank()) {
-                                downloaderViewModel.updateUrl(clipText)
-                                context.performHaptic(HapticSignal.CLICK)
-                                if (browserState.initialized) {
-                                    downloaderViewModel.resolve(browserState.useSessions, downloadRequestRevision, resolveInBrowser)
+                    val hasMedia = !downloaderState.media.isNullOrEmpty()
+                    val canDownload = hasMedia && !downloaderState.isSaving && !downloaderState.saved && downloaderState.savingItemIndex == null
+                    if (canDownload) {
+                        AcquaFabAction(
+                            icon = Icons.Filled.Download,
+                            contentDescriptionRes = R.string.download,
+                            onClick = {
+                                requestDownloadAccess(true) {
+                                    downloaderViewModel.downloadAll(browserState.useSessions, resolveInBrowser)
                                 }
-                            } else {
-                                Toast.makeText(context, R.string.no_link_in_clipboard, Toast.LENGTH_SHORT).show()
                             }
-                        }
-                    )
+                        )
+                    } else {
+                        AcquaFabAction(
+                            icon = Icons.Filled.ContentPaste,
+                            contentDescriptionRes = R.string.paste_link,
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()?.trim()
+                                if (!clipText.isNullOrBlank()) {
+                                    downloaderViewModel.updateUrl(clipText)
+                                    context.performHaptic(HapticSignal.CLICK)
+                                    if (browserState.initialized) {
+                                        downloaderViewModel.resolve(browserState.useSessions, downloadRequestRevision, resolveInBrowser)
+                                    }
+                                } else {
+                                    Toast.makeText(context, R.string.no_link_in_clipboard, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                    }
                 }
             }
             1 -> {
@@ -220,13 +277,30 @@ fun DashboardScreen(
     val navBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
     // Content padding taking into account the floating toolbar at bottom
-    val screenPadding = remember(statusBarTop, imeBottom, navBottom) {
-        val baseBottom = if (imeBottom > 0.dp) 0.dp else navBottom + 80.dp
+    val screenPadding = remember(statusBarTop, imeBottom, navBottom, useNavigationRail) {
+        val baseBottom = if (imeBottom > 0.dp) 0.dp else navBottom + if (useNavigationRail) 16.dp else 80.dp
         PaddingValues(
             top = statusBarTop,
             bottom = baseBottom,
             start = 0.dp,
             end = 0.dp
+        )
+    }
+
+    val navItems = remember(trackedRepos) {
+        listOf(
+            AcquaTabItem(Icons.Filled.Download, R.string.downloader) {
+                coroutineScope.launch { pagerState.animateScrollToPage(0) }
+            },
+            AcquaTabItem(Icons.Filled.Public, R.string.browser) {
+                coroutineScope.launch { pagerState.animateScrollToPage(1) }
+            },
+            AcquaTabItem(
+                icon = Icons.Filled.SystemUpdate,
+                labelRes = R.string.github_tracker,
+                onClick = { coroutineScope.launch { pagerState.animateScrollToPage(2) } },
+                hasBadge = trackedRepos.any { it.isUpdateAvailable }
+            )
         )
     }
 
@@ -239,7 +313,9 @@ fun DashboardScreen(
             // Tabbed Content Navigation using HorizontalPager
             HorizontalPager(
                 state = pagerState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(
+                    start = if (useNavigationRail && overlay == null && !isBrowsingWebsite) 80.dp else 0.dp
+                ),
                 userScrollEnabled = !isBrowsingWebsite && overlay == null
             ) { page ->
                 when (page) {
@@ -261,10 +337,15 @@ fun DashboardScreen(
                         },
                         onOpenAbout = { overlay = AboutDestination.SETTINGS },
                         contentPadding = screenPadding,
+                        onSubTabChange = { downloadHubSubTab = it },
+                        showHistorySearch = showHistorySearch,
+                        onOpenHistorySearch = { showHistorySearch = true },
+                        onDismissHistorySearch = { showHistorySearch = false },
                         modifier = Modifier.fillMaxSize()
                     )
                     1 -> BrowserScreen(
                         viewModel = browserViewModel,
+                        onDownloadRequest = onBrowserDownloadRequest,
                         active = pagerState.currentPage == 1 && overlay == null,
                         onExitToDownloader = {
                             coroutineScope.launch {
@@ -334,7 +415,10 @@ fun DashboardScreen(
                                     backupManager = backupManager,
                                     themeState = currentThemeState,
                                     onThemeChange = onThemeChange,
-                                    appUpdater = appUpdater,
+                                    onOpenUpdates = {
+                                        overlay = null
+                                        coroutineScope.launch { pagerState.animateScrollToPage(2) }
+                                    },
                                     onOpenNotices = { overlay = AboutDestination.NOTICES },
                                     onOpenLicense = { overlay = AboutDestination.LICENSE },
                                     onOpenAbout = { overlay = AboutDestination.ABOUT },
@@ -389,40 +473,7 @@ fun DashboardScreen(
             }
 
             // Modern Expressive Floating Toolbar Navigation Shell for Main Tabs
-            if (overlay == null && !isBrowsingWebsite) {
-                val navItems = remember(trackedRepos) {
-                    listOf(
-                        AcquaTabItem(
-                            icon = Icons.Filled.Download,
-                            labelRes = R.string.downloader,
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(0)
-                                }
-                            }
-                        ),
-                        AcquaTabItem(
-                            icon = Icons.Filled.Public,
-                            labelRes = R.string.browser,
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(1)
-                                }
-                            }
-                        ),
-                        AcquaTabItem(
-                            icon = Icons.Filled.SystemUpdate,
-                            labelRes = R.string.github_tracker,
-                            onClick = {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(2)
-                                }
-                            },
-                            hasBadge = trackedRepos.any { it.isUpdateAvailable }
-                        )
-                    )
-                }
-
+            if (overlay == null && !isBrowsingWebsite && !useNavigationRail) {
                 AcquaFloatingToolbar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -430,6 +481,13 @@ fun DashboardScreen(
                     items = navItems,
                     selectedIndex = pagerState.currentPage,
                     fabAction = currentFabAction
+                )
+            } else if (overlay == null && !isBrowsingWebsite) {
+                AcquaNavigationRail(
+                    items = navItems,
+                    selectedIndex = pagerState.currentPage,
+                    fabAction = currentFabAction,
+                    modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight().zIndex(1f)
                 )
             }
         }

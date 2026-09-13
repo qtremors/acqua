@@ -42,9 +42,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -96,9 +96,9 @@ fun AcquaFloatingToolbar(
     expanded: Boolean = true
 ) {
     val context = LocalContext.current
-    val configuration = LocalConfiguration.current
-    val fontScale = LocalDensity.current.fontScale
-    val screenWidth = configuration.screenWidthDp
+    val density = LocalDensity.current
+    val fontScale = density.fontScale
+    val screenWidth = with(density) { LocalWindowInfo.current.containerSize.width.toDp() }.value
 
     // Hide label if font scale is large or screen width is too small
     val isLargeFont = fontScale > 1.25f

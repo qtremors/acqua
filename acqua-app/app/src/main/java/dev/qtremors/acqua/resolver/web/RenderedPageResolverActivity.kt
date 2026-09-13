@@ -25,6 +25,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import dev.qtremors.acqua.R
+import dev.qtremors.acqua.AcquaApp
 import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
@@ -35,30 +36,24 @@ import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import org.json.JSONTokener
 import java.util.Locale
-import java.util.concurrent.ConcurrentLinkedDeque
 
 class RenderedPageResolverActivity : ComponentActivity() {
-    private val savedWebsites by lazy { SavedWebsiteRepository(applicationContext) }
-    private val instagramSessions by lazy { InstagramSessionStore(applicationContext) }
+    private val dependencies by lazy { (application as AcquaApp).dependencies }
+    private val savedWebsites by lazy { dependencies.savedWebsites }
+    private val instagramSessions by lazy { dependencies.instagramSessions }
     private lateinit var webView: WebView
     private lateinit var progressBar: ProgressBar
     private var finishedWithResult = false
-    private var extractionAttempts = 0
-    private var stablePasses = 0
-    private var lastCollectedCount = 0
-    private var sawCarouselAdvance = false
-    private var pageExpectsVideo = false
-    private var latestVideoPoster: String? = null
-    private var latestVideoWidth = 0
-    private var latestVideoHeight = 0
-    private val capturedVideoUrls = ConcurrentLinkedDeque<String>()
-    private val collectedMedia = linkedMapOf<String, ResolvedMedia>()
+    private val mediaCollector = LivePageMediaCollector(
+        maximumAttempts = MAX_EXTRACTION_ATTEMPTS,
+        requiredStablePasses = REQUIRED_STABLE_PASSES
+    )
+    private val extractionScript by lazy { WebExtractionEngine.script(applicationContext) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (AppSettingsRepository(this).screenProtectionEnabled()) {
+        if (dependencies.settings.screenProtectionEnabled()) {
             window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         }
 
@@ -186,9 +181,7 @@ class RenderedPageResolverActivity : ComponentActivity() {
                 finishWithExpiredSession(getString(R.string.session_expired))
                 return
             }
-            extractionAttempts = 0
-            stablePasses = 0
-            lastCollectedCount = 0
+            mediaCollector.reset()
             scheduleExtraction(250L)
         }
 
@@ -237,11 +230,7 @@ class RenderedPageResolverActivity : ComponentActivity() {
             .removeAllQueryParameters("byteend")
             .build()
             .toString()
-        capturedVideoUrls.remove(normalized)
-        capturedVideoUrls.addLast(normalized)
-        while (capturedVideoUrls.size > MAX_CAPTURED_VIDEO_URLS) {
-            capturedVideoUrls.pollFirst()
-        }
+        mediaCollector.captureNetworkVideo(normalized)
     }
 
     private fun scheduleExtraction(delayMillis: Long = EXTRACTION_INTERVAL_MS) {
@@ -251,119 +240,22 @@ class RenderedPageResolverActivity : ComponentActivity() {
 
     private fun extractRenderedMedia() {
         if (finishedWithResult || isFinishing) return
-        extractionAttempts++
-        webView.evaluateJavascript(EXTRACTION_SCRIPT) { rawValue ->
+        webView.evaluateJavascript(extractionScript) { rawValue ->
             if (finishedWithResult || isFinishing) return@evaluateJavascript
-
-            val payload = decodeJavascriptResult(rawValue)
-            if (payload == null) {
-                continueOrFinish(getString(R.string.rendered_data_unreadable))
-                return@evaluateJavascript
-            }
-
-            if (payload.optBoolean("loginPage")) {
-                finishWithExpiredSession(getString(R.string.session_expired))
-                return@evaluateJavascript
-            }
-
-            val username = payload.optString("username").takeIf { it.isNotBlank() }
-            val sourceTimestampMillis = payload.optLong("sourceTimestampMillis").takeIf { it > 0L }
-            pageExpectsVideo = pageExpectsVideo || payload.optBoolean("expectsVideo") ||
-                payload.optInt("videoElementCount") > 0
-            latestVideoPoster = payload.optString("videoPoster")
-                .takeIf { it.startsWith("https://") || it.startsWith("http://") }
-                ?: latestVideoPoster
-            latestVideoWidth = payload.optInt("videoWidth").takeIf { it > 0 } ?: latestVideoWidth
-            latestVideoHeight = payload.optInt("videoHeight").takeIf { it > 0 } ?: latestVideoHeight
-            if (payload.optInt("videoElementCount") > 0) {
-                val networkUrls = payload.optJSONArray("networkVideoUrls") ?: JSONArray()
-                for (index in 0 until networkUrls.length()) {
-                    captureVideoUrl(networkUrls.optString(index))
-                }
-            }
-            val items = payload.optJSONArray("items") ?: JSONArray()
-            for (index in 0 until items.length()) {
-                val item = items.optJSONObject(index) ?: continue
-                val url = item.optString("url")
-                if (!url.startsWith("https://") && !url.startsWith("http://")) continue
-                collectedMedia[url] = ResolvedMedia(
-                    url = url,
-                    kind = if (item.optBoolean("isVideo")) MediaKind.VIDEO else MediaKind.IMAGE,
-                    thumbnailUrl = item.optString("thumbnail").takeIf {
-                        it.startsWith("https://") || it.startsWith("http://")
-                    },
-                    width = item.optInt("width").coerceAtLeast(0),
-                    height = item.optInt("height").coerceAtLeast(0),
-                    username = username,
-                    referer = webView.url,
-                    sourceTimestampMillis = sourceTimestampMillis
-                )
-            }
-
-            if (pageExpectsVideo && collectedMedia.values.none { it.isVideo }) {
-                capturedVideoUrls.take(MAX_CAPTURED_VIDEO_URLS).forEach { url ->
-                    collectedMedia[url] = ResolvedMedia(
-                        url = url,
-                        kind = MediaKind.VIDEO,
-                        thumbnailUrl = latestVideoPoster,
-                        width = latestVideoWidth,
-                        height = latestVideoHeight,
-                        username = username,
-                        referer = webView.url,
-                        sourceTimestampMillis = sourceTimestampMillis
-                    )
-                }
-            }
-
-            val clickedNext = payload.optBoolean("clickedNext")
-            sawCarouselAdvance = sawCarouselAdvance || clickedNext
-            if (collectedMedia.size == lastCollectedCount && !clickedNext) stablePasses++ else stablePasses = 0
-            lastCollectedCount = collectedMedia.size
-            val hasVideo = collectedMedia.values.any { it.isVideo }
-
-            when {
-                collectedMedia.isNotEmpty() && (!pageExpectsVideo || hasVideo) &&
-                    !clickedNext && stablePasses >= REQUIRED_STABLE_PASSES -> {
-                    finishWithMedia(normalizeCollectedMedia(collectedMedia.values.toList()))
-                }
-                payload.optBoolean("errorPage") && collectedMedia.isEmpty() -> {
-                    finishWithError(getString(R.string.content_unavailable))
-                }
-                extractionAttempts >= MAX_EXTRACTION_ATTEMPTS -> {
-                    if (collectedMedia.isNotEmpty() && (!pageExpectsVideo || hasVideo)) {
-                        finishWithMedia(normalizeCollectedMedia(collectedMedia.values.toList()))
-                    } else if (pageExpectsVideo) {
-                        finishWithError(getString(R.string.video_url_missing))
-                    } else {
+            val payload = WebExtractionEngine.decodeResult(rawValue)
+            when (val outcome = mediaCollector.consume(payload, webView.url.orEmpty())) {
+                LivePageExtractionOutcome.Continue -> scheduleExtraction()
+                is LivePageExtractionOutcome.Complete -> finishWithMedia(outcome.media)
+                is LivePageExtractionOutcome.Failed -> when (outcome.reason) {
+                    LivePageExtractionFailure.SESSION_EXPIRED ->
+                        finishWithExpiredSession(getString(R.string.session_expired))
+                    LivePageExtractionFailure.CONTENT_UNAVAILABLE ->
+                        finishWithError(getString(R.string.content_unavailable))
+                    LivePageExtractionFailure.NO_MEDIA ->
                         finishWithError(getString(R.string.no_media_found))
-                    }
                 }
-                else -> scheduleExtraction()
             }
         }
-    }
-
-    private fun continueOrFinish(message: String) {
-        if (extractionAttempts >= MAX_EXTRACTION_ATTEMPTS) finishWithError(message) else scheduleExtraction()
-    }
-
-    private fun normalizeCollectedMedia(items: List<ResolvedMedia>): List<ResolvedMedia> {
-        val videos = items.filter { it.isVideo }
-        if (videos.isNotEmpty() && !sawCarouselAdvance) {
-            val capturedPoster = videos.firstNotNullOfOrNull { it.thumbnailUrl }
-                ?: items.firstOrNull { !it.isVideo }?.url
-                ?: latestVideoPoster
-            return videos.map { video ->
-                if (video.thumbnailUrl != null || capturedPoster == null) video
-                else video.copy(thumbnailUrl = capturedPoster)
-            }
-        }
-
-        val posterUrls = items.asSequence()
-            .filter { it.isVideo }
-            .mapNotNull { it.thumbnailUrl }
-            .toSet()
-        return items.filterNot { !it.isVideo && it.url in posterUrls }
     }
 
     private fun finishWithMedia(items: List<ResolvedMedia>) {
@@ -446,7 +338,6 @@ class RenderedPageResolverActivity : ComponentActivity() {
         private const val EXTRACTION_INTERVAL_MS = 500L
         private const val MAX_EXTRACTION_ATTEMPTS = 30
         private const val REQUIRED_STABLE_PASSES = 4
-        private const val MAX_CAPTURED_VIDEO_URLS = 12
 
         fun parseMediaResults(data: Intent?): List<ResolvedMedia> {
             val raw = data?.getStringExtra(EXTRA_MEDIA_JSON).orEmpty()
@@ -479,148 +370,5 @@ class RenderedPageResolverActivity : ComponentActivity() {
             }
         }
 
-        internal fun decodeJavascriptResult(value: String?): JSONObject? = runCatching {
-            val decoded = JSONTokener(value.orEmpty()).nextValue() as? String ?: return@runCatching null
-            JSONObject(decoded)
-        }.getOrNull()
-
-        internal val EXTRACTION_SCRIPT = """
-            (function() {
-              const path = location.pathname || '';
-              const host = (location.hostname || '').toLowerCase();
-              const isInstagram = host === 'instagram.com' || host.endsWith('.instagram.com') || host === 'instagr.am' || host.endsWith('.instagr.am');
-              const singleVideoRoute = isInstagram && (path.indexOf('/reel/') === 0 || path.indexOf('/tv/') === 0);
-              const result = {
-                items: [],
-                clickedNext: false,
-                loginPage: false,
-                errorPage: false,
-                username: '',
-                expectsVideo: singleVideoRoute,
-                videoElementCount: 0,
-                videoPoster: '',
-                videoWidth: 0,
-                videoHeight: 0,
-                sourceTimestampMillis: 0,
-                networkVideoUrls: []
-              };
-              result.loginPage = isInstagram && location.pathname.indexOf('/accounts/login') === 0;
-              const html = document.documentElement ? document.documentElement.innerHTML : '';
-              result.errorPage = html.indexOf('PolarisErrorRoot') >= 0 || html.indexOf('httpErrorPage') >= 0;
-
-              const article = document.querySelector('main article') || document.querySelector('article');
-              const scope = article || document.querySelector('main') || document.body;
-              if (!scope) return JSON.stringify(result);
-
-              const profileLink = isInstagram ? scope.querySelector('header a[href^="/"]') : null;
-              if (profileLink) {
-                const segment = profileLink.getAttribute('href').split('/').filter(Boolean)[0] || '';
-                if (segment && !['p', 'reel', 'tv', 'stories', 'explore'].includes(segment)) result.username = segment;
-              }
-              const publishedTime = scope.querySelector('time[datetime]');
-              if (publishedTime) {
-                const parsedTime = Date.parse(publishedTime.getAttribute('datetime') || '');
-                if (Number.isFinite(parsedTime) && parsedTime > 0) result.sourceTimestampMillis = parsedTime;
-              }
-
-              const seen = new Set();
-              const add = function(url, isVideo, thumbnail, width, height) {
-                try { url = new URL(url, location.href).href; } catch (_) { return; }
-                if (!url || !/^https?:\/\//i.test(url) || seen.has(url)) return;
-                seen.add(url);
-                result.items.push({
-                  url: url,
-                  isVideo: !!isVideo,
-                  thumbnail: thumbnail || '',
-                  width: Number(width) || 0,
-                  height: Number(height) || 0
-                });
-              };
-
-              const directPath = (location.pathname || '').toLowerCase();
-              if (/\.(jpe?g|png|gif|webp)$/.test(directPath)) add(location.href, false, '', 0, 0);
-              if (/\.(mp4|m4v|webm)$/.test(directPath)) add(location.href, true, '', 0, 0);
-
-              const videos = Array.from(scope.querySelectorAll('video'));
-              result.videoElementCount = videos.length;
-              const visibleVideo = videos.find(function(video) {
-                const rect = video.getBoundingClientRect();
-                return rect.width > 160 && rect.height > 160;
-              }) || videos[0];
-              if (visibleVideo) {
-                result.videoPoster = visibleVideo.poster || '';
-                result.videoWidth = visibleVideo.videoWidth || visibleVideo.clientWidth || 0;
-                result.videoHeight = visibleVideo.videoHeight || visibleVideo.clientHeight || 0;
-              }
-              const hasDirectVideo = videos.some(function(video) {
-                const source = video.currentSrc || video.src || (video.querySelector('source') || {}).src || '';
-                return /^https?:\/\//i.test(source);
-              });
-              if (videos.length > 0 && !hasDirectVideo && window.performance) {
-                result.networkVideoUrls = Array.from(performance.getEntriesByType('resource') || [])
-                  .map(function(entry) { return entry.name || ''; })
-                  .filter(function(url) {
-                    const lower = url.toLowerCase();
-                    return /^https?:\/\//.test(lower) &&
-                      (lower.indexOf('.mp4') >= 0 || lower.indexOf('mime_type=video') >= 0 || lower.indexOf('video%2fmp4') >= 0);
-                  })
-                  .slice(-12);
-              }
-              videos.forEach(function(video) {
-                const source = video.currentSrc || video.src || (video.querySelector('source') || {}).src || '';
-                add(source, true, video.poster || '', video.videoWidth || video.clientWidth, video.videoHeight || video.clientHeight);
-              });
-
-              const bestImageSource = function(image) {
-                let best = image.currentSrc || image.src || '';
-                let bestWidth = image.naturalWidth || 0;
-                (image.srcset || '').split(',').forEach(function(candidate) {
-                  const parts = candidate.trim().split(/\s+/);
-                  const width = parts.length > 1 ? parseInt(parts[1], 10) || 0 : 0;
-                  if (parts[0] && width >= bestWidth) {
-                    best = parts[0];
-                    bestWidth = width;
-                  }
-                });
-                return best;
-              };
-
-              Array.from(scope.querySelectorAll('img')).forEach(function(image) {
-                const rect = image.getBoundingClientRect();
-                if (rect.width < 160 || rect.height < 160 || image.naturalWidth < 300 || image.naturalHeight < 200) return;
-                const overlapsVideo = videos.some(function(video) {
-                  const vr = video.getBoundingClientRect();
-                  const overlapWidth = Math.max(0, Math.min(rect.right, vr.right) - Math.max(rect.left, vr.left));
-                  const overlapHeight = Math.max(0, Math.min(rect.bottom, vr.bottom) - Math.max(rect.top, vr.top));
-                  return overlapWidth * overlapHeight > rect.width * rect.height * 0.5;
-                });
-                if (!overlapsVideo) add(bestImageSource(image), false, '', image.naturalWidth, image.naturalHeight);
-              });
-
-              if (result.items.length === 0) {
-                const metaVideo = document.querySelector('meta[property="og:video:secure_url"], meta[property="og:video"]');
-                const metaImage = document.querySelector('meta[property="og:image"]');
-                if (metaVideo) add(metaVideo.content, true, metaImage ? metaImage.content : '', 0, 0);
-                else if (metaImage) add(metaImage.content, false, '', 0, 0);
-              }
-
-              const isStory = isInstagram && path.indexOf('/stories/') === 0;
-              if (isInstagram && !isStory && !singleVideoRoute && article) {
-                const nextButton = Array.from(article.querySelectorAll('button, [role="button"]')).find(function(button) {
-                  const labelled = button.matches('[aria-label]') ? button : button.querySelector('[aria-label]');
-                  const label = ((labelled && labelled.getAttribute('aria-label')) || '').toLowerCase();
-                  const rect = button.getBoundingClientRect();
-                  return rect.width > 0 && rect.height > 0 && button.getAttribute('aria-disabled') !== 'true' &&
-                    (label === 'next' || label.indexOf('next') >= 0);
-                });
-                if (nextButton && !nextButton.disabled) {
-                  nextButton.click();
-                  result.clickedNext = true;
-                }
-              }
-
-              return JSON.stringify(result);
-            })();
-        """.trimIndent()
     }
 }

@@ -3,6 +3,7 @@ package dev.qtremors.acqua.feature.browser
 import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
 import dev.qtremors.acqua.data.session.BrowserDataManager
 import dev.qtremors.acqua.data.session.InstagramSessionStore
@@ -30,7 +31,8 @@ data class BrowserUiState(
     val canGoForward: Boolean = false,
     val isDesktopSite: Boolean = false,
     val isSecure: Boolean = true,
-    val navigationAction: BrowserNavigationAction? = null
+    val navigationAction: BrowserNavigationAction? = null,
+    val savedSession: dev.qtremors.acqua.data.session.SavedInstagramSession? = null
 )
 
 enum class BrowserNavigationAction { RELOAD, STOP, BACK, FORWARD }
@@ -40,9 +42,15 @@ class BrowserViewModel(
     private val savedWebsites: SavedWebsiteRepository,
     private val browserData: BrowserDataManager,
     private val instagramSessions: InstagramSessionStore,
-    private val instagramResolver: InstagramResolver
+    private val instagramResolver: InstagramResolver,
+    private val savedStateHandle: SavedStateHandle
 ) : ViewModel() {
-    private val mutableState = MutableStateFlow(BrowserUiState())
+    private val mutableState = MutableStateFlow(
+        BrowserUiState(
+            currentUrl = savedStateHandle[KEY_CURRENT_URL],
+            isDesktopSite = savedStateHandle[KEY_DESKTOP_SITE] ?: false
+        )
+    )
     val state = mutableState.asStateFlow()
     private var sessionJob: Job? = null
     internal var savedWebViewState: Bundle? = null
@@ -76,12 +84,14 @@ class BrowserViewModel(
             mutableState.value = mutableState.value.copy(
                 useSessions = useSessions,
                 websites = savedWebsites.load(),
+                savedSession = session,
                 initialized = true
             )
         }
     }
 
     fun loadUrl(url: String) {
+        savedStateHandle[KEY_CURRENT_URL] = url
         savedWebViewState = null
         mutableState.value = mutableState.value.copy(
             currentUrl = url,
@@ -91,6 +101,7 @@ class BrowserViewModel(
     }
 
     fun goHome() {
+        savedStateHandle[KEY_CURRENT_URL] = null
         savedWebViewState = null
         mutableState.value = mutableState.value.copy(
             currentUrl = null,
@@ -111,6 +122,7 @@ class BrowserViewModel(
         isSecure: Boolean
     ) {
         if (mutableState.value.currentUrl == null) return
+        if (url != null) savedStateHandle[KEY_CURRENT_URL] = url
         mutableState.value = mutableState.value.copy(
             currentUrl = url ?: mutableState.value.currentUrl,
             pageTitle = title ?: mutableState.value.pageTitle,
@@ -129,6 +141,7 @@ class BrowserViewModel(
     }
 
     fun toggleDesktopSite() {
+        savedStateHandle[KEY_DESKTOP_SITE] = !mutableState.value.isDesktopSite
         mutableState.value = mutableState.value.copy(
             isDesktopSite = !mutableState.value.isDesktopSite
         )
@@ -158,6 +171,20 @@ class BrowserViewModel(
         savedWebsites.save(name, url, icon)
         mutableState.value = mutableState.value.copy(websites = savedWebsites.load())
     }
+
+    fun recordVisit(url: String) = viewModelScope.launch(Dispatchers.IO) {
+        savedWebsites.record(url)
+    }
+
+    fun updateWebsiteIcon(url: String, icon: Bitmap) = viewModelScope.launch(Dispatchers.IO) {
+        savedWebsites.updateIcon(url, icon)
+    }
+
+    fun saveSession(session: dev.qtremors.acqua.data.session.SavedInstagramSession) =
+        viewModelScope.launch(Dispatchers.IO) {
+            instagramSessions.save(session)
+            mutableState.value = mutableState.value.copy(savedSession = session)
+        }
 
     fun removeWebsite(url: String) {
         val host = WebLink.host(url)?.removePrefix("www.") ?: return
@@ -205,5 +232,10 @@ class BrowserViewModel(
         browserData.clearAll {
             instagramResolver.clearSessionCookies()
         }
+    }
+
+    private companion object {
+        const val KEY_CURRENT_URL = "browser.current_url"
+        const val KEY_DESKTOP_SITE = "browser.desktop_site"
     }
 }

@@ -10,7 +10,7 @@
 
 ### Architecture / Maintainability Tasks
 
-- [ ] **ARCH-0001 - Modularize Web Resolver DOM Extraction Script** `[Medium]`
+- [x] **ARCH-0001 - Modularize Web Resolver DOM Extraction Script** `[Medium]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/resolver/web/RenderedPageResolverActivity.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/auth/LivePageMediaCollector.kt`
   - **Problem:** `RenderedPageResolverActivity` embeds a 130-line JavaScript string containing ad-hoc DOM queries, JSON serialization, and full-document `innerHTML` evaluation (`document.documentElement.innerHTML`) on every pass. This mixes raw JavaScript strings inside Kotlin, causes massive string allocations in WebView memory on every 250ms polling interval, and duplicates logic found in `LivePageMediaCollector`.
   - **Impact:** Memory churn and potential GC pauses during media resolution; high maintenance overhead and brittle updates when web targets alter their DOM hierarchy.
@@ -45,7 +45,7 @@
   - **Fix:** Route bookmark metadata through `BrowserViewModel`, consolidate update/download/install state in one updater controller or ViewModel, and represent UI actions as focused intents/events. Restrict composables to observing immutable state, invoking callbacks, and performing presentation-only effects such as launching an already-prepared platform request.
   - **Verification:** Add architecture checks preventing repository/manager/updater construction and blocking I/O in composable files; unit-test browser metadata and updater state transitions without Compose or a device, then verify recreation does not create duplicate work or lose authoritative state.
 
-- [ ] **ARCH-0006 - Split Oversized Files And Narrow UI Contracts** `[Medium]`
+- [x] **ARCH-0006 - Split Oversized Files And Narrow UI Contracts** `[Medium]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/browser/BrowserScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/settings/SettingsScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloaderScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/ui/settings/AccentColorSelector.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/updater/AppUpdatesScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloaderViewModel.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/DashboardScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/MediaPreviewCard.kt`
   - **Problem:** Five production files exceed 700 lines (`BrowserScreen` 1770, `SettingsScreen` 1352, `DownloaderScreen` 1155, `AccentColorSelector` 741, and `AppUpdatesScreen` 720), while `DownloaderViewModel` exceeds 500 lines. `DashboardScreen` exposes 18 parameters and `MediaMetadataContainer` exposes 16, indicating broad responsibilities and missing focused contracts.
   - **Impact:** Reviews require excessive context, unrelated changes collide in the same files, private components are difficult to test or reuse, and large parameter lists make call sites fragile.
@@ -82,14 +82,14 @@
 
 ### Frontend Tasks
 
-- [ ] **COMPOSE-0001 - Restore User Workflow State** `[High]`
+- [x] **COMPOSE-0001 - Restore User Workflow State** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/DashboardScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloaderViewModel.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/history/HistoryViewModel.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/browser/BrowserScreen.kt`
   - **Problem:** The selected dashboard tab, About/legal overlay, downloader URL and resolved workflow, history query/filter/sort, and browser dialog/input state are held only in `remember` or ordinary `ViewModel` fields. They survive inconsistently across rotation and are lost after process recreation, returning users to the Downloader tab or discarding in-progress input.
   - **Impact:** Configuration changes and background process death interrupt normal browsing and download preparation, lose user input, and can leave the visible UI disconnected from background work that is still running.
   - **Fix:** Use `rememberSaveable` for small UI-only state and `SavedStateHandle` for screen state that belongs to a ViewModel. Persist only minimal identifiers and inputs, then reconstruct resolved media and WorkManager state from durable sources instead of putting large payloads in saved state.
   - **Verification:** Exercise rotation, locale/font-scale changes, split-screen resize, and Developer Options "Don't keep activities" on every top-level tab, dialogs, a populated downloader form, and an active background download; confirm the same destination and recoverable state return without replaying one-off events.
 
-- [ ] **UI-0001 - Implement Adaptive Navigation And Content Layouts** `[Medium]`
+- [x] **UI-0001 - Implement Adaptive Navigation And Content Layouts** `[Medium]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/DashboardScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloaderScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/browser/BrowserScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/settings/SettingsScreen.kt` `acqua-app/gradle/libs.versions.toml`
   - **Problem:** The app declares Material 3 adaptive dependencies but always renders a phone bottom bar and full-width single-column screens with fixed 20 dp margins. No window size or posture information is used, so tablets, foldables, landscape, and freeform windows receive stretched phone layouts rather than a rail, bounded content, or useful multi-pane presentation.
   - **Impact:** Important controls become widely separated, media previews and settings waste space, and navigation remains less efficient on large-screen and desktop-class devices.
@@ -255,7 +255,7 @@
 
 ### Accessibility / Internationalization Tasks
 
-- [ ] **A11Y-0001 - Give Toggle Controls Accessible Labels And Full-Row Actions** `[High]`
+- [x] **A11Y-0001 - Give Toggle Controls Accessible Labels And Full-Row Actions** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/settings/SettingsScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/browser/BrowserScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloaderScreen.kt`
   - **Problem:** Settings, browser-session, metadata, and thumbnail toggles render a text column beside a standalone `Switch` without merging or associating the label semantics, and only the switch itself is actionable. Screen readers can announce an unlabeled "switch" and users with motor or switch-access needs must target the smallest control instead of the descriptive row.
   - **Impact:** Core privacy and download options are ambiguous or unnecessarily difficult to operate with TalkBack, Switch Access, and other accessibility services.
@@ -269,7 +269,7 @@
   - **Fix:** Add determinate/indeterminate progress semantics, localized state descriptions, and a restrained polite live region for phase and terminal-state changes. Mark decorative animation as such and expose item save state on the actionable control without producing duplicate announcements.
   - **Verification:** Add semantics assertions for queued, indeterminate, determinate, retry, success, failure, and cancellation states; manually confirm announcements are informative but not repeated for every byte-level progress update.
 
-- [ ] **A11Y-0003 - Provide A Discoverable Edit Action For Saved Websites** `[Medium]`
+- [x] **A11Y-0003 - Provide A Discoverable Edit Action For Saved Websites** `[Medium]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/browser/BrowserScreen.kt`
   - **Problem:** A saved website can be edited only through an unlabeled long press on `WebsiteTile`. The UI provides no visible edit affordance or named custom accessibility action, and keyboard users have no discoverable equivalent.
   - **Impact:** TalkBack, Switch Access, keyboard, and mouse users can miss or be unable to use the website editing workflow.
@@ -283,7 +283,7 @@
   - **Fix:** Remove conflicting parent `aria-label`s on `.stat-pill` or replace them with `aria-describedby` pointing to structured child elements; add polite live announcements or semantic text descriptions for stats; implement proper focus management for the mobile navigation drawer (focus first link on open, trap Tab focus within menu when open, and return focus to `navToggle` on close).
   - **Verification:** Test using NVDA, VoiceOver, and TalkBack on desktop and mobile viewports; verify live counts are clearly announced, and verify keyboard Tab/Shift+Tab cycles cleanly through the open mobile menu and returns to the toggle upon Escape.
 
-- [ ] **I18N-0001 - Support Non-English Locales In Carousel Media Navigation** `[High]`
+- [x] **I18N-0001 - Support Non-English Locales In Carousel Media Navigation** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/resolver/web/RenderedPageResolverActivity.kt`
   - **Problem:** In `EXTRACTION_SCRIPT`, the selector for the carousel next button checks for English-only label text: `(label === 'next' || label.indexOf('next') >= 0)`. When a user visits Instagram or supported web targets in other languages (such as Spanish "Siguiente", French "Suivant", German "Weiter", Japanese "次へ", etc.), the button is never matched, `clickedNext` remains false, and only the first slide of a multi-item carousel is ever extracted.
   - **Impact:** Carousel downloads fail to detect or download subsequent slides for international users whose device or browser locale is not English.

@@ -2,6 +2,7 @@ package dev.qtremors.acqua.feature.browser
 
 import android.content.Context
 import android.os.Bundle
+import androidx.lifecycle.SavedStateHandle
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -35,7 +36,7 @@ class BrowserViewModelTest {
         instrumentation.runOnMainSync {
             viewModel = BrowserViewModel(
                 settings, websites, BrowserDataManager(context, websites, sessions, settings),
-                sessions, InstagramResolver()
+                sessions, InstagramResolver(), SavedStateHandle()
             )
         }
         return viewModel to settings

@@ -2,6 +2,21 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.8] - 2026-09-13
+
+### Added
+
+- Add adaptive rail navigation and width-bounded content for larger Android windows.
+
+### Changed
+
+- Keep downloader, browser, and history workflow state through recreation.
+- Improve saved-site and toggle accessibility with discoverable full-row actions.
+
+### Fixed
+
+- Make rendered-page carousel extraction language-independent and more resilient across supported sites.
+
 ## [0.2.7] - 2026-09-13
 
 ### Changed

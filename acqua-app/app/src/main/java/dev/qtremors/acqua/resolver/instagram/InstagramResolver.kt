@@ -7,19 +7,23 @@ import dev.qtremors.acqua.domain.ResolvedMedia
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.FormBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
 
 class AgeGateException(message: String) : Exception(message)
 class ExpiredSessionException(message: String) : Exception(message)
+class InstagramExtractionException(cause: Throwable? = null) :
+    Exception("Instagram extraction failed.", cause)
 
-class InstagramResolver : MediaResolver {
+class InstagramResolver internal constructor(
+    private val origin: HttpUrl = DEFAULT_ORIGIN
+) : MediaResolver {
 
     private val SHORTCODE_REGEX = Pattern.compile(
         "(?:instagram\\.com|instagr\\.am)/(?:reel|p|tv)/([A-Za-z0-9_-]+)"
@@ -110,13 +114,12 @@ class InstagramResolver : MediaResolver {
         }
 
         val shortcode = extractShortcode(postUrl)
-            ?: throw IllegalArgumentException("Invalid Instagram URL: $postUrl")
+            ?: throw IllegalArgumentException("Invalid Instagram URL.")
 
         if (hasActiveSession) {
             return getAuthenticatedMediaItems(shortcode)
         }
 
-        val embedError: String
         val embedException: Exception?
         try {
             return tryEmbedPage(shortcode)
@@ -126,10 +129,9 @@ class InstagramResolver : MediaResolver {
             throw e
         } catch (e: Exception) {
             embedException = e
-            embedError = e.message ?: e.javaClass.simpleName
         }
 
-        val graphqlError: String
+        val graphqlException: Exception
         try {
             return tryGraphQL(shortcode)
         } catch (e: AgeGateException) {
@@ -137,7 +139,7 @@ class InstagramResolver : MediaResolver {
         } catch (e: ExpiredSessionException) {
             throw e
         } catch (e: Exception) {
-            graphqlError = e.message ?: e.javaClass.simpleName
+            graphqlException = e
         }
 
         // If both failed and one of them detected a private error from profile or redirect
@@ -145,35 +147,31 @@ class InstagramResolver : MediaResolver {
             throw embedException
         }
 
-        throw Exception(
-            "Instagram extraction failed.\n\n" +
-            "Embed Page Error: $embedError\n" +
-            "GraphQL Query Error: $graphqlError"
-        )
+        throw InstagramExtractionException(graphqlException).apply {
+            addSuppressed(embedException)
+        }
     }
 
     private fun getAuthenticatedMediaItems(shortcode: String): List<ResolvedMedia> {
-        val graphqlError = try {
+        val graphqlException = try {
             return tryGraphQL(shortcode)
         } catch (e: ExpiredSessionException) {
             throw e
         } catch (e: Exception) {
-            e.message ?: e.javaClass.simpleName
+            e
         }
 
-        val embedError = try {
+        val embedException = try {
             return tryEmbedPage(shortcode)
         } catch (e: ExpiredSessionException) {
             throw e
         } catch (e: Exception) {
-            e.message ?: e.javaClass.simpleName
+            e
         }
 
-        throw Exception(
-            "Authenticated media extraction failed.\n\n" +
-                "Authenticated Query Error: $graphqlError\n" +
-                "Public Embed Error: $embedError"
-        )
+        throw InstagramExtractionException(embedException).apply {
+            addSuppressed(graphqlException)
+        }
     }
 
     private fun tryStory(story: StoryRequest): List<ResolvedMedia> {
@@ -182,22 +180,22 @@ class InstagramResolver : MediaResolver {
         val items = extractStoryMedia(reelsJson, userId, story.mediaId)
         if (items.isNotEmpty()) return items
 
-        val reelCount = JSONObject(reelsJson).optJSONObject("reels")?.length() ?: 0
-        throw UnsupportedOperationException(
-            "Could not load story details. Resolved user ID: $userId, reels count is $reelCount. " +
-            "Stories may have expired, or require a login session to bypass safety gating."
-        )
+        throw UnsupportedOperationException("Story media is unavailable.")
     }
 
     private fun fetchPublicUserId(username: String): String {
-        val encodedUsername = URLEncoder.encode(username, "UTF-8")
         val response = client.newCall(
             Request.Builder()
-                .url("https://www.instagram.com/api/v1/users/web_profile_info/?username=$encodedUsername")
+                .url(
+                    origin.newBuilder()
+                        .addPathSegments("api/v1/users/web_profile_info/")
+                        .addQueryParameter("username", username)
+                        .build()
+                )
                 .header("User-Agent", getUserAgent(desktopUserAgent))
                 .header("Accept", "*/*")
                 .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Referer", "https://www.instagram.com/$username/")
+                .header("Referer", origin.resolve("$username/").toString())
                 .header("X-IG-App-ID", "936619743392459")
                 .header("X-ASBD-ID", "129477")
                 .header("X-Requested-With", "XMLHttpRequest")
@@ -213,7 +211,7 @@ class InstagramResolver : MediaResolver {
         }
 
         if (!response.isSuccessful) {
-            throw Exception("Profile request failed (HTTP ${response.code}): ${body.take(200)}")
+            throw Exception("Profile request failed (HTTP ${response.code})")
         }
 
         val user = JSONObject(body)
@@ -232,11 +230,17 @@ class InstagramResolver : MediaResolver {
     private fun fetchStoryReels(userId: String, mediaId: String, username: String): String {
         val response = client.newCall(
             Request.Builder()
-                .url("https://www.instagram.com/api/v1/feed/reels_media/?reel_ids=$userId&media_id=$mediaId")
+                .url(
+                    origin.newBuilder()
+                        .addPathSegments("api/v1/feed/reels_media/")
+                        .addQueryParameter("reel_ids", userId)
+                        .addQueryParameter("media_id", mediaId)
+                        .build()
+                )
                 .header("User-Agent", getUserAgent(desktopUserAgent))
                 .header("Accept", "*/*")
                 .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Referer", "https://www.instagram.com/stories/$username/$mediaId/")
+                .header("Referer", origin.resolve("stories/$username/$mediaId/").toString())
                 .header("X-IG-App-ID", "936619743392459")
                 .header("X-ASBD-ID", "129477")
                 .header("X-Requested-With", "XMLHttpRequest")
@@ -255,7 +259,7 @@ class InstagramResolver : MediaResolver {
             throw Exception("Expected stories JSON, got HTML (HTTP ${response.code})")
         }
         if (!response.isSuccessful) {
-            throw Exception("Stories fetch failed (HTTP ${response.code}): ${body.take(200)}")
+            throw Exception("Stories fetch failed (HTTP ${response.code})")
         }
         return body
     }
@@ -343,11 +347,11 @@ class InstagramResolver : MediaResolver {
     private fun tryEmbedPage(shortcode: String): List<ResolvedMedia> {
         val response = client.newCall(
             Request.Builder()
-                .url("https://www.instagram.com/p/$shortcode/embed/captioned/")
+                .url(origin.resolve("p/$shortcode/embed/captioned/").toString())
                 .header("User-Agent", getUserAgent(mobileUserAgent))
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                 .header("Accept-Language", "en-US,en;q=0.5")
-                .header("Referer", "https://www.instagram.com/")
+                .header("Referer", origin.toString())
                 .get().build()
         ).execute()
 
@@ -360,7 +364,7 @@ class InstagramResolver : MediaResolver {
         }
 
         if (!response.isSuccessful) {
-            throw Exception("Embed page request failed (HTTP ${response.code}): ${html.take(120)}")
+            throw Exception("Embed page request failed (HTTP ${response.code})")
         }
 
         if (html.contains("PolarisErrorRoute") && html.contains("httpErrorPage")) {
@@ -369,22 +373,17 @@ class InstagramResolver : MediaResolver {
             )
         }
 
-        try {
-            InstagramEmbeddedJson.findShortcodeMedia(html)?.let { mediaJson ->
-                val items = parseShortcodeMedia(mediaJson)
-                if (items.isNotEmpty()) return items
-            }
-            val jsonBlock = extractJsonBlock(html, "\\\"shortcode_media\\\":")
-                ?.let { unescapeJson(it) }
+        val structuredItems = runCatching {
+            InstagramEmbeddedJson.findShortcodeMedia(html)?.let(::parseShortcodeMedia)
+                ?: extractJsonBlock(html, "\\\"shortcode_media\\\":")
+                    ?.let(::unescapeJson)
+                    ?.let(::JSONObject)
+                    ?.let(::parseShortcodeMedia)
                 ?: extractJsonBlock(html, "\"shortcode_media\":")
-            if (jsonBlock != null) {
-                val mediaJson = JSONObject(jsonBlock)
-                val items = parseShortcodeMedia(mediaJson)
-                if (items.isNotEmpty()) return items
-            }
-        } catch (e: Exception) {
-            // Fallback to regex if JSON block parsing fails
-        }
+                    ?.let(::JSONObject)
+                    ?.let(::parseShortcodeMedia)
+        }.getOrNull()
+        if (!structuredItems.isNullOrEmpty()) return structuredItems
 
         fun String.unescape() = replace("\\\\\\/", "/").replace("\\u0026", "&")
 
@@ -414,7 +413,7 @@ class InstagramResolver : MediaResolver {
     private fun tryGraphQL(shortcode: String): List<ResolvedMedia> {
         client.newCall(
             Request.Builder()
-                .url("https://www.instagram.com/")
+                .url(origin)
                 .header("User-Agent", getUserAgent(desktopUserAgent))
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                 .header("Accept-Language", "en-US,en;q=0.9")
@@ -435,12 +434,12 @@ class InstagramResolver : MediaResolver {
 
         val resp = client.newCall(
             Request.Builder()
-                .url("https://www.instagram.com/graphql/query")
+                .url(origin.resolve("graphql/query").toString())
                 .post(body)
                 .header("User-Agent", getUserAgent(desktopUserAgent))
                 .header("Accept", "*/*")
                 .header("Accept-Language", "en-US,en;q=0.9")
-                .header("Referer", "https://www.instagram.com/")
+                .header("Referer", origin.toString())
                 .header("X-IG-App-ID", "936619743392459")
                 .header("X-CSRFToken", csrfToken)
                 .build()
@@ -458,19 +457,17 @@ class InstagramResolver : MediaResolver {
         }
 
         if (!resp.isSuccessful) {
-            throw Exception("GraphQL query failed (HTTP ${resp.code}): ${respBody.take(200)}")
+            throw Exception("GraphQL query failed (HTTP ${resp.code})")
         }
 
         val json = try {
             JSONObject(respBody)
-        } catch (e: Exception) {
-            throw Exception("Failed to parse GraphQL JSON: ${respBody.take(150)}")
+        } catch (parseError: Exception) {
+            throw Exception("Failed to parse GraphQL JSON", parseError)
         }
 
         if (json.isNull("data")) {
-            val apiErr = json.optJSONArray("errors")
-                ?.optJSONObject(0)?.optString("message", "Unknown GraphQL error") ?: "data payload is null"
-            throw Exception("GraphQL response errors: $apiErr")
+            throw Exception("GraphQL response reported an error")
         }
 
         val media = json.getJSONObject("data")
@@ -533,6 +530,10 @@ class InstagramResolver : MediaResolver {
                 )
             )
         }
+    }
+
+    private companion object {
+        val DEFAULT_ORIGIN = "https://www.instagram.com/".toHttpUrl()
     }
 
     private fun sourceTimestampMillis(item: JSONObject): Long? = sequenceOf(
