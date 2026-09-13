@@ -66,7 +66,7 @@
   - **Fix:** After architecture tests and package boundaries are clean, extract a small deliberate graph: `:core:domain` as pure JVM, `:core:data`, `:core:ui`, `:feature:downloads`, `:feature:browser`, `:feature:settings`, `:feature:updates`, and `:feature:onboarding`, with `:app` as the composition/navigation root. Do not split resolvers or tiny model groups into modules until ownership or build performance justifies it.
   - **Verification:** Move one boundary at a time with no behavior change, run affected module tests plus the architecture suite, inspect Gradle dependencies for feature-to-feature edges, and compare clean and incremental configuration/compile times before and after extraction.
 
-- [ ] **STORAGE-0001 - Make Storage Permission Denial Recoverable** `[Medium]`
+- [x] **STORAGE-0001 - Make Storage Permission Denial Recoverable** `[Medium]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/MainActivity.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloadActivity.kt` `acqua-app/app/src/main/AndroidManifest.xml`
   - **Problem:** On Android 7 through 9, denying `WRITE_EXTERNAL_STORAGE` silently discards the pending download action. Permanent denial, permission revocation, and the path to system settings are not represented in UI state; notification denial likewise proceeds without explaining the reduced visibility of background work.
   - **Impact:** The primary download action can appear to do nothing, and users have no in-app recovery guidance after denial or revocation.
@@ -128,7 +128,7 @@
   - **Fix:** Disable backup or replace the current denylist with an explicit allowlist limited to non-sensitive preferences. Decide deliberately whether device transfer differs from cloud backup, migrate safely, and update the privacy policy to match the implemented behavior.
   - **Verification:** Populate history, bookmarks, sessions, and settings, run Android backup/restore and device-transfer tests on pre-31 and 31+ rule paths, inspect the restored files, and confirm no origins, URLs, filenames, thumbnails, cookies, or browser state are transferred.
 
-- [ ] **SEC-0002 - Stop Silent Network Reloads From Download History** `[High]`
+- [x] **SEC-0002 - Stop Silent Network Reloads From Download History** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/history/HistoryScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/data/history/HistoryRepository.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/platform/storage/MediaStorage.kt` `PRIVACY.md`
   - **Problem:** Opening History automatically fetches every visible video or audio `thumbnailUrl` from its original third-party host. Those URLs are retained indefinitely in the history database, and the request happens without an explicit refresh/download action or disclosure.
   - **Impact:** Merely viewing local history reveals the user's IP address and access timing to past media hosts, may re-access sensitive or expiring URLs, consumes data, and conflicts with the documented action-initiated network model.
@@ -165,7 +165,7 @@
   - **Fix:** Instantiate destination state holders lazily, keep version lookup/update out of constructors, and schedule update checks after first render under explicit network/battery constraints or on first engine use. Measure before adding a baseline profile for the true critical launch and download-entry journeys.
   - **Verification:** Add cold/warm startup macrobenchmarks with auto-update due and not due, trace class/native initialization and network traffic, and confirm first-frame/startup metrics no longer include yt-dlp or FFmpeg initialization when those features are unused.
 
-- [ ] **PERF-0003 - Scale History Storage And Queries Beyond An In-Memory Full Scan** `[High]`
+- [x] **PERF-0003 - Scale History Storage And Queries Beyond An In-Memory Full Scan** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/data/history/HistoryRepository.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/history/HistoryViewModel.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/history/HistoryQuery.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/history/HistoryScreen.kt`
   - **Problem:** Each refresh opens a new `SQLiteOpenHelper`, loads the entire table, probes every downloaded URI, and then repeatedly filters, sorts, and summarizes full in-memory lists. The schema has no indexes for its hot timestamp, type, URL, or filename access patterns and no paging boundary.
   - **Impact:** History entry becomes increasingly slow and I/O-heavy as downloads accumulate, with long provider probes able to delay the whole screen and large lists consuming unnecessary memory.
@@ -262,7 +262,7 @@
   - **Fix:** Make each complete row toggle the value, expose one merged semantic node with the setting title, description, role, and checked state, and clear duplicate child semantics while retaining a minimum 48 dp target and visible keyboard focus.
   - **Verification:** Add Compose semantics tests for every toggle and manually verify TalkBack, Switch Access, keyboard activation, focus indication, and double-tap behavior in both enabled states.
 
-- [ ] **A11Y-0002 - Announce Download Progress And Results Semantically** `[High]`
+- [x] **A11Y-0002 - Announce Download Progress And Results Semantically** `[High]`
   - **Location:** `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/DownloaderScreen.kt` `acqua-app/app/src/main/java/dev/qtremors/acqua/feature/downloader/MediaPreviewCard.kt`
   - **Problem:** The custom canvas progress indicator has no `progressBarRangeInfo`, its center text omits a percent label, and changing queued/running/retrying/completed/error states are not exposed through a live region. Per-item spinner/check state also changes visually without a state description.
   - **Impact:** TalkBack and other semantic consumers cannot determine progress or reliably learn when a long-running download succeeds, retries, fails, or is cancelled.

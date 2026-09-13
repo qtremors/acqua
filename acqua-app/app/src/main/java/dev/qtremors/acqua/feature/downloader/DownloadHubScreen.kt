@@ -76,13 +76,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.R
-import dev.qtremors.acqua.data.network.MediaDownloader
+import dev.qtremors.acqua.data.network.HttpMediaClient
 import dev.qtremors.acqua.domain.ResolvedMedia
-import dev.qtremors.acqua.feature.history.HistoryScreen
-import dev.qtremors.acqua.feature.history.HistoryViewModel
+import dev.qtremors.acqua.feature.downloader.history.HistoryScreen
+import dev.qtremors.acqua.feature.downloader.history.HistoryViewModel
 import dev.qtremors.acqua.platform.FileActions
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
+import dev.qtremors.acqua.ui.components.ExpressiveSegmentedButtonRow
 import dev.qtremors.acqua.ui.theme.LocalReducedMotionEnabled
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -92,7 +93,7 @@ import kotlinx.coroutines.launch
 fun DownloadHubScreen(
     downloaderViewModel: DownloaderViewModel,
     historyViewModel: HistoryViewModel,
-    mediaDownloader: MediaDownloader,
+    mediaDownloader: HttpMediaClient,
     fileActions: FileActions,
     useBrowserSessions: Boolean,
     sessionsInitialized: Boolean,
@@ -101,14 +102,22 @@ fun DownloadHubScreen(
     requestDownloadAccess: (needsNotification: Boolean, action: () -> Unit) -> Unit,
     onOpenBrowser: (String) -> Unit,
     onOpenAbout: () -> Unit,
+    modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
-    modifier: Modifier = Modifier
+    onSubTabChange: (Int) -> Unit = {},
+    showHistorySearch: Boolean = false,
+    onOpenHistorySearch: () -> Unit = {},
+    onDismissHistorySearch: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val subPagerState = rememberPagerState(initialPage = 0, pageCount = { 2 })
     val downloaderState by downloaderViewModel.state.collectAsState()
     val colors = MaterialTheme.colorScheme
+
+    LaunchedEffect(subPagerState.currentPage) {
+        onSubTabChange(subPagerState.currentPage)
+    }
 
     val pullRefreshState = rememberPullToRefreshState()
     var isRefreshing by rememberSaveable { mutableStateOf(false) }
@@ -163,7 +172,7 @@ fun DownloadHubScreen(
         label = "textScale"
     )
 
-    BackHandler(enabled = subPagerState.currentPage != 0) {
+    BackHandler(enabled = subPagerState.currentPage != 0 && !showHistorySearch) {
         coroutineScope.launch {
             subPagerState.animateScrollToPage(0)
         }
@@ -283,6 +292,9 @@ fun DownloadHubScreen(
                         contentPadding = contentPadding,
                         activeQueue = downloaderState.downloadQueue,
                         onCancelActiveDownload = downloaderViewModel::cancelDownload,
+                        showSearchInput = showHistorySearch,
+                        onOpenSearch = onOpenHistorySearch,
+                        onDismissSearch = onDismissHistorySearch,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -290,7 +302,6 @@ fun DownloadHubScreen(
         }
     }
 }
-
 private data class DownloadTabItem(
     val title: String,
     val selectedIcon: ImageVector,
@@ -305,9 +316,6 @@ private fun ExpressiveDownloadTabSwitcher(
     onTabSelected: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val reducedMotion = LocalReducedMotionEnabled.current
-
     val tabs = listOf(
         DownloadTabItem(
             title = stringResource(R.string.tab_downloader),
@@ -323,161 +331,32 @@ private fun ExpressiveDownloadTabSwitcher(
         )
     )
 
-    val weightSpring = remember(reducedMotion) {
-        if (reducedMotion) snap() else spring<Float>(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessLow
-        )
-    }
-    val cornerSpring = remember(reducedMotion) {
-        if (reducedMotion) snap() else spring<Dp>(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMedium
-        )
-    }
-    val pressSpring = remember(reducedMotion) {
-        if (reducedMotion) snap() else spring<Float>(
-            dampingRatio = 0.75f,
-            stiffness = Spring.StiffnessMediumLow
-        )
-    }
-
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        tabs.forEachIndexed { index, tab ->
-            val isSelected = selectedIndex == index
-            val interactionSource = remember(index) { MutableInteractionSource() }
-            val pressed by interactionSource.collectIsPressedAsState()
-            var tapGeneration by remember(index) { mutableIntStateOf(0) }
-            var tapped by remember(index) { mutableStateOf(false) }
-
-            LaunchedEffect(index, tapGeneration) {
-                if (tapGeneration > 0) {
-                    tapped = true
-                    delay(100L)
-                    tapped = false
-                }
-            }
-
-            val visualPressed = pressed || tapped
-
-            val animatedWeight by animateFloatAsState(
-                targetValue = when {
-                    visualPressed -> 1.35f
-                    isSelected -> 1.18f
-                    else -> 1f
-                },
-                animationSpec = weightSpring,
-                label = "tab_weight_$index"
+    ExpressiveSegmentedButtonRow(
+        items = tabs,
+        selectedIndex = selectedIndex,
+        onSelect = onTabSelected,
+        label = { it.title },
+        leadingIcon = { tab, isSelected ->
+            Icon(
+                imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
+                contentDescription = null,
+                modifier = Modifier.size(ButtonDefaults.IconSize)
             )
-
-            val outerRadius = 24.dp
-            val innerRadius = 8.dp
-            val pressedRadius = 14.dp
-
-            val startRadius by animateDpAsState(
-                targetValue = if (visualPressed) pressedRadius else if (isSelected || index == 0) outerRadius else innerRadius,
-                animationSpec = cornerSpring,
-                label = "tab_start_radius_$index"
-            )
-            val endRadius by animateDpAsState(
-                targetValue = if (visualPressed) pressedRadius else if (isSelected || index == tabs.lastIndex) outerRadius else innerRadius,
-                animationSpec = cornerSpring,
-                label = "tab_end_radius_$index"
-            )
-
-            val contentScale by animateFloatAsState(
-                targetValue = if (visualPressed) 0.96f else 1f,
-                animationSpec = pressSpring,
-                label = "tab_scale_$index"
-            )
-
-            val containerColor by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerLow,
-                animationSpec = if (reducedMotion) snap() else tween(durationMillis = 200),
-                label = "tab_container_color_$index"
-            )
-            val contentColor by animateColorAsState(
-                targetValue = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                animationSpec = if (reducedMotion) snap() else tween(durationMillis = 200),
-                label = "tab_content_color_$index"
-            )
-
-            Button(
-                onClick = {
-                    context.performHaptic(HapticSignal.CLICK)
-                    tapGeneration++
-                    onTabSelected(index)
-                },
-                interactionSource = interactionSource,
-                shape = RoundedCornerShape(
-                    topStart = startRadius,
-                    bottomStart = startRadius,
-                    topEnd = endRadius,
-                    bottomEnd = endRadius
-                ),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = containerColor,
-                    contentColor = contentColor
-                ),
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 0.dp,
-                    pressedElevation = 0.dp,
-                    focusedElevation = 0.dp,
-                    hoveredElevation = 0.dp
-                ),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                modifier = Modifier
-                    .weight(animatedWeight)
-                    .fillMaxHeight()
-                    .graphicsLayer {
-                        scaleX = contentScale
-                        scaleY = contentScale
-                    }
-                    .semantics {
-                        role = Role.Tab
-                        this.selected = isSelected
-                    }
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
+        },
+        trailingBadge = { tab, isSelected ->
+            if (tab.badgeCount > 0) {
+                Badge(
+                    containerColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                    contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary
                 ) {
-                    Icon(
-                        imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
-                        contentDescription = null,
-                        modifier = Modifier.size(ButtonDefaults.IconSize)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = tab.title,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = "${tab.badgeCount}",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelSmall
                     )
-                    if (tab.badgeCount > 0) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Badge(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                            contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary
-                        ) {
-                            Text(
-                                text = "${tab.badgeCount}",
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.labelSmall
-                            )
-                        }
-                    }
                 }
             }
-        }
-    }
+        },
+        modifier = modifier
+    )
 }
-

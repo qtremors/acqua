@@ -1,4 +1,4 @@
-package dev.qtremors.acqua.feature.history
+package dev.qtremors.acqua.feature.downloader.history
 
 import dev.qtremors.acqua.data.history.HistoryEntry
 import org.junit.Assert.assertEquals

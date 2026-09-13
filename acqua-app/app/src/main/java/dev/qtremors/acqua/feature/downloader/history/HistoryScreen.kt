@@ -1,15 +1,21 @@
-package dev.qtremors.acqua.feature.history
+package dev.qtremors.acqua.feature.downloader.history
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,8 +23,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import java.util.TimeZone
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -30,6 +42,7 @@ import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.downloader.DownloadQueueSnapshot
 import dev.qtremors.acqua.ui.scrollbar.AcquaFastScrollbar
 import dev.qtremors.acqua.ui.scrollbar.LazyListScrollbarState
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun HistoryScreen(
@@ -40,9 +53,13 @@ fun HistoryScreen(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
     activeQueue: DownloadQueueSnapshot? = null,
-    onCancelActiveDownload: ((String) -> Unit)? = null
+    onCancelActiveDownload: ((String) -> Unit)? = null,
+    showSearchInput: Boolean = false,
+    onOpenSearch: () -> Unit = {},
+    onDismissSearch: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val state by viewModel.state.collectAsState()
     val visible = remember(state.entries, state.activeQuery, state.missingEntryIds) { state.filteredEntries }
     val listState = rememberLazyListState()
@@ -53,14 +70,25 @@ fun HistoryScreen(
     var detailsId by rememberSaveable { mutableStateOf<String?>(null) }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
-    var expanded by remember { mutableStateOf(emptySet<String>()) }
-    var currentTime by remember { mutableStateOf(System.currentTimeMillis()) }
+    var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val zone = TimeZone.getDefault()
-    val displayItems = remember(visible, state.sort, state.groupBySource, expanded, currentTime, zone) {
-        historyListItems(visible, state.sort, state.groupBySource, expanded, currentTime, zone)
+    val displayItems = remember(visible, state.sort, currentTime, zone) {
+        historyListItems(visible, state.sort, currentTime, zone)
     }
     val selectedEntries = visible.filter { it.id in selected }
     val canShare = selectedEntries.isNotEmpty() && selectedEntries.all { it.isDownloaded && it.id !in state.missingEntryIds }
+
+    LaunchedEffect(listState, state.hasMore, state.isLoadingMore, displayItems.size) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastVisible ->
+                if (displayItems.isNotEmpty() && state.hasMore && !state.isLoadingMore &&
+                    lastVisible >= displayItems.lastIndex - 5
+                ) {
+                    viewModel.loadNextPage()
+                }
+            }
+    }
     val currentActive by rememberUpdatedState(active)
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle, viewModel) {
@@ -79,7 +107,7 @@ fun HistoryScreen(
             if (!state.isLoading) viewModel.refresh()
         }
     }
-    LaunchedEffect(state.query, state.filter, state.sort, state.groupBySource) {
+    LaunchedEffect(state.query, state.filter, state.sort) {
         listState.scrollToItem(0)
         selected = emptySet()
         selecting = false
@@ -95,17 +123,18 @@ fun HistoryScreen(
             when (event) {
                 is HistoryEvent.Removed -> {
                     val result = snackbar.showSnackbar(
-                        context.resources.getQuantityString(R.plurals.hist_removed, event.entries.size, event.entries.size),
-                        actionLabel = context.getString(R.string.hist_undo),
+                        resources.getQuantityString(R.plurals.hist_removed, event.entries.size, event.entries.size),
+                        actionLabel = resources.getString(R.string.hist_undo),
                         withDismissAction = true, duration = SnackbarDuration.Long
                     )
                     if (result == SnackbarResult.ActionPerformed) viewModel.restore(event.entries)
                 }
-                HistoryEvent.Failed -> snackbar.showSnackbar(context.getString(R.string.hist_failed))
+                HistoryEvent.Failed -> snackbar.showSnackbar(resources.getString(R.string.hist_failed))
             }
         }
     }
-    BackHandler(enabled = active && selecting) { selecting = false; selected = emptySet() }
+    BackHandler(enabled = active && showSearchInput) { onDismissSearch() }
+    BackHandler(enabled = active && !showSearchInput && selecting) { selecting = false; selected = emptySet() }
 
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
@@ -133,12 +162,12 @@ fun HistoryScreen(
         }, onRetry = { viewModel.refresh() })
     }
 
-    Box(modifier.fillMaxSize().padding(top = contentPadding.calculateTopPadding(), bottom = contentPadding.calculateBottomPadding())) {
+    Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             if (selecting) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { selecting = false; selected = emptySet() }) { Icon(Icons.Default.Close, stringResource(R.string.hist_cancel_selection)) }
-                    Text(stringResource(R.string.hist_selected, selected.size), Modifier.weight(1f))
+                    Text(pluralStringResource(R.plurals.hist_selected, selected.size, selected.size), Modifier.weight(1f))
                     IconButton(onClick = { fileActions.shareMany(selectedEntries) }, enabled = canShare) {
                         Icon(Icons.Default.Share, stringResource(R.string.hist_share_selected))
                     }
@@ -149,9 +178,16 @@ fun HistoryScreen(
                 TextButton(onClick = { selected = visible.mapTo(mutableSetOf(), HistoryEntry::id) }) { Text(stringResource(R.string.hist_select_all)) }
                 if (selectedEntries.isNotEmpty() && !canShare) Text(stringResource(R.string.hist_share_hint), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
             } else {
-                HistorySearchAndFilters(state, viewModel::setQuery, viewModel::selectFilter, viewModel::selectSort,
-                    viewModel::setGrouping, onStatistics = { statistics = true }, onSelect = { selecting = true },
-                    onRefresh = { viewModel.refresh() }, onClear = { confirmClear = true })
+                HistorySearchAndFilters(
+                    state = state,
+                    onQueryChange = viewModel::setQuery,
+                    onFilterChange = viewModel::selectFilter,
+                    onSortChange = viewModel::selectSort,
+                    onStatistics = { statistics = true },
+                    onRefresh = { viewModel.refresh() },
+                    onClear = { confirmClear = true },
+                    onOpenSearch = onOpenSearch
+                )
             }
             if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.loadFailed) {
@@ -161,7 +197,7 @@ fun HistoryScreen(
                 }
             }
             Box(Modifier.weight(1f)) {
-                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = contentPadding.calculateBottomPadding() + 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (activeQueue != null && activeQueue.activeItems.isNotEmpty() && onCancelActiveDownload != null) {
                         item("active_downloads") {
                             ActiveDownloadsSection(
@@ -199,15 +235,6 @@ fun HistoryScreen(
                                 HistoryDay.YESTERDAY -> R.string.hist_yesterday
                                 HistoryDay.EARLIER -> R.string.hist_earlier
                             }), Modifier.padding(top = 12.dp, bottom = 4.dp), style = MaterialTheme.typography.titleSmall)
-                            is HistoryListItem.Group -> {
-                                val isExpanded = item.key in expanded
-                                Surface(onClick = { expanded = if (isExpanded) expanded - item.key else expanded + item.key }, shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
-                                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                        Text(stringResource(R.string.hist_group_count, item.entries.size, WebLink.host(item.entries.first().url).orEmpty()), style = MaterialTheme.typography.titleSmall)
-                                        Text(stringResource(if (isExpanded) R.string.hist_collapse else R.string.hist_expand), style = MaterialTheme.typography.labelMedium)
-                                    }
-                                }
-                            }
                             is HistoryListItem.Entry -> {
                                 val entry = item.entry
                                 val toggle = { selected = if (entry.id in selected) selected - entry.id else selected + entry.id }
@@ -221,17 +248,136 @@ fun HistoryScreen(
                             }
                         }
                     }
+                    if (state.isLoadingMore) item("loading_more") {
+                        Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(28.dp))
+                        }
+                    } else if (visible.isEmpty() && state.hasMore) item("load_more") {
+                        TextButton(
+                            onClick = viewModel::loadNextPage,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(stringResource(R.string.history_load_more)) }
+                    }
                 }
                 if (displayItems.isNotEmpty()) AcquaFastScrollbar(
                     scrollbarState = scrollbar,
                     labelForIndex = { index -> when (val item = displayItems.getOrNull(index)) {
                         is HistoryListItem.Entry -> item.entry.fileName.ifBlank { WebLink.host(item.entry.url).orEmpty() }.take(20)
-                        is HistoryListItem.Group -> WebLink.host(item.entries.first().url).orEmpty()
                         else -> ""
                     } }, modifier = Modifier.align(Alignment.CenterEnd)
                 )
             }
         }
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(8.dp))
+        SnackbarHost(
+            snackbar,
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = contentPadding.calculateBottomPadding() + 8.dp, start = 8.dp, end = 8.dp)
+        )
+
+        if (showSearchInput) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismissSearch
+                    )
+            )
+            HistorySearchInput(
+                query = state.query,
+                onQueryChange = viewModel::setQuery,
+                onDismiss = onDismissSearch,
+                contentPadding = contentPadding,
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistorySearchInput(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier
+) {
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+        keyboard?.show()
+    }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .imePadding()
+            .padding(bottom = contentPadding.calculateBottomPadding() + 8.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                shape = RoundedCornerShape(16.dp),
+                singleLine = true,
+                placeholder = {
+                    Text(stringResource(R.string.hist_search))
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Filled.Search,
+                        contentDescription = stringResource(R.string.hist_search),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = if (query.isNotEmpty()) {
+                    {
+                        IconButton(
+                            onClick = { onQueryChange("") },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.clear_search),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                } else null,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = {
+                    keyboard?.hide()
+                    onDismiss()
+                })
+            )
+            Spacer(Modifier.width(8.dp))
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(40.dp)
+            ) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = stringResource(R.string.close),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

@@ -1,4 +1,6 @@
-package dev.qtremors.acqua.feature.history
+@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
+
+package dev.qtremors.acqua.feature.downloader.history
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -13,13 +15,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import dev.qtremors.acqua.ui.theme.expressiveSegmentedShapes
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -108,21 +118,73 @@ internal fun HistoryRow(
             }
             if (!selecting) Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, stringResource(R.string.hist_item_options, title)) }
-                DropdownMenu(menu, onDismissRequest = { menu = false }) {
-                    if (available) DropdownMenuItem(text = { Text(stringResource(R.string.share_file)) }, onClick = { menu = false; onShare() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.hist_details)) }, onClick = { menu = false; onDetails() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.hist_open_source)) }, onClick = { menu = false; onSource() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.hist_copy_link)) }, onClick = { menu = false; copyHistoryLink(context, entry.url) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.refetch_link)) }, onClick = { menu = false; onRefetch() })
-                    if (entry.isDownloaded && !available) DropdownMenuItem(text = { Text(stringResource(R.string.hist_retry)) }, onClick = { menu = false; onRetry() })
-                    HorizontalDivider()
-                    DropdownMenuItem(text = { Text(stringResource(R.string.hist_select)) }, onClick = { menu = false; onLongClick() })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.hist_remove), color = colors.error) }, onClick = { menu = false; onRemove() })
+                val actions = buildList {
+                    if (available) {
+                        add(HistoryRowAction(stringResource(R.string.share_file), Icons.Default.Share) { onShare() })
+                    }
+                    add(HistoryRowAction(stringResource(R.string.hist_details), Icons.Default.Info) { onDetails() })
+                    add(HistoryRowAction(stringResource(R.string.hist_open_source), Icons.AutoMirrored.Filled.OpenInNew) { onSource() })
+                    add(HistoryRowAction(stringResource(R.string.hist_copy_link), Icons.Default.ContentCopy) { copyHistoryLink(context, entry.url) })
+                    add(HistoryRowAction(stringResource(R.string.refetch_link), Icons.Default.Refresh) { onRefetch() })
+                    if (entry.isDownloaded && !available) {
+                        add(HistoryRowAction(stringResource(R.string.hist_retry), Icons.Default.Refresh) { onRetry() })
+                    }
+                    add(HistoryRowAction(stringResource(R.string.hist_select), Icons.Default.Check) { onLongClick() })
+                    add(HistoryRowAction(stringResource(R.string.hist_remove), Icons.Default.DeleteOutline, isDestructive = true) { onRemove() })
+                }
+                DropdownMenu(
+                    expanded = menu,
+                    onDismissRequest = { menu = false },
+                    shape = RoundedCornerShape(24.dp),
+                    containerColor = colors.surfaceContainerLow
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .width(IntrinsicSize.Max)
+                            .padding(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        actions.forEachIndexed { index, action ->
+                            SegmentedListItem(
+                                onClick = {
+                                    menu = false
+                                    action.onClick()
+                                },
+                                shapes = expressiveSegmentedShapes(index = index, count = actions.size),
+                                leadingContent = {
+                                    Icon(
+                                        action.icon,
+                                        contentDescription = null,
+                                        tint = if (action.isDestructive) colors.error else colors.onSurfaceVariant,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                content = {
+                                    Text(
+                                        action.label,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (action.isDestructive) colors.error else colors.onSurface
+                                    )
+                                },
+                                colors = ListItemDefaults.segmentedColors(
+                                    containerColor = colors.surfaceContainer
+                                ),
+                                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+private data class HistoryRowAction(
+    val label: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val isDestructive: Boolean = false,
+    val onClick: () -> Unit
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

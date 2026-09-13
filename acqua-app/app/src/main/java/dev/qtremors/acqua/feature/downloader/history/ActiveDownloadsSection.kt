@@ -1,4 +1,4 @@
-package dev.qtremors.acqua.feature.history
+package dev.qtremors.acqua.feature.downloader.history
 
 import android.text.format.Formatter
 import androidx.compose.animation.AnimatedVisibility

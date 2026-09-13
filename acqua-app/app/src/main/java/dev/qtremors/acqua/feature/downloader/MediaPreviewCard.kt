@@ -47,6 +47,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -263,12 +269,12 @@ fun MediaPreviewCard(
                 item.copy(url = previewUrl, requestCookies = cookies),
                 previewWidthPixels,
                 previewHeightPixels
-            )?.asImageBitmap()
+            )
         }
         failed = previewUrl != null && loaded == null
-        value = loaded
+        value = loaded?.bitmap?.asImageBitmap()
         if (loaded != null) {
-            onBitmapDimensions(loaded.width, loaded.height)
+            onBitmapDimensions(loaded.sourceWidth, loaded.sourceHeight)
         }
     }
     val isVideo = item.isVideo && !audioPreview
@@ -333,29 +339,45 @@ fun MediaPreviewCard(
     }
 }
 
+data class MediaMetadataContent(
+    val item: ResolvedMedia,
+    val index: Int,
+    val totalCount: Int,
+    val contentType: DownloadContentType,
+    val audioFormat: AudioOutputFormat,
+    val filenamePattern: String,
+    val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN
+)
+
+data class MediaMetadataStatus(
+    val isSaving: Boolean,
+    val isSaved: Boolean,
+    val downloadsEnabled: Boolean
+)
+
+data class MediaMetadataFallback(
+    val title: String? = null,
+    val author: String? = null,
+    val bitmapWidth: Int = 0,
+    val bitmapHeight: Int = 0
+)
+
 @Composable
 fun MediaMetadataContainer(
-    item: ResolvedMedia,
-    index: Int,
-    totalCount: Int,
-    contentType: DownloadContentType,
-    audioFormat: AudioOutputFormat,
-    filenamePattern: String,
-    audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN,
-    isSaving: Boolean,
-    isSaved: Boolean,
-    downloadsEnabled: Boolean,
+    content: MediaMetadataContent,
+    status: MediaMetadataStatus,
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
-    fallbackTitle: String? = null,
-    fallbackAuthor: String? = null,
-    bitmapWidth: Int = 0,
-    bitmapHeight: Int = 0
+    fallback: MediaMetadataFallback = MediaMetadataFallback()
 ) {
+    val (item, index, totalCount, contentType, audioFormat, filenamePattern, audioFilenamePattern) = content
+    val (isSaving, isSaved, downloadsEnabled) = status
+    val (fallbackTitle, fallbackAuthor, bitmapWidth, bitmapHeight) = fallback
     val configuration = LocalConfiguration.current
     val locale = configuration.locales[0]
     val colors = MaterialTheme.colorScheme
     val audioPreview = item.isAudioPreview(contentType)
+    val sourceExtension = item.fileExtension
 
     val width = if (item.isVideo) item.width else if (bitmapWidth > 0) bitmapWidth else item.width
     val height = if (item.isVideo) item.height else if (bitmapHeight > 0) bitmapHeight else item.height
@@ -368,7 +390,7 @@ fun MediaMetadataContainer(
                 AudioOutputFormat.M4A -> "M4A"
                 AudioOutputFormat.MP3 -> "MP3"
             }
-            !item.fileExtension.isNullOrBlank() -> item.fileExtension.uppercase(locale)
+            !sourceExtension.isNullOrBlank() -> sourceExtension.uppercase(locale)
             else -> "AUDIO"
         }
         listOf(formatLabel, size).filter(String::isNotEmpty)
@@ -383,12 +405,14 @@ fun MediaMetadataContainer(
                 AudioOutputFormat.M4A -> "m4a"
                 AudioOutputFormat.MP3 -> "mp3"
             }
-            !item.fileExtension.isNullOrBlank() -> item.fileExtension.lowercase(locale)
+            !sourceExtension.isNullOrBlank() -> sourceExtension.lowercase(locale)
             else -> "m4a"
         }
         item.kind == MediaKind.VIDEO || item.isVideo -> "mp4"
         item.kind == MediaKind.AUDIO -> "m4a"
-        else -> item.fileExtension?.lowercase(locale)?.takeIf { it in listOf("jpg", "jpeg", "png", "webp", "gif") } ?: "jpg"
+        else -> sourceExtension?.lowercase(locale)
+            ?.takeIf { it in listOf("jpg", "jpeg", "png", "webp", "gif") }
+            ?: "jpg"
     }
 
     val activePattern = if (audioPreview) audioFilenamePattern else filenamePattern
@@ -559,10 +583,20 @@ fun MediaMetadataContainer(
 
             Spacer(Modifier.width(10.dp))
 
+            val saveState = stringResource(
+                when {
+                    isSaving -> R.string.saving
+                    isSaved -> R.string.saved
+                    else -> R.string.download_item
+                }
+            )
             FilledTonalIconButton(
                 onClick = onDownload,
                 enabled = downloadsEnabled && !isSaved,
-                modifier = Modifier.size(42.dp),
+                modifier = Modifier.size(42.dp).semantics {
+                    stateDescription = saveState
+                    if (isSaving || isSaved) liveRegion = LiveRegionMode.Polite
+                },
                 shape = CircleShape,
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = if (isSaved) colors.primaryContainer else colors.surfaceContainerHighest,
@@ -571,7 +605,9 @@ fun MediaMetadataContainer(
             ) {
                 when {
                     isSaving -> CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(18.dp).semantics {
+                            progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+                        },
                         color = colors.primary,
                         strokeWidth = 2.dp
                     )

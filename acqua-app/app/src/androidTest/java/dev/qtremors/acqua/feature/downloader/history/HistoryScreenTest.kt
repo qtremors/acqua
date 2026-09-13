@@ -1,6 +1,7 @@
-package dev.qtremors.acqua.feature.history
+package dev.qtremors.acqua.feature.downloader.history
 
 import android.content.Context
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -47,7 +48,7 @@ class HistoryScreenTest {
     @Test fun emptyAudioCategoryDoesNotClaimSearchFailed() {
         repository.add(entry)
         lateinit var model: HistoryViewModel
-        compose.runOnIdle { model = HistoryViewModel(repository); store.put("history", model); model.selectFilter(HistoryFilter.AUDIO) }
+        compose.runOnIdle { model = HistoryViewModel(repository, SavedStateHandle()); store.put("history", model); model.selectFilter(HistoryFilter.AUDIO) }
         compose.setContent { AcquaTheme { HistoryScreen(model, FileActions(context), true, {}) } }
         compose.waitUntil(5_000) { !model.state.value.isLoading }
         compose.onNodeWithText("No audio yet").assertIsDisplayed()
@@ -57,7 +58,7 @@ class HistoryScreenTest {
 
     @Test fun newDownloadsAppearAndRemovalCanBeUndone() {
         lateinit var model: HistoryViewModel
-        compose.runOnIdle { model = HistoryViewModel(repository); store.put("history", model) }
+        compose.runOnIdle { model = HistoryViewModel(repository, SavedStateHandle()); store.put("history", model) }
         compose.setContent { AcquaTheme { HistoryScreen(model, FileActions(context), true, {}) } }
         compose.waitUntil(5_000) { !model.state.value.isLoading }
         HistoryRepository(context).add(entry)

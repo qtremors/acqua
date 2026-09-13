@@ -2,6 +2,25 @@
 
 All notable user-visible changes are documented here.
 
+## [0.2.6] - 2026-09-13
+
+### Added
+
+- Add recoverable storage and notification permission guidance with retry and system-settings paths.
+
+### Changed
+
+- Refresh Downloader and History controls with Material 3 Expressive motion and grouped menus.
+- Move History search to the floating action button, tighten spacing, remove source grouping, and scale loading with indexed paging.
+- Simplify Fetch, paste, and link guidance across the Downloader.
+
+### Fixed
+
+- Improve media thumbnails and timestamps in galleries and third-party file pickers.
+- Report accurate image dimensions and file sizes in previews and filenames.
+- Identify completed image, video, and audio downloads clearly in app feedback and system notifications.
+- Avoid silent network reloads when browsing download history.
+
 ## [0.2.5] - 2026-09-13
 
 ### Changed
