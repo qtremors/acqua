@@ -7,17 +7,28 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
-class MediaResolutionService(
-    private val sourceResolver: MediaResolver,
-    private val ytDlpResolver: MediaResolver? = null,
-    private val inspectMedia: (ResolvedMedia) -> ResolvedMedia?
-) {
+interface MediaResolutionGateway {
     suspend fun resolve(
         input: String,
         browserSessionsEnabled: Boolean,
         forceBrowserResolution: Boolean = false,
         engine: DownloadEngine = DownloadEngine.ACQUA,
         allowBrowserFallback: Boolean = false,
+        browserResolver: suspend (url: String, explicitSessionAuthorization: Boolean) -> List<ResolvedMedia>
+    ): List<ResolvedMedia>
+}
+
+class MediaResolutionService(
+    private val sourceResolver: MediaResolver,
+    private val ytDlpResolver: MediaResolver? = null,
+    private val inspectMedia: (ResolvedMedia) -> ResolvedMedia?
+) : MediaResolutionGateway {
+    override suspend fun resolve(
+        input: String,
+        browserSessionsEnabled: Boolean,
+        forceBrowserResolution: Boolean,
+        engine: DownloadEngine,
+        allowBrowserFallback: Boolean,
         browserResolver: suspend (url: String, explicitSessionAuthorization: Boolean) -> List<ResolvedMedia>
     ): List<ResolvedMedia> {
         val url = WebLink.normalize(input)
@@ -88,7 +99,7 @@ class MediaResolutionService(
         sourceUrl: String,
         candidates: List<ResolvedMedia>
     ): List<ResolvedMedia> {
-        val uniqueCandidates = candidates.distinctBy(ResolvedMedia::url).take(MAX_CANDIDATES)
+        val uniqueCandidates = deduplicate(candidates).take(MAX_CANDIDATES)
         val validated = uniqueCandidates.chunked(MAX_CONCURRENT_INSPECTIONS).flatMap { batch ->
             coroutineScope {
                 batch.map { item ->
@@ -110,11 +121,23 @@ class MediaResolutionService(
     private fun selectBest(sourceUrl: String, items: List<ResolvedMedia>): List<ResolvedMedia> {
         val singleVideo = WebLink.isInstagramMediaUrl(sourceUrl) &&
             Regex("/(?:reel|tv)/", RegexOption.IGNORE_CASE).containsMatchIn(sourceUrl)
-        if (!singleVideo) return items.distinctBy(ResolvedMedia::url)
+        if (!singleVideo) return deduplicate(items)
         return items.filter(ResolvedMedia::isVideo).maxWithOrNull(
             compareBy<ResolvedMedia> { it.width.toLong() * it.height.toLong() }
                 .thenBy { it.fileSize ?: 0L }
-        )?.let(::listOf) ?: items.distinctBy(ResolvedMedia::url)
+        )?.let(::listOf) ?: deduplicate(items)
+    }
+
+    private fun deduplicate(items: List<ResolvedMedia>): List<ResolvedMedia> {
+        val unique = linkedMapOf<String, ResolvedMedia>()
+        items.forEach { candidate ->
+            val identity = WebLink.mediaAssetIdentity(candidate.url)
+            val existing = unique[identity]
+            val candidateArea = candidate.width.toLong() * candidate.height.toLong()
+            val existingArea = existing?.let { it.width.toLong() * it.height.toLong() } ?: -1L
+            if (existing == null || candidateArea >= existingArea) unique[identity] = candidate
+        }
+        return unique.values.toList()
     }
 
     private companion object {

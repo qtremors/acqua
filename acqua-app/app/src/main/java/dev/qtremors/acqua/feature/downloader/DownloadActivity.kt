@@ -42,7 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.createSavedStateHandle
 import dev.qtremors.acqua.MainDependencies
 import dev.qtremors.acqua.AcquaApp
-import dev.qtremors.acqua.R
+import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.feature.ViewModelFactory
@@ -154,7 +154,6 @@ class DownloadActivity : ComponentActivity() {
                             DownloaderViewModel(
                                 dependencies.history,
                                 dependencies.resolution,
-                                dependencies.mediaStorage,
                                 dependencies.settings,
                                 dependencies.ytDlpEngine,
                                 dependencies.ytDlpDownloads,

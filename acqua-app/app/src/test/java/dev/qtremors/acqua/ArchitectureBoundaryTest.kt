@@ -121,6 +121,22 @@ class ArchitectureBoundaryTest {
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
     }
 
+    @Test
+    fun `Gradle module graph keeps features independent`() {
+        val featureBuildFiles = File(projectRoot, "feature").walkTopDown()
+            .filter { it.isFile && it.name == "build.gradle.kts" }
+            .toList()
+        val failures = featureBuildFiles.flatMap { buildFile ->
+            PROJECT_DEPENDENCY.findAll(buildFile.readText()).mapNotNull { match ->
+                val dependency = match.groupValues[1]
+                if (dependency.startsWith(":feature:")) {
+                    "${buildFile.relativeTo(projectRoot)}: feature module depends on $dependency"
+                } else null
+            }.toList()
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
     companion object {
         private lateinit var projectRoot: File
         private lateinit var productionSources: List<File>
@@ -135,6 +151,7 @@ class ArchitectureBoundaryTest {
         private val INFRASTRUCTURE_CONSTRUCTION = Regex(
             "\\b(?:[A-Z][A-Za-z0-9]*(?:Repository|Manager|Updater|Engine|Storage)|HttpMediaClient)\\s*\\("
         )
+        private val PROJECT_DEPENDENCY = Regex("project\\(\"([^\"]+)\"\\)")
         private val COMPOSABLE_CONSTRUCTION_BASELINE = emptySet<String>()
         private const val MAX_PUBLIC_COMPOSABLE_PARAMETERS = 15
 
@@ -143,18 +160,27 @@ class ArchitectureBoundaryTest {
         fun loadArchitecture() {
             projectRoot = generateSequence(File(requireNotNull(System.getProperty("user.dir")))) { it.parentFile }
                 .first { File(it, "settings.gradle.kts").isFile }
-            productionSources = listOf("app", "core")
+            productionSources = listOf("app", "core", "feature")
                 .flatMap { moduleRoot ->
                     File(projectRoot, moduleRoot).walkTopDown().filter { source ->
                         source.isFile && source.extension == "kt" &&
                             source.invariantSeparatorsPath.contains("/src/main/")
                     }.toList()
                 }
-            val productionClassDirectories = listOf(
-                File(projectRoot, "app/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes"),
-                File(projectRoot, "app/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes"),
-                File(projectRoot, "core/domain/build/classes/kotlin/main"),
-                File(projectRoot, "core/domain/build/classes/java/main")
+            val androidModules = listOf(
+                "app", "core/data", "core/ui", "feature/downloads", "feature/browser",
+                "feature/settings", "feature/updates", "feature/onboarding"
+            )
+            val productionClassDirectories = (
+                androidModules.flatMap { module ->
+                    listOf(
+                        File(projectRoot, "$module/build/intermediates/built_in_kotlinc/debug/compileDebugKotlin/classes"),
+                        File(projectRoot, "$module/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes")
+                    )
+                } + listOf(
+                    File(projectRoot, "core/domain/build/classes/kotlin/main"),
+                    File(projectRoot, "core/domain/build/classes/java/main")
+                )
             ).filter(File::isDirectory)
             productionClasses = ClassFileImporter().importPaths(
                 productionClassDirectories.map { it.toPath() }
@@ -165,9 +191,10 @@ class ArchitectureBoundaryTest {
             val marker = "dev.qtremors.acqua.feature."
             if (!packageName.startsWith(marker)) return null
             val relativeName = packageName.removePrefix(marker)
-            if ('.' !in relativeName) return null
-            return relativeName.substringBefore('.')
+            return relativeName.substringBefore('.').takeIf(FEATURE_OWNERS::contains)
         }
+
+        private val FEATURE_OWNERS = setOf("browser", "downloader", "onboarding", "settings", "updater", "about")
 
         private fun parameterCount(parameters: String): Int {
             if (parameters.isBlank()) return 0

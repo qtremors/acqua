@@ -41,7 +41,9 @@ The universal APK bundles all architecture binaries (`arm64-v8a`, `armeabi-v7a`,
 
 - **Private by design:** No ads, analytics, accounts, or telemetry. Media and browser cookies stay in app-private storage.
 - **Dual engine processing:** Native direct extraction for fast carousel and direct media, with yt-dlp available for full quality, audio formats, metadata, and artwork.
+- **Supported sources:** Download Instagram posts, reels, and carousels, direct media URLs, and YouTube, YouTube Music, or other compatible pages through yt-dlp or browser-assisted extraction.
 - **Preview before downloading:** Inspect video dimensions, image resolutions, audio formats, and sizes before committing to a download.
+- **Quality and format controls:** Choose the best available video or cap it from 2160p through 360p, and keep original audio or convert it to M4A or MP3.
 - **Background queue:** Background downloads continue reliably when you leave the app, with progress notifications and automatic network retry.
 - **In-app browser:** Browse and sign in to websites full-screen with app-private cookies. Downloads open above the live browser without losing your place or page state.
 - **Organized storage:** Save files into categorized subfolders (`Images/`, `Videos/`, `Audio/`) with customizable filename patterns and template chips.

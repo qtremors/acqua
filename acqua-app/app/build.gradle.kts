@@ -208,8 +208,8 @@ android {
         applicationId = "dev.qtremors.acqua"
         minSdk = 24
         targetSdk = 37
-        versionCode = 29
-        versionName = "0.2.9"
+        versionCode = 30
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -324,6 +324,13 @@ composeCompiler {
 
 dependencies {
     implementation(project(":core:domain"))
+    implementation(project(":core:data"))
+    implementation(project(":core:ui"))
+    implementation(project(":feature:downloads"))
+    implementation(project(":feature:browser"))
+    implementation(project(":feature:settings"))
+    implementation(project(":feature:updates"))
+    implementation(project(":feature:onboarding"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)

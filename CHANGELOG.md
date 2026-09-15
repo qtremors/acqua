@@ -2,6 +2,23 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.0] - 2026-09-15
+
+### Changed
+
+- Split domain, data, shared UI, downloads, browser, settings, updates, and onboarding into enforced Gradle modules.
+- Expand the local release gate across every module's tests, debug and release lint, minified artifacts, build conventions, and static-site validation.
+- Make downloader and settings orchestration deterministic through focused dependency contracts and restored-state tests.
+- Align website and developer guidance with supported sources, media formats, quality controls, APK architectures, and site maintenance practices.
+- Rename GitHub Tracker to Feeds, with GitHub releases as the first source and source-neutral navigation ready for additional feed types.
+
+### Fixed
+
+- Keep notification cancellation safe across WorkManager and Android 14 user-initiated download paths.
+- Show installed and GitHub release versions in Feeds with consistent labels, without repeating the current version.
+- Resolve complete Instagram carousels from embedded page data and wait for real slide changes during the rendered-page fallback.
+- Isolate Instagram request cookies, try public access first, and retry login-gated posts with the saved browser session.
+
 ## [0.2.9] - 2026-09-13
 
 ### Changed

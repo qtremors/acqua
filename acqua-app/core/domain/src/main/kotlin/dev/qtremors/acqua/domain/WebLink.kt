@@ -80,4 +80,18 @@ object WebLink {
             url
         }
     }
+
+    fun mediaAssetIdentity(input: String): String {
+        val url = normalize(input) ?: return input
+        val uri = runCatching { URI(url) }.getOrNull() ?: return url
+        val mediaHost = uri.host?.lowercase() ?: return url
+        val isInstagramCdn = mediaHost == "cdninstagram.com" ||
+            mediaHost.endsWith(".cdninstagram.com") ||
+            mediaHost == "fbcdn.net" ||
+            mediaHost.endsWith(".fbcdn.net")
+        if (!isInstagramCdn) return url
+
+        val port = if (uri.port == -1) "" else ":${uri.port}"
+        return "${uri.scheme.lowercase()}://$mediaHost$port${uri.rawPath.orEmpty()}"
+    }
 }

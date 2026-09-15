@@ -20,16 +20,27 @@ import dev.qtremors.acqua.ui.image.ThumbnailKeyer
 import dev.qtremors.acqua.ui.image.VideoThumbnailFetcher
 import dev.qtremors.acqua.ui.security.SensitiveMemory
 import dev.qtremors.acqua.downloader.YtDlpTemporaryFiles
+import dev.qtremors.acqua.downloader.DownloadExecution
+import dev.qtremors.acqua.downloader.DownloadExecutionProvider
 import dev.qtremors.acqua.platform.storage.PendingMediaStoreRegistry
+import dev.qtremors.acqua.data.session.InstagramSessionStore
+import dev.qtremors.acqua.data.session.SavedWebsiteRepository
+import dev.qtremors.acqua.data.settings.AppSettingsRepository
+import dev.qtremors.acqua.resolver.web.RenderedPageResolverDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class AcquaApp : Application(), ImageLoaderFactory, Configuration.Provider {
+class AcquaApp : Application(), ImageLoaderFactory, Configuration.Provider,
+    DownloadExecutionProvider, RenderedPageResolverDependencies {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val appSessionTracker = AppSessionTracker()
     val dependencies by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { MainDependencies(this) }
+    override val downloadExecution: DownloadExecution get() = dependencies.downloadExecutor
+    override val resolverSettings: AppSettingsRepository get() = dependencies.settings
+    override val resolverSavedWebsites: SavedWebsiteRepository get() = dependencies.savedWebsites
+    override val resolverInstagramSessions: InstagramSessionStore get() = dependencies.instagramSessions
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()

@@ -33,7 +33,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import dev.qtremors.acqua.R
+import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.AcquaApp
 import dev.qtremors.acqua.domain.BrowserDestination
 import dev.qtremors.acqua.domain.ResolvedMedia

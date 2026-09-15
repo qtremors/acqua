@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Public
@@ -39,7 +40,6 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -60,7 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
-import dev.qtremors.acqua.R
+import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.data.network.HttpMediaClient
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.appinfo.AboutDestination
@@ -77,8 +77,8 @@ import dev.qtremors.acqua.feature.downloader.DownloaderViewModel
 import dev.qtremors.acqua.feature.downloader.history.HistoryScreen
 import dev.qtremors.acqua.feature.downloader.history.HistoryViewModel
 import dev.qtremors.acqua.feature.settings.SettingsViewModel
-import dev.qtremors.acqua.feature.updater.AppUpdatesScreen
-import dev.qtremors.acqua.feature.updater.AppUpdatesViewModel
+import dev.qtremors.acqua.feature.updater.FeedsScreen
+import dev.qtremors.acqua.feature.updater.FeedsViewModel
 import dev.qtremors.acqua.platform.FileActions
 import dev.qtremors.acqua.platform.HapticSignal
 import dev.qtremors.acqua.platform.performHaptic
@@ -94,7 +94,7 @@ data class DashboardStateHolders(
     val browser: BrowserViewModel,
     val history: HistoryViewModel,
     val settings: SettingsViewModel,
-    val updates: AppUpdatesViewModel
+    val feeds: FeedsViewModel
 )
 
 data class DashboardServices(
@@ -127,7 +127,7 @@ fun DashboardScreen(
     routeState: DashboardRouteState,
     actions: DashboardActions
 ) {
-    val (downloaderViewModel, browserViewModel, historyViewModel, settingsViewModel, appUpdatesViewModel) = stateHolders
+    val (downloaderViewModel, browserViewModel, historyViewModel, settingsViewModel, feedsViewModel) = stateHolders
     val (mediaDownloader, fileActions, backupManager) = services
     val (initialUrl, urlHandoff, browserRevision, downloadRequestRevision, currentThemeState) = routeState
     val (onThemeChange, onUrlHandoffConsumed, resolveInBrowser, requestDownloadAccess, openBrowser, onBrowserDownloadRequest) = actions
@@ -142,8 +142,7 @@ fun DashboardScreen(
     val browserState by browserViewModel.state.collectAsState()
     val downloaderState by downloaderViewModel.state.collectAsState()
     val historyState by historyViewModel.state.collectAsState()
-    val appUpdatesState by appUpdatesViewModel.state.collectAsState()
-    val trackedRepos by appUpdatesViewModel.trackedRepos.collectAsState()
+    val trackedRepos by feedsViewModel.trackedRepos.collectAsState()
     val adaptiveInfo = currentWindowAdaptiveInfoV2()
     val useNavigationRail = adaptiveInfo.windowSizeClass.isWidthAtLeastBreakpoint(
         WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND
@@ -198,7 +197,6 @@ fun DashboardScreen(
         downloadHubSubTab,
         downloaderState,
         browserState,
-        appUpdatesState,
         trackedRepos
     ) {
         when (pagerState.currentPage) {
@@ -253,20 +251,11 @@ fun DashboardScreen(
                 )
             }
             2 -> {
-                val pendingUpdate = trackedRepos.firstOrNull { it.isUpdateAvailable }
-                if (appUpdatesState.hasRefreshed && pendingUpdate != null) {
-                    AcquaFabAction(
-                        icon = Icons.Filled.SystemUpdate,
-                        contentDescriptionRes = R.string.update,
-                        onClick = { appUpdatesViewModel.download(pendingUpdate) }
-                    )
-                } else {
-                    AcquaFabAction(
-                        icon = Icons.Filled.Refresh,
-                        contentDescriptionRes = R.string.check_for_updates,
-                        onClick = appUpdatesViewModel::refresh
-                    )
-                }
+                AcquaFabAction(
+                    icon = Icons.Filled.Refresh,
+                    contentDescriptionRes = R.string.refresh_feeds,
+                    onClick = feedsViewModel::refresh
+                )
             }
             else -> null
         }
@@ -296,8 +285,8 @@ fun DashboardScreen(
                 coroutineScope.launch { pagerState.animateScrollToPage(1) }
             },
             AcquaTabItem(
-                icon = Icons.Filled.SystemUpdate,
-                labelRes = R.string.github_tracker,
+                icon = Icons.Filled.DynamicFeed,
+                labelRes = R.string.feeds,
                 onClick = { coroutineScope.launch { pagerState.animateScrollToPage(2) } },
                 hasBadge = trackedRepos.any { it.isUpdateAvailable }
             )
@@ -361,8 +350,8 @@ fun DashboardScreen(
                             top = if (isBrowsingWebsite) 0.dp else statusBarTop
                         )
                     )
-                    else -> AppUpdatesScreen(
-                        viewModel = appUpdatesViewModel,
+                    else -> FeedsScreen(
+                        viewModel = feedsViewModel,
                         contentPadding = screenPadding,
                         modifier = Modifier.fillMaxSize()
                     )

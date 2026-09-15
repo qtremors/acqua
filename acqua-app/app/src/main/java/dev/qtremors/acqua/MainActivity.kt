@@ -1,5 +1,7 @@
 package dev.qtremors.acqua
 
+import dev.qtremors.acqua.core.data.R
+
 import android.annotation.SuppressLint
 import android.Manifest
 import android.app.Activity
@@ -51,7 +53,7 @@ import dev.qtremors.acqua.feature.downloader.DownloaderViewModel
 import dev.qtremors.acqua.feature.downloader.PendingBrowserResolution
 import dev.qtremors.acqua.feature.downloader.history.HistoryViewModel
 import dev.qtremors.acqua.feature.settings.SettingsViewModel
-import dev.qtremors.acqua.feature.updater.AppUpdatesViewModel
+import dev.qtremors.acqua.feature.updater.FeedsViewModel
 import dev.qtremors.acqua.resolver.instagram.ExpiredSessionException
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
 import dev.qtremors.acqua.platform.permissions.DownloadPermissionDialogs
@@ -254,7 +256,6 @@ class MainActivity : ComponentActivity() {
                                         DownloaderViewModel(
                                             dependencies.history,
                                             dependencies.resolution,
-                                            dependencies.mediaStorage,
                                             dependencies.settings,
                                             dependencies.ytDlpEngine,
                                             dependencies.ytDlpDownloads,
@@ -291,10 +292,10 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             )
-                            val appUpdates: AppUpdatesViewModel = viewModel(
+                            val feeds: FeedsViewModel = viewModel(
                                 factory = remember {
                                     ViewModelFactory { _ ->
-                                        AppUpdatesViewModel(
+                                        FeedsViewModel(
                                             dependencies.trackedRepos,
                                             dependencies.githubApi,
                                             dependencies.githubAuth,
@@ -308,7 +309,7 @@ class MainActivity : ComponentActivity() {
                             SecureWindowEffect(enabled = settingsState.screenProtectionEnabled)
                             DashboardScreen(
                                 stateHolders = DashboardStateHolders(
-                                    downloader, browser, history, settings, appUpdates
+                                    downloader, browser, history, settings, feeds
                                 ),
                                 services = DashboardServices(
                                     dependencies.mediaDownloader,

@@ -38,7 +38,7 @@ class MainDependencies(context: Context) {
     val ytDlpMaintenance = YtDlpMaintenance(context, settings)
     val browserData = BrowserDataManager(context, savedWebsites, instagramSessions, settings)
     val mediaStorage = MediaStorage(context, history, settings, mediaDownloader)
-    internal val downloadExecutor = DownloadExecutor(context, settings, history, mediaDownloader)
+    val downloadExecutor = DownloadExecutor(context, settings, history, mediaDownloader)
     internal val workerFactory = AcquaWorkerFactory(downloadExecutor)
     val resolution = MediaResolutionService(
         sourceResolver = instagramResolver,
