@@ -15,7 +15,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.content.edit
-import dev.qtremors.acqua.R
+import dev.qtremors.acqua.core.data.R
 import kotlin.math.hypot
 
 @SuppressLint("ClickableViewAccessibility")

@@ -2,6 +2,145 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.0] - 2026-09-15
+
+### Changed
+
+- Split domain, data, shared UI, downloads, browser, settings, updates, and onboarding into enforced Gradle modules.
+- Expand the local release gate across every module's tests, debug and release lint, minified artifacts, build conventions, and static-site validation.
+- Make downloader and settings orchestration deterministic through focused dependency contracts and restored-state tests.
+- Align website and developer guidance with supported sources, media formats, quality controls, APK architectures, and site maintenance practices.
+- Rename GitHub Tracker to Feeds, with GitHub releases as the first source and source-neutral navigation ready for additional feed types.
+
+### Fixed
+
+- Keep notification cancellation safe across WorkManager and Android 14 user-initiated download paths.
+- Show installed and GitHub release versions in Feeds with consistent labels, without repeating the current version.
+- Resolve complete Instagram carousels from embedded page data and wait for real slide changes during the rendered-page fallback.
+- Isolate Instagram request cookies, try public access first, and retry login-gated posts with the saved browser session.
+
+## [0.2.9] - 2026-09-13
+
+### Changed
+
+- Refine accent-color selection, app information, open-source notices, and backup feedback.
+- Improve website navigation accessibility and progressively enhance reveal animations.
+
+### Fixed
+
+- Make the website usable without JavaScript and cache public repository statistics without layout thrashing.
+- Enforce strict release-link validation and a restrictive website content security policy.
+- Keep user-facing resource selection deterministic across updater, onboarding, and settings state changes.
+
+## [0.2.8] - 2026-09-13
+
+### Added
+
+- Add adaptive rail navigation and width-bounded content for larger Android windows.
+
+### Changed
+
+- Keep downloader, browser, and history workflow state through recreation.
+- Improve saved-site and toggle accessibility with discoverable full-row actions.
+
+### Fixed
+
+- Make rendered-page carousel extraction language-independent and more resilient across supported sites.
+
+## [0.2.7] - 2026-09-13
+
+### Changed
+
+- Refine Settings and GitHub update management with clearer grouped controls and repository actions.
+
+### Fixed
+
+- Harden GitHub API pagination, timeout, rate-limit, and release-link handling.
+- Keep updater failures localized while excluding remote response data and private identifiers from diagnostics.
+
+## [0.2.6] - 2026-09-13
+
+### Added
+
+- Add recoverable storage and notification permission guidance with retry and system-settings paths.
+
+### Changed
+
+- Refresh Downloader and History controls with Material 3 Expressive motion and grouped menus.
+- Move History search to the floating action button, tighten spacing, remove source grouping, and scale loading with indexed paging.
+- Simplify Fetch, paste, and link guidance across the Downloader.
+
+### Fixed
+
+- Improve media thumbnails and timestamps in galleries and third-party file pickers.
+- Report accurate image dimensions and file sizes in previews and filenames.
+- Identify completed image, video, and audio downloads clearly in app feedback and system notifications.
+- Avoid silent network reloads when browsing download history.
+
+## [0.2.5] - 2026-09-13
+
+### Changed
+
+- Serialize download work, throttle progress updates, and make direct transfers cancellation-aware.
+- Run user-started transfers through Android 14 data-transfer jobs with serialized fallback, durable phase recovery, and correct media-processing service classification.
+
+### Fixed
+
+- Store final MediaStore filenames, bound preview image decoding, and remove interrupted pending rows and temporary processing files after process restart.
+- Keep backup, onboarding, and download failures localized while excluding private identifiers from diagnostics.
+- Exclude private browsing and download state from Android backup and device transfer.
+- Prevent recursive WorkManager initialization while creating the application dependency graph.
+
+## [0.2.4] - 2026-09-13
+
+### Changed
+
+- Strengthen local build verification with strict release artifact, version, dependency, string, and source-quality checks.
+- Establish enforceable domain and feature dependency boundaries without changing user data.
+
+## [0.2.3] - 2026-09-12
+
+### Changed
+
+- Streamline bottom navigation to 3 core tabs: Download, Browser, and GitHub Tracker.
+- Unify the Download screen with dedicated sub-tabs for the Downloader and live Progress & History.
+- Display active in-flight downloads with live progress, byte counters, ETA, and cancellation controls directly above completed history records.
+- Open the Settings overlay directly when pulling down or tapping the top brand header card, showing "Settings" as the drag destination indicator.
+- Feature the brand hero in Settings with dynamic pull-to-expand logo growth that scales to cover the viewport, application ID and version chips on a single horizontal row wrapped in grouped containers, quick action buttons grouped three per container (Issues, GitHub, Releases and Notices, Privacy, License) with a Check for updates action container, and semantically tailored icons.
+- Navigate directly to Open-Source Notices and License from the Settings hero buttons and return immediately to Settings upon dismissal, removing redundant intermediate About screens.
+- Open the Progress & History tab directly by tapping the active download status card on the Downloader screen.
+
+## [0.2.2] - 2026-09-12
+
+### Added
+
+- Track public or private GitHub repositories with APK releases, including pre-release selection, automatic device-architecture matching, and optional installed-app linking.
+- Browse available updates, release notes, and repository READMEs from a dedicated navigation tab, then download and open compatible APKs in Android's installer with visible progress and resumable transfers.
+- Start with Acqua, Arcile, Filion, EarnSlate, Material Design, and Osyster tracked by default, while keeping every repository removable.
+- Refresh from the navigation action and switch it to Update when an update is available.
+- Add repositories from a focused link field positioned directly above the keyboard.
+- Add encrypted personal access token support for authenticated GitHub requests, with tokens excluded from app backups and repository export files.
+- Import and export tracked-repository lists without changing installed apps.
+
+### Changed
+
+- Verify package identity, version, Android compatibility, and signing certificates before updating a linked installed app.
+
+## [0.2.1] - 2026-09-12
+
+### Changed
+
+- Make History easier to browse with compact tappable rows, persistent search and filters, date sections, and optional source grouping.
+- Add History multi-select sharing and record removal with Undo, while keeping downloaded files.
+- Add file details, source-link actions, readable storage locations, and an unavailable-files filter with retry actions.
+- Refresh History when downloads finish and show clear loading, failure, and category-specific empty states.
+- Omit filename indexes for single media items and retain carousel numbering in previews and downloads.
+- Automatically select Acqua for pasted Instagram posts and yt-dlp for reels, while allowing manual engine changes.
+- Hide browser controls when scrolling down and reveal them when scrolling up.
+- Keep carousel extraction running through slide URL changes and recognize role-based Next controls.
+- Bound browser extraction callbacks, handle extraction failures, and detach browser views before releasing them.
+- Prevent a focused browser page from crashing when returning Home, and move saved-site disk work off the UI thread.
+
 ## [0.2.0] - 2026-09-10
 
 ### Changed

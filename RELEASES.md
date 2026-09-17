@@ -1,14 +1,88 @@
 # Acqua - Releases
 
 > **Project:** Acqua
-> **Version:** 0.2.0
-> **Last Updated:** 2026-09-10
+> **Version:** 0.3.0
+> **Last Updated:** 2026-09-17
 
 | Version | Release Date | Key Focus |
 | :--- | :--- | :--- |
+| [v0.3.0](#v030) | 2026-09-15 | Multi-source Feeds foundation, GitHub APK release tracking, resilient downloads, adaptive layouts, Instagram carousel and session reliability, and modular architecture |
 | [v0.2.0](#v020) | 2026-09-10 | Integrated dashboard browser, swipeable tabs and floating toolbar, adaptive media carousel, audio tagging and filename templates, and history restoration |
 | [v0.1.5](#v015) | 2026-08-30 | Minimal onboarding, atomic backup and restore, dynamic M3 theming, fast scrollbar, security protections, Coil thumbnail pipeline, and in-app self-updater |
 | [v0.1.0](#v010) | 2026-08-01 | Initial release with smart media extraction, yt-dlp integration, private browser, and history management |
+
+---
+
+# v0.3.0
+
+**Release Date:** September 15, 2026
+
+**Previous public release:** v0.2.0
+
+**Development range included:** v0.2.1 through v0.3.0
+
+Acqua v0.3.0 adds Feeds as a foundation for tracking multiple source types, beginning with GitHub APK releases. It also strengthens download execution and recovery, expands adaptive layouts and accessibility, improves Instagram carousel and authenticated-session handling, and reorganizes the app into enforced feature and core modules.
+
+## Highlights
+
+- **Feeds with GitHub Releases**: Track public or private GitHub repositories, inspect releases and README content, match APKs to the device architecture, link installed apps, and download verified updates. The former GitHub Tracker is now Feeds, ready for additional source types such as RSS.
+- **Reliable Android Downloads**: Serialize transfers, show live progress and cancellation controls, recover durable download phases, and use Android 14 user-initiated data-transfer jobs with a safe fallback path.
+- **Safer APK Updates**: Verify package identity, version, Android compatibility, and signing certificates before replacing a linked installed app.
+- **Improved Instagram Resolution**: Resolve complete carousels from embedded page data, wait for confirmed slide changes during fallback extraction, isolate request cookies, try public access first, and use the saved browser session only for login-gated posts.
+- **Adaptive and Accessible Interface**: Add large-screen navigation rails, width-bounded content, clearer grouped controls, discoverable full-row actions, responsive workflow restoration, and improved website accessibility.
+- **Modular Architecture and Release Validation**: Split the application into enforced domain, data, shared UI, download, browser, settings, update, and onboarding modules, backed by broader tests and release checks.
+
+## What's New Since v0.2.0
+
+### Feeds & GitHub Release Tracking
+
+- Added tracking for public and private GitHub repositories with APK releases, optional pre-release selection, automatic architecture matching, and installed-app linking.
+- Added release notes and README browsing, resumable APK transfers, visible download progress, and direct Android installer handoff.
+- Added Acqua, Arcile, Filion, EarnSlate, Material Design, and Osyster as removable default GitHub feeds.
+- Added encrypted personal access token support for authenticated GitHub requests, excluding credentials from app backups and exported feed data.
+- Added feed import and export without modifying installed applications.
+- Hardened GitHub pagination, timeouts, rate-limit handling, and release-link validation while keeping failures localized and free of private response details.
+- Improved repository controls, APK selection, installed-app matching, refresh actions, and version labels that do not repeat the current version.
+- Renamed GitHub Tracker to Feeds and made navigation and actions source-neutral for future feed types.
+
+### Downloads, Progress & History
+
+- Unified the Download area with dedicated Downloader and Progress & History views.
+- Added live in-flight progress, transferred byte counts, ETA, and cancellation controls above completed history records.
+- Made History easier to browse with compact rows, persistent search and filters, date sections, optional source grouping, unavailable-file filtering, and retry actions.
+- Added multi-select sharing, undoable record removal that keeps downloaded files, file details, source links, and readable storage locations.
+- Serialized download work, throttled progress updates, made direct transfers cancellation-aware, and restored durable phases after process interruption.
+- Added Android 14 user-initiated data-transfer jobs with serialized fallback and correct media-processing service classification.
+- Improved MediaStore filename persistence, preview decoding bounds, interrupted-file cleanup, gallery metadata, image dimensions, timestamps, and completion feedback.
+- Added recoverable storage and notification-permission guidance with retry and system-settings actions.
+
+### Browser & Media Resolution
+
+- Automatically selects Acqua for pasted Instagram posts and yt-dlp for reels while preserving manual engine selection.
+- Keeps carousel extraction active across slide URL changes and recognizes role-based Next controls without relying on localized text alone.
+- Resolves complete Instagram carousels from embedded page data and confirms that rendered-page media changed before advancing again.
+- Isolates Instagram cookies between requests, attempts anonymous resolution first, and retries login-gated public posts with the saved browser session.
+- Bounds browser extraction callbacks, handles failures safely, and detaches browser views before releasing them.
+- Prevents focused browser pages from crashing when returning Home and moves saved-site disk work off the UI thread.
+- Preserves Downloader, Browser, and History workflow state through recreation while avoiding silent history reloads.
+
+### Interface, Settings & Accessibility
+
+- Streamlined primary navigation to Download, Browser, and Feeds, with Settings available from the expandable brand header.
+- Refreshed Downloader and History controls with grouped Material 3 actions, tighter spacing, indexed loading, and a floating History search action.
+- Redesigned the Settings hero with dynamic pull-to-expand branding, grouped application information, and direct Issues, GitHub, Releases, Notices, Privacy, License, and update actions.
+- Added adaptive navigation rails and width-bounded layouts for larger Android windows.
+- Improved saved-site and setting-toggle accessibility with discoverable full-row actions.
+- Refined accent selection, application information, open-source notices, backup feedback, and deterministic resource selection.
+
+### Architecture, Privacy & Release Quality
+
+- Split domain, data, shared UI, downloads, browser, settings, updates, and onboarding into enforced Gradle modules.
+- Expanded automated tests and the local release gate across modules, debug and release lint, minified artifacts, build conventions, and static-site validation.
+- Made downloader and settings orchestration deterministic through focused dependency contracts and restored-state coverage.
+- Excluded private browsing and download state from Android backup and device transfer.
+- Prevented recursive WorkManager initialization and kept notification cancellation safe across supported Android download paths.
+- Improved website navigation accessibility, no-JavaScript usability, progressive enhancement, repository-stat caching, release-link validation, and content security policy enforcement.
 
 ---
 

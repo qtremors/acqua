@@ -1,11 +1,14 @@
 package dev.qtremors.acqua.feature.downloader
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.webkit.CookieManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -36,33 +39,49 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.createSavedStateHandle
 import dev.qtremors.acqua.MainDependencies
-import dev.qtremors.acqua.R
+import dev.qtremors.acqua.AcquaApp
+import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.feature.ViewModelFactory
 import dev.qtremors.acqua.resolver.instagram.ExpiredSessionException
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
+import dev.qtremors.acqua.platform.permissions.DownloadPermissionDialogs
+import dev.qtremors.acqua.platform.permissions.DownloadPermissionGate
+import dev.qtremors.acqua.platform.permissions.DownloadPermissionPrompt
 import dev.qtremors.acqua.ui.theme.AcquaTheme
 import dev.qtremors.acqua.ui.security.SecureWindowEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+// Notification permission constants are only reached through explicit API 33 runtime guards.
+@SuppressLint("InlinedApi")
 class DownloadActivity : ComponentActivity() {
-    private val dependencies by lazy { MainDependencies(applicationContext) }
+    private val dependencies by lazy { (application as AcquaApp).dependencies }
     private val resolutionCoordinator by viewModels<BrowserResolutionCoordinator>()
-    private var pendingStorageAction: (() -> Unit)? = null
+    private val downloadPermissionGate by viewModels<DownloadPermissionGate>()
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val action = pendingStorageAction
-        pendingStorageAction = null
-        if (granted) action?.invoke()
+        if (granted) {
+            downloadPermissionGate.resumePending()?.let { pending ->
+                runWithDownloadPermissions(pending.needsNotification, pending.action)
+            }
+        } else {
+            downloadPermissionGate.show(
+                if (shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                    DownloadPermissionPrompt.STORAGE_RATIONALE
+                } else {
+                    DownloadPermissionPrompt.STORAGE_SETTINGS
+                }
+            )
+        }
     }
-    private var pendingNotificationAction: (() -> Unit)? = null
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            pendingNotificationAction?.invoke()
-            pendingNotificationAction = null
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) downloadPermissionGate.runPendingWithoutNotifications()
+            else downloadPermissionGate.show(DownloadPermissionPrompt.NOTIFICATION_DENIED)
         }
 
     private val resolverLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -109,18 +128,36 @@ class DownloadActivity : ComponentActivity() {
             val themeState by dependencies.themePreferences.themeState.collectAsStateWithLifecycle(
                 initialValue = dev.qtremors.acqua.ui.theme.ThemeState()
             )
+            val permissionPrompt by downloadPermissionGate.prompt.collectAsStateWithLifecycle()
             AcquaTheme(themeState = themeState) {
+                DownloadPermissionDialogs(
+                    prompt = permissionPrompt,
+                    onDismiss = downloadPermissionGate::dismiss,
+                    onRequestStorage = {
+                        downloadPermissionGate.markStorageRequested()
+                        permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    },
+                    onOpenSettings = {
+                        downloadPermissionGate.dismiss()
+                        openAppSettings()
+                    },
+                    onRequestNotifications = {
+                        downloadPermissionGate.markNotificationsRequested()
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    },
+                    onContinueWithoutNotifications = downloadPermissionGate::runPendingWithoutNotifications
+                )
                 SecureWindowEffect(enabled = screenProtectionEnabled)
                 val downloader: DownloaderViewModel = viewModel(
                     factory = remember {
-                        ViewModelFactory {
+                        ViewModelFactory { extras ->
                             DownloaderViewModel(
                                 dependencies.history,
                                 dependencies.resolution,
-                                dependencies.mediaStorage,
                                 dependencies.settings,
                                 dependencies.ytDlpEngine,
-                                dependencies.ytDlpDownloads
+                                dependencies.ytDlpDownloads,
+                                extras.createSavedStateHandle()
                             )
                         }
                     }
@@ -229,16 +266,27 @@ class DownloadActivity : ComponentActivity() {
     }
 
     private fun runWithDownloadPermissions(needsNotification: Boolean, action: () -> Unit) {
+        downloadPermissionGate.hold(needsNotification, action)
         val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
-            pendingStorageAction = { runWithDownloadPermissions(needsNotification, action) }
-            permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            if (downloadPermissionGate.hasRequestedStorage) {
+                downloadPermissionGate.show(
+                    if (shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                        DownloadPermissionPrompt.STORAGE_RATIONALE
+                    } else {
+                        DownloadPermissionPrompt.STORAGE_SETTINGS
+                    }
+                )
+            } else {
+                downloadPermissionGate.markStorageRequested()
+                permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
         } else if (needsNotification) {
             runWithNotificationPermission(action)
         } else {
-            action()
+            downloadPermissionGate.runPendingWithoutNotifications()
         }
     }
 
@@ -247,9 +295,20 @@ class DownloadActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
-            pendingNotificationAction = action
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else action()
+            downloadPermissionGate.hold(needsNotification = true, action)
+            downloadPermissionGate.show(
+                if (downloadPermissionGate.hasRequestedNotifications &&
+                    !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+                ) DownloadPermissionPrompt.NOTIFICATION_DENIED
+                else DownloadPermissionPrompt.NOTIFICATION_EXPLANATION
+            )
+        } else downloadPermissionGate.runPendingWithoutNotifications()
+    }
+
+    private fun openAppSettings() {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData("package:$packageName".toUri())
+        )
     }
 
     companion object {

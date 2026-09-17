@@ -27,9 +27,9 @@ class AboutScreenTest {
         }
 
         composeRule.onNodeWithContentDescription("Acqua").assertIsDisplayed()
-        composeRule.onNodeWithText("App info").assertIsDisplayed()
-        composeRule.onNodeWithText("Version").assertIsDisplayed()
-        composeRule.onNodeWithText("Application ID").assertIsDisplayed()
+        composeRule.onNodeWithText("Developer").assertIsDisplayed()
+        composeRule.onNodeWithText("Privacy policy").assertIsDisplayed()
+        composeRule.onNodeWithText("Open-source notices").assertIsDisplayed()
     }
 
     @Test

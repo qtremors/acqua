@@ -1,5 +1,8 @@
 package dev.qtremors.acqua
 
+import dev.qtremors.acqua.core.data.R
+
+import android.annotation.SuppressLint
 import android.Manifest
 import android.app.Activity
 import android.app.AlarmManager
@@ -7,9 +10,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.Bundle
 import android.os.Process
+import android.provider.Settings
 import android.os.StrictMode
 import android.os.Trace
 import android.webkit.CookieManager
@@ -30,19 +35,30 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.createSavedStateHandle
 import dev.qtremors.acqua.auth.BrowserActivity
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.feature.DashboardScreen
+import dev.qtremors.acqua.feature.DashboardActions
+import dev.qtremors.acqua.feature.DashboardRouteState
+import dev.qtremors.acqua.feature.DashboardServices
+import dev.qtremors.acqua.feature.DashboardStateHolders
 import dev.qtremors.acqua.feature.ViewModelFactory
 import dev.qtremors.acqua.feature.browser.BrowserViewModel
+import dev.qtremors.acqua.feature.browser.BrowserDownloadRequest
+import dev.qtremors.acqua.feature.downloader.DownloadActivity
 import dev.qtremors.acqua.feature.downloader.BrowserResolutionCoordinator
 import dev.qtremors.acqua.feature.downloader.DownloaderViewModel
 import dev.qtremors.acqua.feature.downloader.PendingBrowserResolution
-import dev.qtremors.acqua.feature.history.HistoryViewModel
+import dev.qtremors.acqua.feature.downloader.history.HistoryViewModel
 import dev.qtremors.acqua.feature.settings.SettingsViewModel
+import dev.qtremors.acqua.feature.updater.FeedsViewModel
 import dev.qtremors.acqua.resolver.instagram.ExpiredSessionException
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverActivity
+import dev.qtremors.acqua.platform.permissions.DownloadPermissionDialogs
+import dev.qtremors.acqua.platform.permissions.DownloadPermissionGate
+import dev.qtremors.acqua.platform.permissions.DownloadPermissionPrompt
 import dev.qtremors.acqua.ui.theme.AcquaTheme
 import dev.qtremors.acqua.ui.theme.ThemeState
 import dev.qtremors.acqua.ui.security.SecureWindowEffect
@@ -53,24 +69,40 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.system.exitProcess
 
+// Notification permission constants are only reached through explicit API 33 runtime guards.
+@SuppressLint("InlinedApi")
 class MainActivity : ComponentActivity() {
-    private val dependencies by lazy { MainDependencies(applicationContext) }
+    private val dependencies by lazy { (application as AcquaApp).dependencies }
     private val browserResolutionCoordinator by viewModels<BrowserResolutionCoordinator>()
-    private var pendingStorageAction: (() -> Unit)? = null
+    private val downloadPermissionGate by viewModels<DownloadPermissionGate>()
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val action = pendingStorageAction
-        pendingStorageAction = null
-        if (granted) action?.invoke()
+        if (granted) {
+            downloadPermissionGate.resumePending()?.let { pending ->
+                runWithDownloadPermissions(pending.needsNotification, pending.action)
+            }
+        } else {
+            downloadPermissionGate.show(
+                if (shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                    DownloadPermissionPrompt.STORAGE_RATIONALE
+                } else {
+                    DownloadPermissionPrompt.STORAGE_SETTINGS
+                }
+            )
+        }
     }
-    private var pendingNotificationAction: (() -> Unit)? = null
     private var pendingNotificationResult: ((Boolean) -> Unit)? = null
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            pendingNotificationAction?.invoke()
-            pendingNotificationAction = null
-            pendingNotificationResult?.invoke(granted)
+            val onboardingResult = pendingNotificationResult
             pendingNotificationResult = null
+            if (onboardingResult != null) {
+                onboardingResult(granted)
+            } else if (granted) {
+                downloadPermissionGate.runPendingWithoutNotifications()
+            } else {
+                downloadPermissionGate.show(DownloadPermissionPrompt.NOTIFICATION_DENIED)
+            }
         }
 
     private val browserLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -139,15 +171,33 @@ class MainActivity : ComponentActivity() {
                     initialValue = dev.qtremors.acqua.data.onboarding.OnboardingState()
                 )
                 val coroutineScope = rememberCoroutineScope()
+                val permissionPrompt by downloadPermissionGate.prompt.collectAsStateWithLifecycle()
 
                 AcquaTheme(themeState = themeState) {
+                    DownloadPermissionDialogs(
+                        prompt = permissionPrompt,
+                        onDismiss = downloadPermissionGate::dismiss,
+                        onRequestStorage = {
+                            downloadPermissionGate.markStorageRequested()
+                            permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        },
+                        onOpenSettings = {
+                            downloadPermissionGate.dismiss()
+                            openAppSettings()
+                        },
+                        onRequestNotifications = {
+                            downloadPermissionGate.markNotificationsRequested()
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        },
+                        onContinueWithoutNotifications = downloadPermissionGate::runPendingWithoutNotifications
+                    )
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background
                     ) {
                         val onboardingViewModel: dev.qtremors.acqua.feature.onboarding.OnboardingViewModel = viewModel(
                             factory = remember {
-                                ViewModelFactory {
+                                ViewModelFactory { _ ->
                                     dev.qtremors.acqua.feature.onboarding.OnboardingViewModel(
                                         dependencies.onboardingPreferences,
                                         dependencies.backupManager
@@ -189,7 +239,7 @@ class MainActivity : ComponentActivity() {
                                         onboardingViewModel.updatePermissionState(
                                             hasStoragePermission = true,
                                             hasNotificationPermission = granted,
-                                            notificationPermissionRequired = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                                            notificationPermissionRequired = true
                                         )
                                     }
                                 },
@@ -202,66 +252,89 @@ class MainActivity : ComponentActivity() {
                         } else {
                             val downloader: DownloaderViewModel = viewModel(
                                 factory = remember {
-                                    ViewModelFactory {
+                                    ViewModelFactory { extras ->
                                         DownloaderViewModel(
                                             dependencies.history,
                                             dependencies.resolution,
-                                            dependencies.mediaStorage,
                                             dependencies.settings,
                                             dependencies.ytDlpEngine,
-                                            dependencies.ytDlpDownloads
+                                            dependencies.ytDlpDownloads,
+                                            extras.createSavedStateHandle()
                                         )
                                     }
                                 }
                             )
                             val browser: BrowserViewModel = viewModel(
                                 factory = remember {
-                                    ViewModelFactory {
+                                    ViewModelFactory { extras ->
                                         BrowserViewModel(
                                             dependencies.settings,
                                             dependencies.savedWebsites,
                                             dependencies.browserData,
                                             dependencies.instagramSessions,
-                                            dependencies.instagramResolver
+                                            dependencies.instagramResolver,
+                                            extras.createSavedStateHandle()
                                         )
                                     }
                                 }
                             )
                             val history: HistoryViewModel = viewModel(
-                                factory = remember { ViewModelFactory { HistoryViewModel(dependencies.history) } }
+                                factory = remember {
+                                    ViewModelFactory { extras ->
+                                        HistoryViewModel(dependencies.history, extras.createSavedStateHandle())
+                                    }
+                                }
                             )
                             val settings: SettingsViewModel = viewModel(
                                 factory = remember {
-                                    ViewModelFactory {
+                                    ViewModelFactory { _ ->
                                         SettingsViewModel(dependencies.settings, dependencies.ytDlpMaintenance)
+                                    }
+                                }
+                            )
+                            val feeds: FeedsViewModel = viewModel(
+                                factory = remember {
+                                    ViewModelFactory { _ ->
+                                        FeedsViewModel(
+                                            dependencies.trackedRepos,
+                                            dependencies.githubApi,
+                                            dependencies.githubAuth,
+                                            dependencies.installedAppMatcher,
+                                            dependencies.appUpdater
+                                        )
                                     }
                                 }
                             )
                             val settingsState by settings.state.collectAsStateWithLifecycle()
                             SecureWindowEffect(enabled = settingsState.screenProtectionEnabled)
                             DashboardScreen(
-                                downloader,
-                                browser,
-                                history,
-                                settings,
-                                dependencies.mediaDownloader,
-                                dependencies.fileActions,
-                                initialUrl,
-                                browserResolutionCoordinator.urlHandoff,
-                                browserResolutionCoordinator.browserRevision,
-                                browserResolutionCoordinator.downloadRequestRevision,
-                                backupManager = dependencies.backupManager,
-                                appUpdater = dependencies.appUpdater,
-                                currentThemeState = themeState,
-                                onThemeChange = { newState ->
+                                stateHolders = DashboardStateHolders(
+                                    downloader, browser, history, settings, feeds
+                                ),
+                                services = DashboardServices(
+                                    dependencies.mediaDownloader,
+                                    dependencies.fileActions,
+                                    dependencies.backupManager
+                                ),
+                                routeState = DashboardRouteState(
+                                    initialUrl,
+                                    browserResolutionCoordinator.urlHandoff,
+                                    browserResolutionCoordinator.browserRevision,
+                                    browserResolutionCoordinator.downloadRequestRevision,
+                                    themeState
+                                ),
+                                actions = DashboardActions(
+                                    onThemeChange = { newState ->
                                     coroutineScope.launch {
                                         dependencies.themePreferences.saveThemeState(newState)
                                     }
                                 },
-                                onUrlHandoffConsumed = browserResolutionCoordinator::consumeUrlHandoff,
-                                resolveInBrowser = ::resolveInBrowser,
-                                requestDownloadAccess = ::runWithDownloadPermissions,
-                                openBrowser = ::openBrowser
+                                    onUrlHandoffConsumed = browserResolutionCoordinator::consumeUrlHandoff,
+                                    resolveInBrowser = ::resolveInBrowser,
+                                    requestDownloadAccess = ::runWithDownloadPermissions,
+                                    openBrowser = ::openBrowser,
+                                    onBrowserDownloadRequest = ::openBrowserDownload
+                                )
                             )
                         }
                     }
@@ -289,6 +362,14 @@ class MainActivity : ComponentActivity() {
             name?.takeIf(String::isNotBlank)?.let { putExtra(BrowserActivity.EXTRA_LOGIN_NAME, it) }
             WebLink.normalize(initialUrl.orEmpty())?.let { putExtra(BrowserActivity.EXTRA_INITIAL_URL, it) }
         })
+    }
+
+    private fun openBrowserDownload(request: BrowserDownloadRequest) {
+        startActivity(
+            Intent(this, DownloadActivity::class.java)
+                .putExtra(DownloadActivity.EXTRA_URL, request.sourceUrl)
+                .putExtra(DownloadActivity.EXTRA_MEDIA_JSON, request.mediaJson)
+        )
     }
 
     private suspend fun resolveInBrowser(
@@ -337,15 +418,26 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun runWithDownloadPermissions(needsNotification: Boolean, action: () -> Unit) {
+        downloadPermissionGate.hold(needsNotification, action)
         val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
-            pendingStorageAction = { runWithDownloadPermissions(needsNotification, action) }
-            permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            if (downloadPermissionGate.hasRequestedStorage) {
+                downloadPermissionGate.show(
+                    if (shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                        DownloadPermissionPrompt.STORAGE_RATIONALE
+                    } else {
+                        DownloadPermissionPrompt.STORAGE_SETTINGS
+                    }
+                )
+            } else {
+                downloadPermissionGate.markStorageRequested()
+                permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
         } else if (needsNotification) {
             runWithNotificationPermission(action)
-        } else action()
+        } else downloadPermissionGate.runPendingWithoutNotifications()
     }
 
     private fun runWithNotificationPermission(action: () -> Unit) {
@@ -353,9 +445,20 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
-            pendingNotificationAction = action
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } else action()
+            downloadPermissionGate.hold(needsNotification = true, action)
+            downloadPermissionGate.show(
+                if (downloadPermissionGate.hasRequestedNotifications &&
+                    !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+                ) DownloadPermissionPrompt.NOTIFICATION_DENIED
+                else DownloadPermissionPrompt.NOTIFICATION_EXPLANATION
+            )
+        } else downloadPermissionGate.runPendingWithoutNotifications()
+    }
+
+    private fun openAppSettings() {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).setData("package:$packageName".toUri())
+        )
     }
 
     private fun requestNotificationPermission(onResult: (Boolean) -> Unit) {

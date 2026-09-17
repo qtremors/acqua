@@ -39,7 +39,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import dev.qtremors.acqua.R
+import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.ui.components.SettingsActionRow
 import dev.qtremors.acqua.ui.components.SettingsSection
 

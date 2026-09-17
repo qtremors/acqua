@@ -25,3 +25,11 @@ dependencyResolutionManagement {
 
 rootProject.name = "Acqua"
 include(":app")
+include(":core:domain")
+include(":core:data")
+include(":core:ui")
+include(":feature:downloads")
+include(":feature:browser")
+include(":feature:settings")
+include(":feature:updates")
+include(":feature:onboarding")
