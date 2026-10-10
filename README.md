@@ -20,7 +20,6 @@
 </p>
 <p align="center">
   <img src="https://img.shields.io/badge/Android-7.0%2B-3ddc84?logo=android" alt="Android 7.0+">
-  <img src="https://img.shields.io/badge/Kotlin-2.4.10-7f52ff?logo=kotlin" alt="Kotlin 2.4.10">
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-GPLv3%2B-f4c95d" alt="License"></a>
 </p>
 

@@ -12,9 +12,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -57,6 +58,17 @@ fun <T> ExpressiveSegmentedButtonRow(
     trailingBadge: (@Composable (item: T, isSelected: Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val scaledHeight = height * LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val labels = items.map { label(it) }
+    val textStyle = MaterialTheme.typography.labelLarge
+    val widths = remember(labels, density, textStyle, leadingIcon != null, trailingBadge != null) {
+        labels.map { text ->
+            val extras = 24.dp + (if (leadingIcon != null) 24.dp else 0.dp) + (if (trailingBadge != null) 30.dp else 0.dp)
+            textMeasurer.measure(text, style = textStyle).size.width + with(density) { extras.toPx() }
+        }
+    }
     val reducedMotion = LocalReducedMotionEnabled.current
 
     val weightSpring = remember(reducedMotion) {
@@ -81,7 +93,7 @@ fun <T> ExpressiveSegmentedButtonRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(height)
+            .heightIn(min = scaledHeight)
             .selectableGroup(),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -104,7 +116,7 @@ fun <T> ExpressiveSegmentedButtonRow(
             val visualPressed = pressed || tapped
 
             val animatedWeight by animateFloatAsState(
-                targetValue = when {
+                targetValue = widths[index].coerceAtLeast(1f) * when {
                     visualPressed -> 1.35f
                     isSelected -> 1.18f
                     else -> 1f
@@ -171,7 +183,7 @@ fun <T> ExpressiveSegmentedButtonRow(
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 modifier = Modifier
                     .weight(animatedWeight)
-                    .fillMaxHeight()
+                    .heightIn(min = scaledHeight)
                     .graphicsLayer {
                         scaleX = contentScale
                         scaleY = contentScale
@@ -182,6 +194,7 @@ fun <T> ExpressiveSegmentedButtonRow(
                     }
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
                 ) {
@@ -189,10 +202,11 @@ fun <T> ExpressiveSegmentedButtonRow(
                         leadingIcon(item, isSelected)
                     }
                     Text(
-                        text = label(item),
+                        text = labels[index],
+                        modifier = Modifier.weight(1f, fill = false),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     if (trailingBadge != null) {

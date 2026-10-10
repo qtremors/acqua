@@ -3,11 +3,16 @@ package dev.qtremors.acqua.downloader
 import android.content.Context
 import android.webkit.CookieManager
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import com.yausername.youtubedl_android.YoutubeDLException
+import com.yausername.youtubedl_android.YoutubeDLResponse
 import dev.qtremors.acqua.domain.MediaBackend
 import dev.qtremors.acqua.domain.MediaFormatOption
 import dev.qtremors.acqua.domain.MediaKind
+import dev.qtremors.acqua.domain.MediaResolutionException
+import dev.qtremors.acqua.domain.MediaResolutionFailure
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
+import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import org.json.JSONObject
 import java.io.File
 import java.net.URI
@@ -23,6 +28,7 @@ fun interface YtDlpCancellation {
 
 class YtDlpEngine(context: Context) : YtDlpCancellation {
     private val appContext = context.applicationContext
+    private val settings = AppSettingsRepository(appContext)
     private val activeProcesses = ConcurrentHashMap.newKeySet<String>()
 
     fun inspect(url: String, allowBrowserSession: Boolean = false): ResolvedMedia {
@@ -38,13 +44,32 @@ class YtDlpEngine(context: Context) : YtDlpCancellation {
         }
         return try {
             activeProcesses += processId
-            val response = YtDlpRuntime.execute(appContext, request, processId)
-            if (response.exitCode != 0) error(readableError(response.err))
-            parseInfo(response.out, url, allowBrowserSession)
+            val response = executeInspection {
+                YtDlpRuntime.execute(appContext, request, processId)
+            }
+            parseInfo(response.out, url, cookieFile != null)
         } finally {
             activeProcesses -= processId
             cookieFile?.delete()
         }
+    }
+
+    internal fun executeInspection(execute: () -> YoutubeDLResponse): YoutubeDLResponse {
+        val response = try {
+            execute()
+        } catch (error: YoutubeDLException) {
+            throw inspectionFailure(error.message.orEmpty(), error)
+        }
+        if (response.exitCode != 0) throw inspectionFailure(response.err)
+        return response
+    }
+
+    private fun inspectionFailure(stderr: String, cause: Throwable? = null): MediaResolutionException {
+        val message = readableError(stderr)
+        val failure = if (listOf("log in", "login", "sign in", "cookies", "authentication").any {
+            message.contains(it, ignoreCase = true)
+        }) MediaResolutionFailure.SESSION_REQUIRED else MediaResolutionFailure.UNKNOWN
+        return MediaResolutionException(failure, message, cause)
     }
 
     fun download(
@@ -59,7 +84,7 @@ class YtDlpEngine(context: Context) : YtDlpCancellation {
         val request = YoutubeDLRequest(media.url).apply {
             addOption("--no-playlist")
             addOption("--newline")
-            addOption("--no-mtime")
+            addOption(if (options.preserveOriginalMetadata) "--mtime" else "--no-mtime")
             addOption("--trim-filenames", 180)
             addOption("--socket-timeout", 20)
             addOption("-P", taskDirectory.absolutePath)
@@ -69,6 +94,7 @@ class YtDlpEngine(context: Context) : YtDlpCancellation {
             if (options.contentType == DownloadContentType.AUDIO) {
                 addOption("-f", YtDlpFormatSelector.AUDIO)
                 addOption("-x")
+                addOption("--audio-quality", "0")
                 when (options.audioFormat) {
                     AudioOutputFormat.ORIGINAL -> addOption("--audio-format", "best")
                     AudioOutputFormat.M4A -> addOption("--audio-format", "m4a")
@@ -84,19 +110,12 @@ class YtDlpEngine(context: Context) : YtDlpCancellation {
                 )
             }
 
-            if (options.embedMetadata) {
-                addOption("--parse-metadata", "%(release_year,upload_date)s:%(meta_date)s")
-                if (options.contentType == DownloadContentType.AUDIO) {
-                    addOption("--parse-metadata", "%(album,playlist,title)s:%(meta_album)s")
-                    addOption("--parse-metadata", "%(track_number,playlist_index)d:%(meta_track)s")
-                }
-                addOption("--embed-metadata")
-                addOption("--no-embed-info-json")
-                if (options.contentType == DownloadContentType.VIDEO) addOption("--embed-chapters")
+            YtDlpPostProcessing.options(options).forEach { (name, value) ->
+                if (value == null) addOption(name) else addOption(name, value)
             }
-            if (options.embedThumbnail && options.contentType == DownloadContentType.AUDIO) {
-                addOption("--embed-thumbnail")
-                addOption("--convert-thumbnails", "jpg")
+            if (options.embedThumbnail && options.cropArtwork && options.contentType == DownloadContentType.AUDIO) {
+                val ffmpeg = File(appContext.applicationInfo.nativeLibraryDir, "libffmpeg.so")
+                addOption("--exec", YtDlpPostProcessing.cropCommand(ffmpeg, File(taskDirectory, "cover-cropped.jpg")))
             }
         }
 
@@ -223,7 +242,7 @@ class YtDlpEngine(context: Context) : YtDlpCancellation {
     }
 
     private fun createCookieFile(url: String, allowed: Boolean): File? {
-        if (!allowed) return null
+        if (!allowed || !settings.useBrowserSessions()) return null
         val normalized = WebLink.normalize(url) ?: return null
         val host = WebLink.host(normalized) ?: return null
         val cookieOrigin = when {

@@ -105,6 +105,7 @@ internal class UserInitiatedDownloadJobService : JobService() {
                     notifications.cancel()
                 } catch (error: Exception) {
                     val failure = error.toDownloadFailure()
+                    if (!failure.retryable) DownloadNameOverrides.finish(applicationContext, id.toString())
                     update(
                         id,
                         DownloadQueueState.FAILED,

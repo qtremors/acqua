@@ -72,6 +72,15 @@ class TrackedRepoRepository(private val context: Context) : TrackedRepoStore {
         context.trackedReposDataStore.edit { it[REPOS] = json.encodeToString(serializer, repos) }
     }
 
+    override suspend fun updateRepo(fullName: String, transform: (TrackedRepo) -> TrackedRepo) {
+        context.trackedReposDataStore.edit { preferences ->
+            val repos = decode(preferences[REPOS]).getOrDefault(emptyList()).map { repo ->
+                if (repo.fullName.equals(fullName, ignoreCase = true)) transform(repo) else repo
+            }
+            preferences[REPOS] = json.encodeToString(serializer, repos)
+        }
+    }
+
     override suspend fun exportBackup(): String = json.encodeToString(
         TrackedRepoBackup.serializer(),
         TrackedRepoBackup(repositories = trackedReposSnapshot())

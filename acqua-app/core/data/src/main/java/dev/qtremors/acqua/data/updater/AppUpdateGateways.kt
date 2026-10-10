@@ -9,6 +9,7 @@ interface TrackedRepoStore {
     suspend fun ensureDefaultRepos(): Boolean
     suspend fun removeRepo(fullName: String)
     suspend fun updateAll(repos: List<TrackedRepo>)
+    suspend fun updateRepo(fullName: String, transform: (TrackedRepo) -> TrackedRepo)
     suspend fun exportBackup(): String
     suspend fun importBackup(jsonString: String): Result<Int>
 }

@@ -1,9 +1,10 @@
 package dev.qtremors.acqua.resolver.instagram
 
 import dev.qtremors.acqua.domain.MediaKind
-import dev.qtremors.acqua.domain.MediaResolver
+import dev.qtremors.acqua.domain.SessionAwareMediaResolver
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.domain.WebLink
+import kotlinx.coroutines.CancellationException
 
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -24,7 +25,7 @@ class InstagramExtractionException(cause: Throwable? = null) :
 
 class InstagramResolver constructor(
     private val origin: HttpUrl = DEFAULT_ORIGIN
-) : MediaResolver {
+) : SessionAwareMediaResolver {
 
     private val SHORTCODE_REGEX = Pattern.compile(
         "(?:instagram\\.com|instagr\\.am)/(?:reel|p|tv)/([A-Za-z0-9_-]+)"
@@ -64,9 +65,10 @@ class InstagramResolver constructor(
     @Volatile private var activeUserAgent: String? = null
     @Volatile private var hasActiveSession: Boolean = false
     @Volatile private var activeSessionCookies: List<Cookie> = emptyList()
+    private var requestUsesSession = false
 
     private fun getUserAgent(fallback: String): String {
-        return activeUserAgent ?: fallback
+        return if (requestUsesSession) activeUserAgent ?: fallback else fallback
     }
 
     fun setSessionCookies(cookiesString: String, userAgent: String?) {
@@ -103,11 +105,19 @@ class InstagramResolver constructor(
     }
 
     @Synchronized
-    override fun resolve(url: String): List<ResolvedMedia> {
+    override fun resolve(url: String, allowBrowserSession: Boolean): List<ResolvedMedia> {
         val postUrl = url
         extractStory(postUrl)?.let { story ->
-            prepareRequestCookies(includeSession = hasActiveSession)
-            return tryStory(story)
+            prepareRequestCookies(includeSession = false)
+            return try {
+                tryStory(story)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (publicFailure: Exception) {
+                if (!allowBrowserSession || !hasActiveSession) throw publicFailure
+                prepareRequestCookies(includeSession = true)
+                tryStory(story).map { it.copy(explicitBrowserSessionAuthorized = true) }
+            }
         }
 
         val shortcode = extractShortcode(postUrl)
@@ -116,14 +126,16 @@ class InstagramResolver constructor(
         prepareRequestCookies(includeSession = false)
         val anonymousFailure = try {
             return getAnonymousMediaItems(shortcode)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
-            if (!hasActiveSession) throw error
+            if (!allowBrowserSession || !hasActiveSession) throw error
             error
         }
 
         prepareRequestCookies(includeSession = true)
         return try {
-            getAuthenticatedMediaItems(shortcode)
+            getAuthenticatedMediaItems(shortcode).map { it.copy(explicitBrowserSessionAuthorized = true) }
         } catch (authenticatedFailure: Exception) {
             authenticatedFailure.addSuppressed(anonymousFailure)
             throw authenticatedFailure
@@ -187,6 +199,7 @@ class InstagramResolver constructor(
 
     private fun prepareRequestCookies(includeSession: Boolean) {
         synchronized(cookieLock) {
+            requestUsesSession = includeSession && activeSessionCookies.isNotEmpty()
             cookieStore.clear()
             if (!includeSession || activeSessionCookies.isEmpty()) return
             sessionCookieHosts().forEach { host ->
@@ -239,7 +252,7 @@ class InstagramResolver constructor(
             ?: throw Exception("Empty user profile body (HTTP ${response.code})")
 
         if (response.code == 401 || body.contains("login_required") || body.contains("accounts/login")) {
-            if (hasActiveSession) throw ExpiredSessionException("Session expired while retrieving profile.")
+            if (requestUsesSession) throw ExpiredSessionException("Session expired while retrieving profile.")
             throw AgeGateException("Profile page requires authentication.")
         }
 
@@ -252,7 +265,7 @@ class InstagramResolver constructor(
             ?.optJSONObject("user")
             ?: throw Exception("No user payload found in profile response")
 
-        if (user.optBoolean("is_private", false) && !hasActiveSession) {
+        if (user.optBoolean("is_private", false) && !requestUsesSession) {
             throw AgeGateException("Sign in to access media from @$username that is visible to your account.")
         }
 
@@ -284,7 +297,7 @@ class InstagramResolver constructor(
             ?: throw Exception("Empty stories body (HTTP ${response.code})")
 
         if (response.code == 401 || body.contains("login_required") || body.contains("accounts/login")) {
-            if (hasActiveSession) throw ExpiredSessionException("Session expired while retrieving story.")
+            if (requestUsesSession) throw ExpiredSessionException("Session expired while retrieving story.")
             throw AgeGateException("Story requires login session.")
         }
 
@@ -393,7 +406,7 @@ class InstagramResolver constructor(
 
         val redirectedToLogin = response.request.url.encodedPath.startsWith("/accounts/login")
         if (response.code == 401 || redirectedToLogin || html.contains("login_required")) {
-            if (hasActiveSession) throw ExpiredSessionException("Session expired during embed parsing.")
+            if (requestUsesSession) throw ExpiredSessionException("Session expired during embed parsing.")
             throw AgeGateException("Embed page requests redirection to Instagram login.")
         }
 
@@ -442,7 +455,7 @@ class InstagramResolver constructor(
         }
 
         if (html.contains("accounts/login") || html.contains("/accounts/login/")) {
-            if (hasActiveSession) throw ExpiredSessionException("Session expired during embed parsing.")
+            if (requestUsesSession) throw ExpiredSessionException("Session expired during embed parsing.")
             throw AgeGateException("Embed page requests redirection to Instagram login.")
         }
 
@@ -489,7 +502,7 @@ class InstagramResolver constructor(
 
         if (respBody.trimStart().startsWith('<')) {
             if (respBody.contains("accounts/login") || respBody.contains("/accounts/login/") || respBody.contains("login_required") || resp.code == 401) {
-                if (hasActiveSession) throw ExpiredSessionException("Session expired while querying GraphQL.")
+                if (requestUsesSession) throw ExpiredSessionException("Session expired while querying GraphQL.")
                 throw AgeGateException("GraphQL query requires login session.")
             }
             throw Exception("Expected GraphQL JSON, got HTML (HTTP ${resp.code}).")

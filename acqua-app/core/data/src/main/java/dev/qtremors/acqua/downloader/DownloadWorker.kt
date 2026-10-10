@@ -77,6 +77,7 @@ internal class DownloadWorker(
             if (failure.retryable && runAttemptCount < MAX_RETRIES) {
                 Result.retry()
             } else {
+                DownloadNameOverrides.finish(applicationContext, id.toString())
                 Result.failure(DownloadWorkData.error(failure.code))
             }
         }

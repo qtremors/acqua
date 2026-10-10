@@ -23,7 +23,9 @@ data class YtDlpDownloadOptions(
     val maximumVideoHeight: Int = 0,
     val audioFormat: AudioOutputFormat = AudioOutputFormat.ORIGINAL,
     val embedMetadata: Boolean = true,
-    val embedThumbnail: Boolean = true
+    val embedThumbnail: Boolean = true,
+    val cropArtwork: Boolean = true,
+    val preserveOriginalMetadata: Boolean = false
 )
 
 data class YtDlpProgress(

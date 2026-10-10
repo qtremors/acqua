@@ -107,7 +107,8 @@ fun DownloadHubScreen(
     onSubTabChange: (Int) -> Unit = {},
     showHistorySearch: Boolean = false,
     onOpenHistorySearch: () -> Unit = {},
-    onDismissHistorySearch: () -> Unit = {}
+    onDismissHistorySearch: () -> Unit = {},
+    onUseBrowserSessionsChange: ((Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -268,6 +269,7 @@ fun DownloadHubScreen(
                         viewModel = downloaderViewModel,
                         mediaDownloader = mediaDownloader,
                         useBrowserSessions = useBrowserSessions,
+                        onUseBrowserSessionsChange = onUseBrowserSessionsChange,
                         sessionsInitialized = sessionsInitialized,
                         browserRequestRevision = browserRequestRevision,
                         resolveInBrowser = resolveInBrowser,

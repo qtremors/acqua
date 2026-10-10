@@ -33,6 +33,8 @@ import dev.qtremors.acqua.ui.components.AcquaFloatingToolbar
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -111,7 +113,7 @@ class DownloadActivity : ComponentActivity() {
             finish()
             return
         }
-        dependencies.instagramSessions.load()?.let { session ->
+        dependencies.instagramSessions.load()?.takeIf { dependencies.settings.useBrowserSessions() }?.let { session ->
             dependencies.instagramResolver.setSessionCookies(session.cookies, session.userAgent)
         }
         val browserMedia = RenderedPageResolverActivity.parseMediaJson(
@@ -189,7 +191,7 @@ class DownloadActivity : ComponentActivity() {
                             contentDescriptionRes = R.string.download,
                             onClick = {
                                 runWithDownloadPermissions(true) {
-                                    downloader.downloadAll(browserSessionsEnabled = true, browserResolver = ::resolveInBrowser)
+                                    downloader.downloadAll(browserSessionsEnabled = dependencies.settings.useBrowserSessions(), browserResolver = ::resolveInBrowser)
                                 }
                             }
                         )
@@ -201,10 +203,19 @@ class DownloadActivity : ComponentActivity() {
                     topBar = {}
                 ) { padding ->
                     Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                        var useSessions by remember { mutableStateOf(dependencies.settings.useBrowserSessions()) }
                         DownloaderScreen(
                             viewModel = downloader,
                             mediaDownloader = dependencies.mediaDownloader,
-                            useBrowserSessions = true,
+                            useBrowserSessions = useSessions,
+                            onUseBrowserSessionsChange = { enabled ->
+                                dependencies.settings.setUseBrowserSessions(enabled)
+                                useSessions = enabled
+                                if (!enabled) dependencies.instagramResolver.clearSessionCookies()
+                                else dependencies.instagramSessions.load()?.let { session ->
+                                    dependencies.instagramResolver.setSessionCookies(session.cookies, session.userAgent)
+                                }
+                            },
                             sessionsInitialized = true,
                             browserRequestRevision = EXPLICIT_BROWSER_REQUEST_REVISION,
                             resolveInBrowser = ::resolveInBrowser,

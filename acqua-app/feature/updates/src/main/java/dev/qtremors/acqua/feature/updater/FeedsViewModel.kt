@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -64,6 +65,7 @@ class FeedsViewModel(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
     private var previewJob: Job? = null
+    private var installedStatusJob: Job? = null
     val trackedRepos: StateFlow<List<TrackedRepo>> = repository.trackedRepos
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -196,6 +198,7 @@ class FeedsViewModel(
                     downloadApiUrl = asset.url,
                     apkSizeBytes = asset.size,
                     publishedAt = preview.release.published_at,
+                    lastCheckedAt = System.currentTimeMillis(),
                     selectedApkName = preview.selectedApkName,
                     mappedPackageName = installed?.packageName,
                     mappedAppName = installed?.appName,
@@ -229,7 +232,6 @@ class FeedsViewModel(
             message = null
         )
         viewModelScope.launch {
-            val updated = current.toMutableList()
             var firstError: Throwable? = null
             val installedApps = matcher.installedApps()
             for ((index, tracked) in current.withIndex()) {
@@ -241,44 +243,79 @@ class FeedsViewModel(
                         if (error.statusCode == 404) null else throw error
                     }
                     val apks = release?.assets?.filter { it.name.endsWith(".apk", true) }.orEmpty()
-                    val asset = apks.firstOrNull { it.name == tracked.selectedApkName }
-                        ?: AppUpdater.selectBestApkAsset(apks)
-                    val installed = tracked.mappedPackageName?.let(matcher::installedVersion)
-                        ?: tracked.takeIf { it.autoMatchInstalledApp }
-                            ?.let { matcher.findBestMatch(it.name, installedApps) }
-                    updated[index] = tracked.copy(
-                        name = info.name,
-                        fullName = info.full_name,
-                        description = info.description,
-                        stars = info.stargazers_count,
-                        avatarUrl = info.owner.avatar_url,
-                        latestTagName = release?.tag_name ?: tracked.latestTagName,
-                        latestReleaseName = release?.name ?: tracked.latestReleaseName,
-                        latestReleaseBody = release?.body ?: tracked.latestReleaseBody,
-                        latestReleaseUrl = release?.html_url ?: tracked.latestReleaseUrl,
-                        downloadUrl = asset?.browser_download_url,
-                        downloadApiUrl = asset?.url,
-                        apkSizeBytes = asset?.size ?: 0L,
-                        publishedAt = release?.published_at ?: tracked.publishedAt,
-                        mappedPackageName = installed?.packageName ?: tracked.mappedPackageName,
-                        mappedAppName = installed?.appName ?: tracked.mappedAppName,
-                        installedVersionName = installed?.versionName,
-                        isUpdateAvailable = release?.let { latest -> installed?.let {
-                            AppUpdater.compareVersions(latest.tag_name, it.versionName) > 0
-                        } } ?: false
-                    )
+                    repository.updateRepo(tracked.fullName) { current ->
+                        if (current.allowPreReleases != tracked.allowPreReleases) return@updateRepo current
+                        val asset = apks.firstOrNull { it.name == current.selectedApkName }
+                            ?: AppUpdater.selectBestApkAsset(apks)
+                        val installed = current.mappedPackageName?.let(matcher::installedVersion)
+                            ?: current.takeIf { it.autoMatchInstalledApp }
+                                ?.let { matcher.findBestMatch(it.name, installedApps) }
+                        current.copy(
+                            owner = info.owner.login,
+                            name = info.name,
+                            fullName = info.full_name,
+                            description = info.description,
+                            stars = info.stargazers_count,
+                            avatarUrl = info.owner.avatar_url,
+                            latestTagName = release?.tag_name ?: current.latestTagName,
+                            latestReleaseName = release?.name ?: current.latestReleaseName,
+                            latestReleaseBody = release?.body ?: current.latestReleaseBody,
+                            latestReleaseUrl = release?.html_url ?: current.latestReleaseUrl,
+                            downloadUrl = asset?.browser_download_url,
+                            downloadApiUrl = asset?.url,
+                            apkSizeBytes = asset?.size ?: 0L,
+                            publishedAt = release?.published_at ?: current.publishedAt,
+                            lastCheckedAt = System.currentTimeMillis(),
+                            mappedPackageName = installed?.packageName ?: current.mappedPackageName,
+                            mappedAppName = installed?.appName ?: current.mappedAppName,
+                            installedVersionName = installed?.versionName,
+                            isUpdateAvailable = release?.let { latest -> installed?.let {
+                                AppUpdater.compareVersions(latest.tag_name, it.versionName) > 0
+                            } } ?: false
+                        )
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (error: Throwable) {
                     if (firstError == null) firstError = error
                 }
                 _state.value = _state.value.copy(refreshCompleted = index + 1)
             }
-            repository.updateAll(updated)
             _state.value = _state.value.copy(
                 isRefreshing = false,
                 hasRefreshed = true,
                 message = firstError?.let(::noticeFor)
-                    ?: AppUpdateNotice.RefreshComplete(updated.size)
+                    ?: AppUpdateNotice.RefreshComplete(current.size)
             )
+        }
+    }
+
+    fun refreshInstalledStatus() {
+        installedStatusJob?.cancel()
+        installedStatusJob = viewModelScope.launch {
+            val apps = matcher.installedApps()
+            val installed = withContext(ioDispatcher) {
+                repository.trackedRepos.first().associate { repo ->
+                    repo.fullName to (repo.mappedPackageName?.let(matcher::installedVersion)
+                        ?: repo.takeIf { it.autoMatchInstalledApp }?.let { matcher.findBestMatch(it.name, apps) })
+                }
+            }
+            installed.forEach { (fullName, app) ->
+                repository.updateRepo(fullName) { current ->
+                    current.copy(
+                        mappedPackageName = app?.packageName ?: current.mappedPackageName,
+                        mappedAppName = app?.appName ?: current.mappedAppName,
+                        installedVersionName = app?.versionName,
+                        isUpdateAvailable = app?.let { AppUpdater.compareVersions(current.latestTagName, it.versionName) > 0 } ?: false
+                    )
+                }
+                if (app != null && _state.value.downloadStates[fullName] is UpdateDownloadState.Downloaded) {
+                    val repo = repository.trackedRepos.first().firstOrNull { it.fullName == fullName }
+                    if (repo != null && !repo.isUpdateAvailable) {
+                        _state.value = _state.value.withDownload(fullName, UpdateDownloadState.Idle)
+                    }
+                }
+            }
         }
     }
 

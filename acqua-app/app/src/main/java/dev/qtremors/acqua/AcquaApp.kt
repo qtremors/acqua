@@ -6,15 +6,16 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.work.Configuration
-import coil.Coil
-import coil.ImageLoader
-import coil.ImageLoaderFactory
-import coil.decode.GifDecoder
-import coil.decode.ImageDecoderDecoder
-import coil.decode.SvgDecoder
-import coil.decode.VideoFrameDecoder
-import coil.disk.DiskCache
-import coil.memory.MemoryCache
+import coil3.request.crossfade
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
+import coil3.gif.GifDecoder
+import coil3.gif.AnimatedImageDecoder
+import coil3.svg.SvgDecoder
+import coil3.video.VideoFrameDecoder
+import okio.Path.Companion.toOkioPath
+import coil3.disk.DiskCache
+import coil3.memory.MemoryCache
 import dev.qtremors.acqua.ui.image.AudioAlbumArtFetcher
 import dev.qtremors.acqua.ui.image.ThumbnailKeyer
 import dev.qtremors.acqua.ui.image.VideoThumbnailFetcher
@@ -32,7 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class AcquaApp : Application(), ImageLoaderFactory, Configuration.Provider,
+class AcquaApp : Application(), SingletonImageLoader.Factory, Configuration.Provider,
     DownloadExecutionProvider, RenderedPageResolverDependencies {
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val appSessionTracker = AppSessionTracker()
@@ -56,7 +57,7 @@ class AcquaApp : Application(), ImageLoaderFactory, Configuration.Provider,
             YtDlpTemporaryFiles.cleanupAfterProcessRestart(this@AcquaApp)
         }
 
-        SensitiveMemory.clearDelegate = { Coil.imageLoader(this).memoryCache?.clear() }
+        SensitiveMemory.clearDelegate = { SingletonImageLoader.get(this).memoryCache?.clear() }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 SensitiveMemory.clear()
@@ -64,23 +65,23 @@ class AcquaApp : Application(), ImageLoaderFactory, Configuration.Provider,
         })
     }
 
-    override fun newImageLoader(): ImageLoader {
+    override fun newImageLoader(context: android.content.Context): ImageLoader {
         return ImageLoader.Builder(this)
             .memoryCache {
-                MemoryCache.Builder(this)
-                    .maxSizePercent(0.25)
+                MemoryCache.Builder()
+                    .maxSizePercent(this, 0.25)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
-                    .directory(this.cacheDir.resolve("image_cache"))
+                    .directory(this.cacheDir.resolve("image_cache").toOkioPath())
                     .maxSizePercent(0.08)
                     .build()
             }
             .components {
                 add(ThumbnailKeyer())
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    add(ImageDecoderDecoder.Factory())
+                    add(AnimatedImageDecoder.Factory())
                 }
                 add(GifDecoder.Factory())
                 add(SvgDecoder.Factory())

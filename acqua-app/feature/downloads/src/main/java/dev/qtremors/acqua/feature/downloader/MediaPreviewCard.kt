@@ -1,5 +1,6 @@
 package dev.qtremors.acqua.feature.downloader
 
+import androidx.compose.foundation.clickable
 import android.webkit.CookieManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -256,20 +257,25 @@ fun MediaPreviewCard(
         item.explicitBrowserSessionAuthorized,
         useBrowserSessions
     ) {
-        val sessionAccessAllowed = useBrowserSessions || item.explicitBrowserSessionAuthorized
+        val sessionAccessAllowed = useBrowserSessions && item.explicitBrowserSessionAuthorized
         when {
             !sessionAccessAllowed || previewUrl == null -> null
             WebLink.host(previewUrl) == WebLink.host(item.url) -> item.requestCookies
+                ?: CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
             else -> CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
         }
     }
     val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies, previewWidthPixels, previewHeightPixels) {
         val loaded = if (previewUrl == null) null else withContext(Dispatchers.IO) {
             previewCache.loadBitmap(
+                item.copy(url = previewUrl, requestCookies = null),
+                previewWidthPixels,
+                previewHeightPixels
+            ) ?: if (cookies != null) previewCache.loadBitmap(
                 item.copy(url = previewUrl, requestCookies = cookies),
                 previewWidthPixels,
                 previewHeightPixels
-            )
+            ) else null
         }
         failed = previewUrl != null && loaded == null
         value = loaded?.bitmap?.asImageBitmap()
@@ -299,7 +305,7 @@ fun MediaPreviewCard(
                             if (audioPreview) R.string.audio else if (item.isVideo) R.string.video_preview else R.string.image_preview
                         ),
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Fit
                     )
                 }
                 previewUrl == null || failed -> {
@@ -368,7 +374,8 @@ fun MediaMetadataContainer(
     status: MediaMetadataStatus,
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
-    fallback: MediaMetadataFallback = MediaMetadataFallback()
+    fallback: MediaMetadataFallback = MediaMetadataFallback(),
+    onRename: ((String) -> Unit)? = null
 ) {
     val (item, index, totalCount, contentType, audioFormat, filenamePattern, audioFilenamePattern) = content
     val (isSaving, isSaved, downloadsEnabled) = status
@@ -415,7 +422,7 @@ fun MediaMetadataContainer(
             ?: "jpg"
     }
 
-    val activePattern = if (audioPreview) audioFilenamePattern else filenamePattern
+    val activePattern = if (item.downloadName != null) "{title}" else if (audioPreview) audioFilenamePattern else filenamePattern
     val actualFileName = FilenameFormatter.format(
         pattern = activePattern,
         username = item.username ?: fallbackAuthor,
@@ -424,15 +431,38 @@ fun MediaMetadataContainer(
         index = index,
         itemCount = totalCount,
         fileExtension = extension,
-        title = item.title ?: fallbackTitle,
+        title = item.downloadName ?: item.title ?: fallbackTitle,
         artist = item.artist,
         album = item.album
     )
 
+    var showRename by remember(item.url) { mutableStateOf(false) }
+    var editedName by remember(item.url, item.downloadName) { mutableStateOf(item.downloadName ?: actualFileName.substringBeforeLast('.')) }
+    if (showRename && onRename != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRename = false },
+            title = { Text(stringResource(R.string.rename_download)) },
+            text = {
+                androidx.compose.material3.OutlinedTextField(
+                    value = editedName,
+                    onValueChange = { editedName = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.filename)) },
+                    supportingText = { Text(stringResource(R.string.filename_extension_automatic)) }
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { onRename(editedName); showRename = false }, enabled = editedName.isNotBlank()) {
+                    Text(stringResource(R.string.save))
+                }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { showRename = false }) { Text(stringResource(R.string.cancel)) } }
+        )
+    }
     val author = item.username ?: fallbackAuthor
 
     ElevatedCard(
-        modifier = modifier,
+        modifier = modifier.clickable(enabled = !isSaved && onRename != null, onClickLabel = stringResource(R.string.rename_download)) { showRename = true },
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = colors.surfaceContainerLow),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)

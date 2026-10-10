@@ -37,7 +37,21 @@ class MediaResolutionService(
                 "Enter a valid HTTP or HTTPS link."
             )
         if (engine == DownloadEngine.YT_DLP) {
-            return resolveWithYtDlp(url, browserSessionsEnabled || forceBrowserResolution)
+            return try {
+                resolveWithYtDlp(url, false)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (!browserSessionsEnabled) throw error
+                try {
+                    resolveWithYtDlp(url, true)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (sessionFailure: Exception) {
+                    sessionFailure.addSuppressed(error)
+                    throw sessionFailure
+                }
+            }
         }
         if (WebLink.isYouTubeUrl(url)) {
             throw MediaResolutionException(
@@ -45,7 +59,10 @@ class MediaResolutionService(
                 "YouTube links require the yt-dlp engine."
             )
         }
-        if (forceBrowserResolution) return validateAndSelect(url, browserResolver(url, true))
+        if (forceBrowserResolution) {
+            requireBrowserSessions(browserSessionsEnabled)
+            return validateAndSelect(url, browserResolver(url, true))
+        }
         if (!WebLink.isInstagramMediaUrl(url)) {
             if (!allowBrowserFallback) {
                 throw MediaResolutionException(
@@ -53,12 +70,18 @@ class MediaResolutionService(
                     "This page needs browser extraction. Use the browser option to continue."
                 )
             }
-            return validateAndSelect(url, browserResolver(url, false))
+            requireBrowserSessions(browserSessionsEnabled)
+            return validateAndSelect(url, browserResolver(url, true))
         }
 
         val sourceFailure = try {
             val candidates = withContext(Dispatchers.IO) {
-                sourceResolver.resolve(url).map { it.copy(referer = it.referer ?: url) }
+                val candidates = if (sourceResolver is SessionAwareMediaResolver) {
+                    sourceResolver.resolve(url, browserSessionsEnabled)
+                } else {
+                    sourceResolver.resolve(url)
+                }
+                candidates.map { it.copy(referer = it.referer ?: url) }
             }
             return validateAndSelect(url, candidates)
         } catch (error: CancellationException) {
@@ -68,14 +91,22 @@ class MediaResolutionService(
         }
 
         if (!allowBrowserFallback) throw sourceFailure
+        requireBrowserSessions(browserSessionsEnabled)
         return try {
-            validateAndSelect(url, browserResolver(url, false))
+            validateAndSelect(url, browserResolver(url, true))
         } catch (error: CancellationException) {
             throw error
         } catch (browserFailure: Exception) {
             browserFailure.addSuppressed(sourceFailure)
             throw browserFailure
         }
+    }
+
+    private fun requireBrowserSessions(enabled: Boolean) {
+        if (!enabled) throw MediaResolutionException(
+            MediaResolutionFailure.SESSION_REQUIRED,
+            "Enable browser sessions to use cookies for this page."
+        )
     }
 
     private suspend fun resolveWithYtDlp(

@@ -172,6 +172,18 @@ class DownloaderViewModel(
         mutableState.value = mutableState.value.copy(embedThumbnail = enabled)
     }
 
+    fun setCropArtwork(enabled: Boolean) {
+        settings.setCropArtwork(enabled)
+        savedStateHandle[DownloaderSavedState.CROP_ARTWORK] = enabled
+        mutableState.value = mutableState.value.copy(cropArtwork = enabled)
+    }
+
+    fun setPreserveOriginalMetadata(enabled: Boolean) {
+        settings.setPreserveOriginalMetadata(enabled)
+        savedStateHandle[DownloaderSavedState.ORIGINAL_METADATA] = enabled
+        mutableState.value = mutableState.value.copy(preserveOriginalMetadata = enabled)
+    }
+
     fun updateMediaDimensions(index: Int, width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
         val snapshot = mutableState.value
@@ -199,6 +211,22 @@ class DownloaderViewModel(
 
     fun cancelDownload(id: String) {
         runCatching { UUID.fromString(id) }.getOrNull()?.let(ytDlpDownloads::cancel)
+    }
+
+    fun resetResolution() {
+        lastAutomaticRequest = null
+    }
+
+    fun renameMedia(index: Int, name: String) {
+        val snapshot = mutableState.value
+        if (snapshot.isSaving || snapshot.savingItemIndex != null) {
+            val workId = if (snapshot.savingItemIndex == index) activeWorkIds.singleOrNull()
+                else if (snapshot.isSaving) activeWorkIds.getOrNull(index) else null
+            if (workId != null && !ytDlpDownloads.rename(workId, name)) return
+        }
+        mutableState.value = snapshot.copy(media = snapshot.media?.mapIndexed { position, media ->
+            if (position == index) media.copy(downloadName = name.trim().takeIf(String::isNotBlank)) else media
+        })
     }
 
     fun dismissError() {
@@ -382,7 +410,9 @@ class DownloaderViewModel(
             maximumVideoHeight = snapshot.maximumVideoHeight,
             audioFormat = snapshot.audioFormat,
             embedMetadata = snapshot.embedMetadata,
-            embedThumbnail = snapshot.embedThumbnail
+            embedThumbnail = snapshot.embedThumbnail,
+            cropArtwork = snapshot.cropArtwork,
+            preserveOriginalMetadata = snapshot.preserveOriginalMetadata
         )
         val outputMedia = if (options.contentType == DownloadContentType.AUDIO) {
             media.copy(width = 0, height = 0)

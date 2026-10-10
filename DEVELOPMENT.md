@@ -2,7 +2,7 @@
 
 > Architecture, implementation notes, conventions, and verification guidance for Acqua development.
 
-**Version:** 0.3.0 | **Last Updated:** 2026-09-15
+**Version:** 0.3.1 | **Last Updated:** 2026-10-10
 **Scope:** Internal development, media downloader architecture, UI paradigms, testing, and release maintenance.
 
 ---
@@ -82,10 +82,10 @@ graph TD
 
 | Area | Technology |
 | :--- | :--- |
-| **Language & Toolchain** | Kotlin 2.4.10, Java 21 Gradle daemon, JVM 11 bytecode target, Gradle 9.5.0, Android Gradle Plugin 9.3.1 |
+| **Language & Toolchain** | Kotlin 2.4.20, Java 21 Gradle daemon, JVM 11 bytecode target, Gradle 9.8.0, Android Gradle Plugin 9.4.1 |
 | **Android Platform** | compileSdk/targetSdk 37, minSdk 24 (Android 7.0+), AndroidX Core KTX, Activity Compose, Lifecycle Runtime |
-| **UI & Styling** | Jetpack Compose BOM 2026.08.00, Material 3 1.5.0-alpha26, Material 3 Adaptive 1.3.0, Material Icons Extended |
-| **Networking & HTTP** | OkHttp 4.12.0, Kotlin Coroutines, Flow |
+| **UI & Styling** | Jetpack Compose BOM 2026.09.00, Material 3 1.5.0-alpha29, Material 3 Adaptive 1.3.0, Material Icons Extended |
+| **Networking & HTTP** | OkHttp 5.5.0, Kotlin Coroutines, Flow |
 | **Media Extraction & Processing** | youtubedl-android, yt-dlp, FFmpeg native runtimes, QuickJS-Android, Python runtime |
 | **Security & Storage** | Android Keystore (AES-GCM), SharedPreferences/DataStore, Storage Access Framework |
 | **Testing** | JUnit 4, AndroidX Test, Robolectric, Kotlinx Coroutines Test, Turbine |
@@ -292,14 +292,14 @@ Acqua implements **Material 3 Expressive** design tokens and grouped list presen
 | **Compile SDK** | 37 |
 | **Target SDK** | 37 |
 | **Min SDK** | 24 (Android 7.0+) |
-| **Version Code** | 30 |
-| **Version Name** | 0.3.0 |
+| **Version Code** | 31 |
+| **Version Name** | 0.3.1 |
 | **Java Target** | JVM 11 |
-| **Gradle Version** | 9.5.0 |
+| **Gradle Version** | 9.8.0 |
 | **Gradle JVM** | JDK 21 |
-| **Kotlin Version** | 2.4.10 |
-| **AGP Version** | 9.3.1 |
-| **Compose BOM** | 2026.08.00 |
+| **Kotlin Version** | 2.4.20 |
+| **AGP Version** | 9.4.1 |
+| **Compose BOM** | 2026.09.00 |
 
 ### Manifest Permissions
 
@@ -457,6 +457,7 @@ The public website is a dependency-free static site under `docs/` and is served 
 - **WebView provider unavailable:** Ensure Android System WebView is updated via Google Play or system settings.
 - **Download notification missing:** Ensure notification permission is granted on Android 13+ devices.
 - **Build toolchain issues:** Ensure JDK 21+ and Android SDK 37 are configured in your local environment.
+- **Gradle dependency verification:** Disabled project-wide with `org.gradle.dependency.verification=off` in `acqua-app/gradle.properties`. Dependency upgrades and IDE source downloads do not require checksum-list updates. The historical verification metadata is retained but is not enforced.
 
 ---
 

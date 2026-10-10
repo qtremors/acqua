@@ -29,6 +29,7 @@ interface DownloadQueueGateway {
     fun observe(ids: List<UUID>): Flow<List<DownloadQueueItem>>
     fun observeQueue(): Flow<DownloadQueueSnapshot>
     fun cancel(id: UUID)
+    fun rename(id: UUID, name: String): Boolean
 }
 
 class DownloadWorkCoordinator(context: Context) : DownloadQueueGateway {
@@ -62,6 +63,7 @@ class DownloadWorkCoordinator(context: Context) : DownloadQueueGateway {
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 10, TimeUnit.SECONDS)
             .addTag(WORK_TAG)
             .build()
+        DownloadNameOverrides.register(applicationContext, request.id.toString())
         workManager.enqueueUniqueWork(
             DOWNLOAD_WORK_QUEUE,
             ExistingWorkPolicy.APPEND_OR_REPLACE,
@@ -109,6 +111,7 @@ class DownloadWorkCoordinator(context: Context) : DownloadQueueGateway {
     }
 
     override fun cancel(id: UUID) {
+        DownloadNameOverrides.finish(applicationContext, id.toString())
         if (Build.VERSION.SDK_INT >= 34 && userInitiatedScheduler != null &&
             UserInitiatedDownloadRegistry.contains(applicationContext, id)
         ) {
@@ -117,6 +120,9 @@ class DownloadWorkCoordinator(context: Context) : DownloadQueueGateway {
             workManager.cancelWorkById(id)
         }
     }
+
+    override fun rename(id: UUID, name: String): Boolean =
+        DownloadNameOverrides.rename(applicationContext, id.toString(), name)
 
     @RequiresApi(34)
     private fun scheduleUserInitiated(input: androidx.work.Data): UUID? =

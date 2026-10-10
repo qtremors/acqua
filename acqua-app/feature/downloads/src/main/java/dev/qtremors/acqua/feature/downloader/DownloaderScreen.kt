@@ -156,7 +156,8 @@ fun DownloaderScreen(
     showLinkEditor: Boolean = true,
     onOpenAbout: () -> Unit = {},
     showHeaderCard: Boolean = true,
-    onStatusClick: (() -> Unit)? = null
+    onStatusClick: (() -> Unit)? = null,
+    onUseBrowserSessionsChange: ((Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -165,6 +166,15 @@ fun DownloaderScreen(
     val colors = MaterialTheme.colorScheme
     val previewCache = remember(mediaDownloader) { MediaPreviewCache(context, mediaDownloader) }
     var showConfigSheet by remember { mutableStateOf(false) }
+    var retryWithSession by remember { mutableStateOf(false) }
+
+    LaunchedEffect(useBrowserSessions, retryWithSession) {
+        if (useBrowserSessions && retryWithSession) {
+            retryWithSession = false
+            viewModel.resetResolution()
+            viewModel.resolve(true, browserRequestRevision, resolveInBrowser)
+        }
+    }
 
     val pullRefreshState = rememberPullToRefreshState()
     var isRefreshing by rememberSaveable { mutableStateOf(false) }
@@ -239,7 +249,9 @@ fun DownloaderScreen(
             onVideoHeightChange = viewModel::setMaximumVideoHeight,
             onAudioFormatChange = viewModel::setAudioFormat,
             onEmbedMetadataChange = viewModel::setEmbedMetadata,
-            onEmbedThumbnailChange = viewModel::setEmbedThumbnail
+            onEmbedThumbnailChange = viewModel::setEmbedThumbnail,
+            onCropArtworkChange = viewModel::setCropArtwork,
+            onOriginalMetadataChange = viewModel::setPreserveOriginalMetadata
         )
     }
 
@@ -345,6 +357,16 @@ fun DownloaderScreen(
                 }
             }
 
+            onUseBrowserSessionsChange?.let { onChange ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.use_browser_sessions), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    androidx.compose.material3.Switch(checked = useBrowserSessions, onCheckedChange = onChange,
+                        enabled = !state.isSaving && state.savingItemIndex == null && !state.isResolving)
+                }
+            }
             val contentScrollState = rememberScrollState()
             LaunchedEffect(state.media) {
                 if (state.media != null) {
@@ -394,7 +416,9 @@ fun DownloaderScreen(
                                     .setPrimaryClip(ClipData.newPlainText("AcquaError", error))
                             },
                             onOpenBrowser = { onOpenBrowser(state.url) },
-                            useBrowserSessions = useBrowserSessions
+                            useBrowserSessions = useBrowserSessions,
+                            onEnableSessions = onUseBrowserSessionsChange?.let { change -> { retryWithSession = true; change(true) } },
+                            onRename = viewModel::renameMedia
                         )
                     }
                 }

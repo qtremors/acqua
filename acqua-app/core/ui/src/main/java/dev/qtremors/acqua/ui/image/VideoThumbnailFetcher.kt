@@ -5,14 +5,14 @@ import androidx.core.graphics.scale
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.util.Size
-import androidx.core.graphics.drawable.toDrawable
 import androidx.core.net.toUri
-import coil.ImageLoader
-import coil.decode.DataSource
-import coil.fetch.DrawableResult
-import coil.fetch.FetchResult
-import coil.fetch.Fetcher
-import coil.request.Options
+import coil3.ImageLoader
+import coil3.decode.DataSource
+import coil3.asImage
+import coil3.fetch.ImageFetchResult
+import coil3.fetch.FetchResult
+import coil3.fetch.Fetcher
+import coil3.request.Options
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -38,8 +38,8 @@ class VideoThumbnailFetcher(
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && contentUri != null) {
                     val bitmap = context.contentResolver.loadThumbnail(contentUri.toUri(), Size(targetSize, targetSize), null)
-                    return@withContext DrawableResult(
-                        drawable = bitmap.toDrawable(context.resources),
+                    return@withContext ImageFetchResult(
+                        image = bitmap.asImage(),
                         isSampled = true,
                         dataSource = DataSource.DISK
                     )
@@ -80,8 +80,8 @@ class VideoThumbnailFetcher(
                     }
                 } ?: return@withContext null
 
-                DrawableResult(
-                    drawable = bitmap.toDrawable(context.resources),
+                ImageFetchResult(
+                    image = bitmap.asImage(),
                     isSampled = true,
                     dataSource = DataSource.DISK
                 )

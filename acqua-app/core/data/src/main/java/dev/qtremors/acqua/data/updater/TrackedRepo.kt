@@ -26,6 +26,7 @@ data class TrackedRepo(
     val isUpdateAvailable: Boolean = false,
     val allowPreReleases: Boolean = false,
     val notificationsEnabled: Boolean = true,
+    val lastCheckedAt: Long = 0L,
     val addedAt: Long = System.currentTimeMillis()
 ) {
     companion object {

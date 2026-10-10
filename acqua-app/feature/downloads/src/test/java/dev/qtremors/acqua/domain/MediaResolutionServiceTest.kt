@@ -76,7 +76,7 @@ class MediaResolutionServiceTest {
     }
 
     @Test
-    fun `YouTube browser cookies are forwarded only when session use is authorized`() = runBlocking {
+    fun `public YouTube access does not use cookies even when sessions are enabled`() = runBlocking {
         var sessionAllowed = false
         val resolver = object : SessionAwareMediaResolver {
             override fun resolve(url: String, allowBrowserSession: Boolean): List<ResolvedMedia> {
@@ -96,7 +96,46 @@ class MediaResolutionServiceTest {
             engine = DownloadEngine.YT_DLP
         ) { _, _ -> emptyList() }
 
-        assertEquals(true, sessionAllowed)
+        assertEquals(false, sessionAllowed)
+    }
+
+    @Test
+    fun `failed public yt-dlp access retries with cookies only when enabled`() = runBlocking {
+        val attempts = mutableListOf<Boolean>()
+        val resolver = object : SessionAwareMediaResolver {
+            override fun resolve(url: String, allowBrowserSession: Boolean): List<ResolvedMedia> {
+                attempts += allowBrowserSession
+                if (!allowBrowserSession) throw MediaResolutionException(MediaResolutionFailure.SESSION_REQUIRED, "Login needed")
+                return listOf(ResolvedMedia(url, MediaKind.AUDIO, backend = MediaBackend.YT_DLP, explicitBrowserSessionAuthorized = true))
+            }
+        }
+        val service = MediaResolutionService(MediaResolver { emptyList() }, resolver) { it }
+        val result = service.resolve("https://youtu.be/abc", true, engine = DownloadEngine.YT_DLP) { _, _ -> emptyList() }
+        assertEquals(listOf(false, true), attempts)
+        assertTrue(result.single().explicitBrowserSessionAuthorized)
+
+        attempts.clear()
+        val failure = assertThrows(MediaResolutionException::class.java) {
+            runBlocking { service.resolve("https://youtu.be/abc", false, engine = DownloadEngine.YT_DLP) { _, _ -> emptyList() } }
+        }
+        assertEquals(MediaResolutionFailure.SESSION_REQUIRED, failure.failure)
+        assertEquals(listOf(false), attempts)
+    }
+
+    @Test
+    fun `cancelled public resolution never starts a session retry`() = runBlocking {
+        val attempts = mutableListOf<Boolean>()
+        val resolver = object : SessionAwareMediaResolver {
+            override fun resolve(url: String, allowBrowserSession: Boolean): List<ResolvedMedia> {
+                attempts += allowBrowserSession
+                throw kotlinx.coroutines.CancellationException()
+            }
+        }
+        val service = MediaResolutionService(MediaResolver { emptyList() }, resolver) { it }
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            runBlocking { service.resolve("https://youtu.be/abc", true, engine = DownloadEngine.YT_DLP) { _, _ -> emptyList() } }
+        }
+        assertEquals(listOf(false), attempts)
     }
 
     @Test
@@ -191,7 +230,7 @@ class MediaResolutionServiceTest {
             listOf(browserItem)
         }
 
-        assertEquals(false, explicitlyAuthorized)
+        assertEquals(true, explicitlyAuthorized)
         assertEquals(listOf(browserItem), result)
     }
 
@@ -207,7 +246,7 @@ class MediaResolutionServiceTest {
     }
 
     @Test
-    fun `explicit browser download bypasses source resolution when sessions are disabled`() = runBlocking {
+    fun `explicit browser download requires sessions to be enabled`() = runBlocking {
         var sourceCalled = false
         var explicitlyAuthorized = false
         val browserItem = ResolvedMedia("https://cdn.test/private.mp4", MediaKind.VIDEO)
@@ -219,18 +258,66 @@ class MediaResolutionServiceTest {
             inspectMedia = { it }
         )
 
-        val result = service.resolve(
-            "https://instagram.com/reel/private",
-            browserSessionsEnabled = false,
-            forceBrowserResolution = true
-        ) { _, explicitSessionAuthorization ->
-            explicitlyAuthorized = explicitSessionAuthorization
+        val failure = assertThrows(MediaResolutionException::class.java) {
+            runBlocking {
+                service.resolve(
+                    "https://instagram.com/reel/private",
+                    browserSessionsEnabled = false,
+                    forceBrowserResolution = true
+                ) { _, _ -> error("Disabled sessions must not open the shared browser") }
+            }
+        }
+        assertEquals(MediaResolutionFailure.SESSION_REQUIRED, failure.failure)
+        val result = service.resolve("https://instagram.com/reel/private", true, forceBrowserResolution = true) { _, authorized ->
+            explicitlyAuthorized = authorized
             listOf(browserItem)
         }
 
         assertEquals(false, sourceCalled)
         assertEquals(true, explicitlyAuthorized)
         assertEquals(listOf(browserItem), result)
+    }
+
+    @Test
+    fun `forced yt-dlp resolution cannot bypass disabled sessions`() {
+        val attempts = mutableListOf<Boolean>()
+        val resolver = object : SessionAwareMediaResolver {
+            override fun resolve(url: String, allowBrowserSession: Boolean): List<ResolvedMedia> {
+                attempts += allowBrowserSession
+                throw MediaResolutionException(MediaResolutionFailure.SESSION_REQUIRED, "Login needed")
+            }
+        }
+        val service = MediaResolutionService(MediaResolver { emptyList() }, resolver) { it }
+        assertThrows(MediaResolutionException::class.java) {
+            runBlocking { service.resolve("https://youtu.be/private", false, forceBrowserResolution = true,
+                engine = DownloadEngine.YT_DLP) { _, _ -> error("Unexpected browser") } }
+        }
+        assertEquals(listOf(false), attempts)
+    }
+
+    @Test
+    fun `acqua resolver receives the session setting for every request`() = runBlocking {
+        val attempts = mutableListOf<Boolean>()
+        val resolver = object : SessionAwareMediaResolver {
+            override fun resolve(url: String, allowBrowserSession: Boolean): List<ResolvedMedia> {
+                attempts += allowBrowserSession
+                return listOf(ResolvedMedia("https://cdn.test/photo.jpg", MediaKind.IMAGE))
+            }
+        }
+        val service = MediaResolutionService(resolver) { it }
+        service.resolve("https://instagram.com/p/post", true) { _, _ -> emptyList() }
+        service.resolve("https://instagram.com/p/post", false) { _, _ -> emptyList() }
+        assertEquals(listOf(true, false), attempts)
+    }
+
+    @Test
+    fun `browser fallback cannot use a session while disabled`() {
+        val service = MediaResolutionService(MediaResolver { error("Login required") }) { it }
+        assertThrows(MediaResolutionException::class.java) {
+            runBlocking { service.resolve("https://instagram.com/p/post", false, allowBrowserFallback = true) { _, _ ->
+                error("Disabled sessions must not open the shared browser")
+            } }
+        }
     }
 
     @Test

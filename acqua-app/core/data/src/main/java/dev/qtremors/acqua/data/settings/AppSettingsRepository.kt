@@ -24,7 +24,9 @@ data class MediaProcessingSettings(
     val embedMetadata: Boolean,
     val embedThumbnail: Boolean,
     val autoUpdateYtDlp: Boolean,
-    val lastYtDlpUpdate: Long
+    val lastYtDlpUpdate: Long,
+    val cropArtwork: Boolean = true,
+    val preserveOriginalMetadata: Boolean = false
 )
 
 interface SettingsStore {
@@ -41,6 +43,8 @@ interface SettingsStore {
     fun setAudioFormat(value: AudioOutputFormat)
     fun setEmbedMetadata(enabled: Boolean)
     fun setEmbedThumbnail(enabled: Boolean)
+    fun setCropArtwork(enabled: Boolean)
+    fun setPreserveOriginalMetadata(enabled: Boolean)
     fun setAutoUpdateYtDlp(enabled: Boolean)
     fun lastDownloadEngine(): DownloadEngine
     fun setLastDownloadEngine(value: DownloadEngine)
@@ -113,7 +117,9 @@ class AppSettingsRepository(context: Context) : SettingsStore {
         embedMetadata = preferences.getBoolean(KEY_EMBED_METADATA, true),
         embedThumbnail = preferences.getBoolean(KEY_EMBED_THUMBNAIL, true),
         autoUpdateYtDlp = preferences.getBoolean(KEY_AUTO_UPDATE_YT_DLP, true),
-        lastYtDlpUpdate = preferences.getLong(KEY_LAST_YT_DLP_UPDATE, 0L)
+        lastYtDlpUpdate = preferences.getLong(KEY_LAST_YT_DLP_UPDATE, 0L),
+        cropArtwork = preferences.getBoolean(KEY_CROP_ARTWORK, true),
+        preserveOriginalMetadata = preferences.getBoolean(KEY_ORIGINAL_METADATA, false)
     )
 
     override fun setMaximumVideoHeight(value: Int) {
@@ -130,6 +136,14 @@ class AppSettingsRepository(context: Context) : SettingsStore {
 
     override fun setEmbedThumbnail(enabled: Boolean) {
         preferences.edit { putBoolean(KEY_EMBED_THUMBNAIL, enabled) }
+    }
+
+    override fun setCropArtwork(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_CROP_ARTWORK, enabled) }
+    }
+
+    override fun setPreserveOriginalMetadata(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_ORIGINAL_METADATA, enabled) }
     }
 
     override fun lastDownloadEngine(): DownloadEngine = preferences.getString(KEY_DOWNLOAD_ENGINE, null)
@@ -175,6 +189,8 @@ class AppSettingsRepository(context: Context) : SettingsStore {
         private const val KEY_MAXIMUM_VIDEO_HEIGHT = "acqua_maximum_video_height"
         private const val KEY_AUDIO_FORMAT = "acqua_audio_output_format"
         private const val KEY_EMBED_METADATA = "acqua_embed_metadata"
+        private const val KEY_CROP_ARTWORK = "acqua_crop_artwork"
+        private const val KEY_ORIGINAL_METADATA = "acqua_original_metadata"
         private const val KEY_EMBED_THUMBNAIL = "acqua_embed_thumbnail"
         private const val KEY_DOWNLOAD_ENGINE = "acqua_last_download_engine"
         private const val KEY_DOWNLOAD_CONTENT_TYPE = "acqua_last_download_content_type"

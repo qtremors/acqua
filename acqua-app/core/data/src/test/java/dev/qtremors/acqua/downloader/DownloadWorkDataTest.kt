@@ -27,14 +27,16 @@ class DownloadWorkDataTest {
 
     @Test
     fun `processed request round trips media output and options`() {
-        val media = completeMedia(backend = MediaBackend.YT_DLP)
+        val media = completeMedia(backend = MediaBackend.YT_DLP).copy(downloadName = "Chosen filename")
         val output = media.copy(width = 1280, height = 720)
         val options = YtDlpDownloadOptions(
             contentType = DownloadContentType.AUDIO,
             maximumVideoHeight = 1080,
             audioFormat = AudioOutputFormat.MP3,
             embedMetadata = false,
-            embedThumbnail = false
+            embedThumbnail = false,
+            cropArtwork = false,
+            preserveOriginalMetadata = true
         )
 
         val decoded = DownloadWorkData.decode(
@@ -47,6 +49,7 @@ class DownloadWorkDataTest {
         assertEquals(media.thumbnailUrl, decoded.media.thumbnailUrl)
         assertEquals(media.username, decoded.media.username)
         assertEquals(media.title, decoded.media.title)
+        assertEquals(media.downloadName, decoded.media.downloadName)
         assertEquals(media.sourceTimestampMillis, decoded.media.sourceTimestampMillis)
         assertEquals(1280, decoded.outputMedia.width)
         assertEquals(720, decoded.outputMedia.height)
@@ -199,14 +202,16 @@ class DownloadWorkDataTest {
     @Test
     fun `persistable job extras round trip every request value`() {
         val original = DownloadWorkData.processedRequest(
-            completeMedia(MediaBackend.YT_DLP),
+            completeMedia(MediaBackend.YT_DLP).copy(downloadName = "Chosen name"),
             completeMedia(MediaBackend.YT_DLP).copy(width = 640, height = 360),
             YtDlpDownloadOptions(
                 contentType = DownloadContentType.AUDIO,
                 maximumVideoHeight = 720,
                 audioFormat = AudioOutputFormat.M4A,
                 embedMetadata = false,
-                embedThumbnail = true
+                embedThumbnail = true,
+                cropArtwork = false,
+                preserveOriginalMetadata = true
             ),
             SOURCE_URL
         )

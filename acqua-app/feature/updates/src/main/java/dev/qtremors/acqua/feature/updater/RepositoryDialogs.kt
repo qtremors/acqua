@@ -1,5 +1,6 @@
 package dev.qtremors.acqua.feature.updater
 
+import dev.qtremors.acqua.ui.components.MarkdownContent
 import android.content.Intent
 import android.content.ClipboardManager
 import androidx.core.net.toUri
@@ -94,7 +95,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.data.updater.InstalledApp
 import dev.qtremors.acqua.data.updater.TrackedRepo
@@ -176,10 +177,10 @@ internal fun ConfigureRepoBottomSheet(
             title = { Text(stringResource(R.string.repository_readme)) },
             text = {
                 SelectionContainer {
-                    Text(
+                    MarkdownContent(
                         preview.readme,
                         modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
-                        style = MaterialTheme.typography.bodyMedium
+                        baseUrl = "${preview.repository.html_url}/blob/HEAD/"
                     )
                 }
             },
@@ -230,7 +231,7 @@ internal fun ReleaseNotesBottomSheet(repo: TrackedRepo, onDismiss: () -> Unit) {
             Text(repo.fullName, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Box(Modifier.weight(1f)) {
                 SelectionContainer {
-                    Text(repo.latestReleaseBody.orEmpty(), modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 16.dp), style = MaterialTheme.typography.bodyMedium)
+                    MarkdownContent(repo.latestReleaseBody.orEmpty(), modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(vertical = 16.dp), baseUrl = "https://github.com/${repo.fullName}/")
                 }
             }
             repo.latestReleaseUrl?.let { url ->

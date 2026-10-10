@@ -10,6 +10,7 @@ import android.provider.MediaStore
 import android.util.Size
 import androidx.core.content.FileProvider
 import androidx.annotation.RequiresApi
+import androidx.exifinterface.media.ExifInterface
 import dev.qtremors.acqua.data.history.HistoryEntry
 import dev.qtremors.acqua.data.history.HistoryRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
@@ -34,6 +35,7 @@ class MediaStorage(
         index: Int,
         sourceUrl: String,
         itemCount: Int = 1,
+        finalDownloadName: () -> String? = { null },
         onProgress: (bytesWritten: Long, totalBytes: Long) -> Unit = { _, _ -> }
     ): Uri {
         val settings = settingsRepository.downloadSettings()
@@ -60,23 +62,23 @@ class MediaStorage(
         }
         val isAudio = item.kind == MediaKind.AUDIO
         val fileName = FilenameFormatter.format(
-            pattern = if (isAudio) settings.audioFilenamePattern else settings.filenamePattern,
+            pattern = if (item.downloadName != null) "{title}" else if (isAudio) settings.audioFilenamePattern else settings.filenamePattern,
             username = item.username,
             width = if (isAudio) 0 else item.width,
             height = if (isAudio) 0 else item.height,
             index = index,
             itemCount = itemCount,
             fileExtension = extension,
-            title = item.title,
+            title = item.downloadName ?: item.title,
             artist = item.artist,
             album = item.album
         )
         val requestCookies = item.requestCookies.takeIf {
-            item.explicitBrowserSessionAuthorized || settingsRepository.useBrowserSessions()
+            settingsRepository.useBrowserSessions() && item.explicitBrowserSessionAuthorized
         }
 
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            saveWithMediaStore(item, sourceUrl, relativePath, fileName, mimeType, requestCookies, onProgress)
+            saveWithMediaStore(item, sourceUrl, relativePath, fileName, mimeType, requestCookies, finalDownloadName, onProgress)
         } else {
             saveLegacy(
                 item,
@@ -87,6 +89,7 @@ class MediaStorage(
                 mimeType,
                 requestCookies,
                 settings.categorizeMedia,
+                finalDownloadName,
                 onProgress
             )
         }
@@ -96,7 +99,10 @@ class MediaStorage(
         sourceFile: File,
         media: ResolvedMedia,
         contentType: DownloadContentType,
-        sourceUrl: String
+        sourceUrl: String,
+        preserveOriginalMetadata: Boolean = settingsRepository.mediaProcessingSettings().preserveOriginalMetadata,
+        index: Int = 0,
+        itemCount: Int = 1
     ): Uri {
         require(sourceFile.isFile && sourceFile.length() > 0L) { "The processed media file is empty." }
         val settings = settingsRepository.downloadSettings()
@@ -105,15 +111,18 @@ class MediaStorage(
         val category = if (isAudio) "Audio" else "Videos"
         val extension = sourceFile.extension.lowercase().ifBlank { if (isAudio) "m4a" else "mp4" }
         val mimeType = mimeTypeFor(extension, isAudio)
+        val timestamp = if (preserveOriginalMetadata) {
+            media.sourceTimestampMillis ?: sourceFile.lastModified()
+        } else System.currentTimeMillis()
         val fileName = FilenameFormatter.format(
-            pattern = if (isAudio) settings.audioFilenamePattern else settings.filenamePattern,
+            pattern = if (media.downloadName != null) "{title}" else if (isAudio) settings.audioFilenamePattern else settings.filenamePattern,
             username = media.username,
             width = if (isAudio) 0 else media.width,
             height = if (isAudio) 0 else media.height,
-            index = 0,
-            itemCount = 1,
+            index = index,
+            itemCount = itemCount,
             fileExtension = extension,
-            title = media.title,
+            title = media.downloadName ?: media.title,
             artist = media.artist,
             album = media.album
         )
@@ -140,7 +149,7 @@ class MediaStorage(
                 } ?: error("Could not open the destination media file.")
                 values.clear()
                 values.put(MediaStore.Downloads.IS_PENDING, 0)
-                values.putDownloadTimestamp(System.currentTimeMillis(), includeDateTaken = !isAudio)
+                values.putDownloadTimestamp(timestamp, includeDateTaken = !isAudio)
                 resolver.update(uri, values, null, null)
                 warmThumbnail(uri, enabled = !isAudio)
                 val finalName = queryDisplayName(uri, fileName)
@@ -162,16 +171,21 @@ class MediaStorage(
                 "Could not create the configured Downloads subfolder."
             }
             val target = uniqueFile(targetDirectory, fileName)
-            sourceFile.copyTo(target, overwrite = true)
-            target.setLastModified(System.currentTimeMillis())
-            scanLegacyFile(target, mimeType)
-            val uri = FileProvider.getUriForFile(
-                appContext,
-                "${appContext.packageName}.fileprovider",
-                target
-            )
-            recordProcessedDownload(sourceUrl, uri, target.name, mimeType, target.length(), !isAudio)
-            uri
+            try {
+                sourceFile.copyTo(target, overwrite = true)
+                target.setLastModified(timestamp)
+                scanLegacyFile(target, mimeType)
+                val uri = FileProvider.getUriForFile(
+                    appContext,
+                    "${appContext.packageName}.fileprovider",
+                    target
+                )
+                recordProcessedDownload(sourceUrl, uri, target.name, mimeType, target.length(), !isAudio)
+                uri
+            } catch (error: Exception) {
+                target.delete()
+                throw error
+            }
         }
     }
 
@@ -183,6 +197,7 @@ class MediaStorage(
         fileName: String,
         mimeType: String,
         requestCookies: String?,
+        finalDownloadName: () -> String?,
         onProgress: (Long, Long) -> Unit
     ): Uri {
         val values = ContentValues().apply {
@@ -201,9 +216,16 @@ class MediaStorage(
                 mediaDownloader.downloadToStreamCancellable(item, output, requestCookies, onProgress)
             } ?: error("Could not open the destination media file.")
 
+            if (canWriteImageMetadata(mimeType)) {
+                resolver.openFileDescriptor(uri, "rw")?.use {
+                    writeImageMetadata(ExifInterface(it.fileDescriptor), item, sourceUrl)
+                }
+            }
+
             values.clear()
+            finalDownloadName()?.let { values.put(MediaStore.Downloads.DISPLAY_NAME, renamedFileName(fileName, it)) }
             values.put(MediaStore.Downloads.IS_PENDING, 0)
-            values.putDownloadTimestamp(System.currentTimeMillis(), includeDateTaken = !item.isAudio)
+            values.putDownloadTimestamp(downloadTimestamp(item), includeDateTaken = !item.isAudio)
             resolver.update(uri, values, null, null)
             warmThumbnail(uri, enabled = !item.isAudio)
             val finalName = queryDisplayName(uri, fileName)
@@ -227,6 +249,7 @@ class MediaStorage(
         mimeType: String,
         requestCookies: String?,
         categorizeMedia: Boolean,
+        finalDownloadName: () -> String?,
         onProgress: (Long, Long) -> Unit
     ): Uri {
         val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
@@ -234,13 +257,22 @@ class MediaStorage(
         check(targetDirectory.mkdirs() || targetDirectory.isDirectory) {
             "Could not create the configured Downloads subfolder."
         }
-        val file = uniqueFile(targetDirectory, fileName)
+        var file = uniqueFile(targetDirectory, fileName)
 
         return try {
             val bytesDownloaded = file.outputStream().use { output ->
                 mediaDownloader.downloadToStreamCancellable(item, output, requestCookies, onProgress)
             }
-            file.setLastModified(System.currentTimeMillis())
+            if (canWriteImageMetadata(mimeType)) writeImageMetadata(ExifInterface(file), item, sourceUrl)
+            finalDownloadName()?.let { name ->
+                val requestedName = renamedFileName(fileName, name)
+                if (requestedName != file.name) {
+                    val renamed = uniqueFile(targetDirectory, requestedName)
+                    check(file.renameTo(renamed)) { "Could not rename the downloaded file." }
+                    file = renamed
+                }
+            }
+            file.setLastModified(downloadTimestamp(item))
             scanLegacyFile(file, mimeType)
             val uri = FileProvider.getUriForFile(
                 appContext,
@@ -326,9 +358,29 @@ class MediaStorage(
         error("Could not create a unique destination filename.")
     }
 
+    private fun canWriteImageMetadata(mimeType: String): Boolean =
+        settingsRepository.mediaProcessingSettings().embedMetadata && mimeType in setOf("image/jpeg", "image/png", "image/webp")
+
+    private fun renamedFileName(original: String, name: String): String = FilenameFormatter.format(
+        pattern = "{title}", username = null, width = 0, height = 0, index = 0,
+        fileExtension = original.substringAfterLast('.'), title = name
+    )
+
+    private fun writeImageMetadata(exif: ExifInterface, media: ResolvedMedia, sourceUrl: String) {
+        ImageDownloadMetadata.apply(
+            exif, sourceUrl, downloadTimestamp(media),
+            settingsRepository.mediaProcessingSettings().preserveOriginalMetadata
+        )
+    }
+
+    private fun downloadTimestamp(media: ResolvedMedia): Long =
+        if (settingsRepository.mediaProcessingSettings().preserveOriginalMetadata) {
+            media.sourceTimestampMillis ?: System.currentTimeMillis()
+        } else System.currentTimeMillis()
+
     private fun ContentValues.putDownloadTimestamp(timestampMillis: Long, includeDateTaken: Boolean) {
         val timestampSeconds = timestampMillis / 1_000L
-        put(MediaStore.MediaColumns.DATE_ADDED, timestampSeconds)
+        put(MediaStore.MediaColumns.DATE_ADDED, System.currentTimeMillis() / 1_000L)
         put(MediaStore.MediaColumns.DATE_MODIFIED, timestampSeconds)
         if (includeDateTaken) put("datetaken", timestampMillis)
     }

@@ -113,7 +113,7 @@ abstract class VerifyReleaseArtifactsTask : DefaultTask() {
                     apk.absolutePath
                 )
                 val certificate = Regex(
-                    """Signer #\d+ certificate SHA-256 digest:\s*([0-9a-fA-F:]+)"""
+                    """(?:Signer #\d+|V\d+(?:\.\d+)? Signer(?: #\d+)?):? certificate SHA-256 digest:\s*([0-9a-fA-F:]+)"""
                 ).find(certificates)?.groupValues?.get(1)?.filter(Char::isLetterOrDigit)?.lowercase()
                 require(certificate == expectedCertificate) {
                     "${apk.name} is not signed by the official Acqua certificate."
@@ -208,8 +208,8 @@ android {
         applicationId = "dev.qtremors.acqua"
         minSdk = 24
         targetSdk = 37
-        versionCode = 30
-        versionName = "0.3.0"
+        versionCode = 31
+        versionName = "0.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -355,6 +355,7 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
 
     implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
     implementation(libs.coil.video)
     implementation(libs.coil.gif)
     implementation(libs.coil.svg)

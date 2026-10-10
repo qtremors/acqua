@@ -2,6 +2,32 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.1] - 2026-10-10
+
+### Added
+
+- Rename downloads by tapping the metadata card, including while a transfer is running.
+- Choose original source dates instead of download timestamps in download options.
+
+### Changed
+
+- Update Android build tooling and app libraries, including Coil 3 image loading and OkHttp 5 networking.
+- Try public access before saved cookies in both engines, expose the session toggle in Downloader, and offer an enable-session action when public access fails.
+- Render Markdown in release notes, repository READMEs, and legal documents.
+- Replace feed overflow buttons with long-press actions, show release and check times plus APK size, and put the latest releases first.
+- Fit media inside square preview containers and size tabs and controls to avoid crowded labels.
+- Improve audio conversion quality and embed higher-quality album artwork with an optional square crop.
+
+### Fixed
+
+- Respect the cookie toggle in previews and every download entry point, including media captured from the browser.
+- Recover stalled Instagram carousel navigation and find carousel data after unrelated page scripts.
+- Refresh installed app versions and update availability when returning from an installation.
+- Keep renamed or transferred feeds refreshing and preserve APK choices made during refresh.
+- Identify yt-dlp sign-in failures as browser-session errors.
+- Embed the download date and time and source URL in supported media metadata.
+- Remove newly created legacy download files when saving fails, while preserving existing files.
+
 ## [0.3.0] - 2026-09-15
 
 ### Changed

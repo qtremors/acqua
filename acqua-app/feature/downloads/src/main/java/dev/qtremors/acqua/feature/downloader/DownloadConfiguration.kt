@@ -152,7 +152,9 @@ internal fun DownloadConfigBottomSheet(
     onVideoHeightChange: (Int) -> Unit,
     onAudioFormatChange: (AudioOutputFormat) -> Unit,
     onEmbedMetadataChange: (Boolean) -> Unit,
-    onEmbedThumbnailChange: (Boolean) -> Unit
+    onEmbedThumbnailChange: (Boolean) -> Unit,
+    onCropArtworkChange: (Boolean) -> Unit,
+    onOriginalMetadataChange: (Boolean) -> Unit
 ) {
     val colors = MaterialTheme.colorScheme
     val ytDlpMedia = state.media?.singleOrNull()?.takeIf { it.backend == MediaBackend.YT_DLP }
@@ -325,6 +327,22 @@ internal fun DownloadConfigBottomSheet(
                 }
             }
 
+            if (state.downloadEngine == DownloadEngine.YT_DLP && state.downloadContentType == DownloadContentType.AUDIO) {
+                ListItem(
+                    supportingContent = { Text(stringResource(R.string.crop_artwork_description)) },
+                    trailingContent = { Switch(state.cropArtwork, onCheckedChange = null, modifier = Modifier.clearAndSetSemantics { }) },
+                    modifier = Modifier.toggleable(state.cropArtwork, role = Role.Switch, onValueChange = onCropArtworkChange)
+                        .semantics(mergeDescendants = true) { },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                ) { Text(stringResource(R.string.crop_artwork)) }
+            }
+            ListItem(
+                supportingContent = { Text(stringResource(R.string.original_metadata_description)) },
+                trailingContent = { Switch(state.preserveOriginalMetadata, onCheckedChange = null, modifier = Modifier.clearAndSetSemantics { }) },
+                modifier = Modifier.toggleable(state.preserveOriginalMetadata, role = Role.Switch, onValueChange = onOriginalMetadataChange)
+                    .semantics(mergeDescendants = true) { },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            ) { Text(stringResource(R.string.original_metadata)) }
             Spacer(Modifier.height(16.dp))
             Button(
                 onClick = {

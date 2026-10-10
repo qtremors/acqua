@@ -335,7 +335,7 @@ class RenderedPageResolverActivity : ComponentActivity() {
 
         private const val INSTAGRAM_ORIGIN = "https://www.instagram.com"
         private const val EXTRACTION_INTERVAL_MS = 500L
-        private const val MAX_EXTRACTION_ATTEMPTS = 30
+        private const val MAX_EXTRACTION_ATTEMPTS = 60
         private const val REQUIRED_STABLE_PASSES = 4
 
         fun parseMediaResults(data: Intent?): List<ResolvedMedia> {

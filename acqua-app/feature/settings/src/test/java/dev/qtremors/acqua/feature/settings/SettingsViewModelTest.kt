@@ -128,6 +128,8 @@ class SettingsViewModelTest {
         override fun setAudioFormat(value: AudioOutputFormat) { media = media.copy(audioFormat = value) }
         override fun setEmbedMetadata(enabled: Boolean) { media = media.copy(embedMetadata = enabled) }
         override fun setEmbedThumbnail(enabled: Boolean) { media = media.copy(embedThumbnail = enabled) }
+        override fun setCropArtwork(enabled: Boolean) { media = media.copy(cropArtwork = enabled) }
+        override fun setPreserveOriginalMetadata(enabled: Boolean) { media = media.copy(preserveOriginalMetadata = enabled) }
         override fun setAutoUpdateYtDlp(enabled: Boolean) { media = media.copy(autoUpdateYtDlp = enabled) }
         override fun lastDownloadEngine() = DownloadEngine.YT_DLP
         override fun setLastDownloadEngine(value: DownloadEngine) = Unit

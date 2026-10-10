@@ -1,5 +1,13 @@
 package dev.qtremors.acqua.feature.updater
 
+import android.text.format.DateFormat
+import android.text.format.Formatter
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.FlowRow
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import android.content.Intent
 import android.content.ClipboardManager
 import androidx.core.net.toUri
@@ -94,7 +102,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.data.updater.InstalledApp
 import dev.qtremors.acqua.data.updater.TrackedRepo
@@ -224,17 +232,16 @@ internal fun RepoCard(
         index == count - 1 -> RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
         else -> RoundedCornerShape(4.dp)
     }
-    Surface(modifier = Modifier.fillMaxWidth(), shape = shape, color = MaterialTheme.colorScheme.surfaceContainer) {
+    Surface(modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onNotes, onLongClickLabel = stringResource(R.string.more_options), onLongClick = { menu = true }), shape = shape, color = MaterialTheme.colorScheme.surfaceContainer) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(model = iconModel, contentDescription = null, modifier = Modifier.size(44.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(repo.mappedAppName ?: repo.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(repo.fullName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(repo.fullName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, stringResource(R.string.more_options)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.edit)) }, leadingIcon = { Icon(Icons.Filled.Edit, null) }, onClick = { menu = false; onEdit() })
                         DropdownMenuItem(text = { Text(stringResource(R.string.stop_tracking)) }, leadingIcon = { Icon(Icons.Filled.Delete, null) }, onClick = { menu = false; onRemove() })
@@ -244,7 +251,27 @@ internal fun RepoCard(
             repo.description?.takeIf(String::isNotBlank)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
             }
-            Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                repo.publishedAt?.let { published ->
+                    val timestamp = remember(published) {
+                        runCatching { SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
+                            timeZone = TimeZone.getTimeZone("UTC")
+                        }.parse(published)?.time }.getOrNull()
+                    }
+                    timestamp?.let { Text(stringResource(R.string.feed_updated, feedDate(context, it)), style = MaterialTheme.typography.bodySmall) }
+                }
+                Text(
+                    if (repo.lastCheckedAt > 0) stringResource(R.string.feed_checked, feedDate(context, repo.lastCheckedAt)) else stringResource(R.string.feed_not_checked),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (repo.apkSizeBytes > 0) Text(stringResource(R.string.feed_apk_size, Formatter.formatShortFileSize(context, repo.apkSizeBytes)), style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(when {
+                    installedVersionName == null -> R.string.not_installed
+                    repo.isUpdateAvailable -> R.string.updates_available
+                    else -> R.string.up_to_date
+                }), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            FlowRow(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Surface(color = if (repo.isUpdateAvailable) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest, shape = RoundedCornerShape(10.dp)) {
                     Text(
                         displayVersionSummary(installedVersionName, repo.latestTagName, repo.isUpdateAvailable),
@@ -252,7 +279,6 @@ internal fun RepoCard(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }
-                Spacer(Modifier.weight(1f))
                 TextButton(onClick = onNotes, enabled = !repo.latestReleaseBody.isNullOrBlank()) {
                     Icon(Icons.Filled.Description, null, Modifier.size(18.dp)); Spacer(Modifier.width(4.dp)); Text(stringResource(R.string.notes))
                 }
@@ -286,6 +312,9 @@ internal fun RepoCard(
         }
     }
 }
+
+private fun feedDate(context: android.content.Context, timestamp: Long): String =
+    "${DateFormat.getMediumDateFormat(context).format(Date(timestamp))} ${DateFormat.getTimeFormat(context).format(Date(timestamp))}"
 
 @Composable
 internal fun AddRepositoryInput(

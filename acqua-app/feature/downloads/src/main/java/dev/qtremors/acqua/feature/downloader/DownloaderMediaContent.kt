@@ -150,194 +150,164 @@ internal fun MediaContentSection(
     onCopyError: (String) -> Unit,
     onOpenBrowser: () -> Unit,
     useBrowserSessions: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onEnableSessions: (() -> Unit)? = null,
+    onRename: (Int, String) -> Unit = { _, _ -> }
 ) {
     val colors = MaterialTheme.colorScheme
 
-    Column(
-        modifier = modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        state.media?.let { media ->
-            val density = LocalDensity.current
-            val containerSize = LocalWindowInfo.current.containerSize
-            val screenWidth = with(density) { containerSize.width.toDp() }
-            val screenHeight = with(density) { containerSize.height.toDp() }
-            val isMulti = media.size > 1
-            val loopMultiplier = 1000
-            val pageCount = if (isMulti) media.size * loopMultiplier else 1
-            val initialPage = if (isMulti) (loopMultiplier / 2) * media.size else 0
-            val pagerState = rememberPagerState(
-                initialPage = initialPage,
-                pageCount = { pageCount }
-            )
-            val loadedDimensions = remember(media) { mutableStateMapOf<Int, Pair<Int, Int>>() }
-
-            val activeIndex = pagerState.currentPage % media.size
-            val activeItem = media[activeIndex]
-            val activeDimensions = loadedDimensions[activeIndex]
-            val isAudio = activeItem.isAudioPreview(state.downloadContentType)
-
-            val activeWidth = if (activeItem.isVideo) activeItem.width else activeDimensions?.first ?: activeItem.width
-            val activeHeight = if (activeItem.isVideo) activeItem.height else activeDimensions?.second ?: activeItem.height
-            val activeAspect = when {
-                isAudio -> 1f
-                activeWidth > 0 && activeHeight > 0 -> (activeWidth.toFloat() / activeHeight.toFloat()).coerceIn(0.4f, 2.5f)
-                activeItem.isVideo -> 16f / 9f
-                else -> 1f
-            }
-
-            val slotWidth = if (isAudio || !isMulti) {
-                screenWidth - 32.dp
-            } else {
-                (screenWidth * 0.75f).coerceIn(230.dp, 310.dp)
-            }
-            val horizontalPadding = ((screenWidth - slotWidth) / 2).coerceAtLeast(16.dp)
-            val maxContainerHeight = if (isAudio) {
-                slotWidth.coerceAtMost(screenHeight * 0.48f)
-            } else {
-                (screenHeight * 0.36f).coerceIn(224.dp, 320.dp)
-            }
-
-            val (_, targetContainerHeight) = computeCardDimensions(activeAspect, maxContainerHeight, slotWidth)
-            val animatedContainerHeight by animateDpAsState(
-                targetValue = targetContainerHeight,
-                animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                label = "containerHeight"
-            )
-
-            HorizontalPager(
-                state = pagerState,
-                pageSize = PageSize.Fixed(slotWidth),
-                contentPadding = PaddingValues(horizontal = horizontalPadding),
-                pageSpacing = 12.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(animatedContainerHeight)
-            ) { page ->
-                val index = page % media.size
-                val item = media[index]
-                val dimensions = loadedDimensions[index]
-                val isItemAudio = item.isAudioPreview(state.downloadContentType)
-
-                val itemW = if (item.isVideo) item.width else dimensions?.first ?: item.width
-                val itemH = if (item.isVideo) item.height else dimensions?.second ?: item.height
-                val itemAspect = when {
-                    isItemAudio -> 1f
-                    itemW > 0 && itemH > 0 -> (itemW.toFloat() / itemH.toFloat()).coerceIn(0.4f, 2.5f)
-                    item.isVideo -> 16f / 9f
-                    else -> 1f
-                }
-
-                val (itemCardWidth, itemCardHeight) = computeCardDimensions(
-                    itemAspect,
-                    animatedContainerHeight,
-                    slotWidth
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val availableWidth = maxWidth
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            state.media?.let { media ->
+                val density = LocalDensity.current
+                val containerSize = LocalWindowInfo.current.containerSize
+                val screenWidth = availableWidth
+                val screenHeight = with(density) { containerSize.height.toDp() }
+                val isMulti = media.size > 1
+                val loopMultiplier = 1000
+                val pageCount = if (isMulti) media.size * loopMultiplier else 1
+                val initialPage = if (isMulti) (loopMultiplier / 2) * media.size else 0
+                val pagerState = rememberPagerState(
+                    initialPage = initialPage,
+                    pageCount = { pageCount }
                 )
+                val loadedDimensions = remember(media) { mutableStateMapOf<Int, Pair<Int, Int>>() }
 
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    MediaPreviewCard(
-                        item = item,
-                        index = index,
-                        useBrowserSessions = useBrowserSessions,
-                        previewCache = previewCache,
-                        contentType = state.downloadContentType,
-                        cardWidth = itemCardWidth,
-                        cardHeight = itemCardHeight,
-                        onBitmapDimensions = { width, height ->
-                            loadedDimensions[index] = width to height
-                            onMediaDimensions(index, width, height)
-                        }
-                    )
+                val activeIndex = pagerState.currentPage % media.size
+                val activeItem = media[activeIndex]
+                val activeDimensions = loadedDimensions[activeIndex]
+
+                val slotWidth = minOf((screenWidth - 32.dp).coerceAtLeast(1.dp), screenHeight * 0.42f, 360.dp)
+                val horizontalPadding = ((screenWidth - slotWidth) / 2).coerceAtLeast(0.dp)
+
+                HorizontalPager(
+                    state = pagerState,
+                    pageSize = PageSize.Fixed(slotWidth),
+                    contentPadding = PaddingValues(horizontal = horizontalPadding),
+                    pageSpacing = 12.dp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(slotWidth)
+                ) { page ->
+                    val index = page % media.size
+                    val item = media[index]
+
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        MediaPreviewCard(
+                            item = item,
+                            index = index,
+                            useBrowserSessions = useBrowserSessions,
+                            previewCache = previewCache,
+                            contentType = state.downloadContentType,
+                            cardWidth = slotWidth,
+                            cardHeight = slotWidth,
+                            onBitmapDimensions = { width, height ->
+                                loadedDimensions[index] = width to height
+                                onMediaDimensions(index, width, height)
+                            }
+                        )
+                    }
                 }
+
+                Spacer(Modifier.height(10.dp))
+
+                MediaMetadataContainer(
+                    content = MediaMetadataContent(
+                        activeItem,
+                        activeIndex,
+                        media.size,
+                        state.downloadContentType,
+                        state.audioFormat,
+                        state.filenamePattern,
+                        state.audioFilenamePattern
+                    ),
+                    status = MediaMetadataStatus(
+                        isSaving = state.savingItemIndex == activeIndex,
+                        isSaved = state.savedItemIndex == activeIndex,
+                        downloadsEnabled = !state.isSaving && state.savingItemIndex == null
+                    ),
+                    onRename = { name -> onRename(activeIndex, name) },
+                    onDownload = {
+                        val width = if (activeItem.isVideo) activeItem.width else activeDimensions?.first ?: activeItem.width
+                        val height = if (activeItem.isVideo) activeItem.height else activeDimensions?.second ?: activeItem.height
+                        onDownloadOne(activeItem, activeIndex, width, height)
+                    },
+                    fallback = MediaMetadataFallback(
+                        title = media.firstOrNull()?.title,
+                        author = media.firstOrNull()?.username,
+                        bitmapWidth = activeDimensions?.first ?: 0,
+                        bitmapHeight = activeDimensions?.second ?: 0
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                )
             }
 
-            Spacer(Modifier.height(10.dp))
+            if (state.media == null && state.error == null) {
+                EmptyState(
+                    variant = EmptyStateVariant.ReadyToDownload,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
 
-            MediaMetadataContainer(
-                content = MediaMetadataContent(
-                    activeItem,
-                    activeIndex,
-                    media.size,
-                    state.downloadContentType,
-                    state.audioFormat,
-                    state.filenamePattern,
-                    state.audioFilenamePattern
-                ),
-                status = MediaMetadataStatus(
-                    isSaving = state.savingItemIndex == activeIndex,
-                    isSaved = state.savedItemIndex == activeIndex,
-                    downloadsEnabled = !state.isSaving && state.savingItemIndex == null
-                ),
-                onDownload = {
-                    val width = if (activeItem.isVideo) activeItem.width else activeDimensions?.first ?: activeItem.width
-                    val height = if (activeItem.isVideo) activeItem.height else activeDimensions?.second ?: activeItem.height
-                    onDownloadOne(activeItem, activeIndex, width, height)
-                },
-                fallback = MediaMetadataFallback(
-                    title = media.firstOrNull()?.title,
-                    author = media.firstOrNull()?.username,
-                    bitmapWidth = activeDimensions?.first ?: 0,
-                    bitmapHeight = activeDimensions?.second ?: 0
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-            )
-        }
-
-        if (state.media == null && state.error == null) {
-            EmptyState(
-                variant = EmptyStateVariant.ReadyToDownload,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-        }
-
-        state.error?.let { error ->
-            val errorText = stringResource(error.messageResource())
-            ElevatedCard(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
-                    .semantics { liveRegion = LiveRegionMode.Polite },
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.elevatedCardColors(containerColor = colors.errorContainer)
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
-                        Text(
-                            stringResource(
-                                when (state.resolutionFailure) {
-                                    MediaResolutionFailure.INVALID_LINK -> R.string.invalid_link
-                                    MediaResolutionFailure.SESSION_REQUIRED,
-                                    MediaResolutionFailure.SESSION_EXPIRED -> R.string.browser_session_needed
-                                    MediaResolutionFailure.NETWORK -> R.string.network_error
-                                    MediaResolutionFailure.ENGINE_REQUIRED,
-                                    MediaResolutionFailure.RUNTIME_UNAVAILABLE -> R.string.download_engine_error
-                                    else -> R.string.could_not_resolve_media
+            state.error?.let { error ->
+                val errorText = stringResource(error.messageResource())
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.elevatedCardColors(containerColor = colors.errorContainer)
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
+                            Text(
+                                stringResource(
+                                    when (state.resolutionFailure) {
+                                        MediaResolutionFailure.INVALID_LINK -> R.string.invalid_link
+                                        MediaResolutionFailure.SESSION_REQUIRED,
+                                        MediaResolutionFailure.SESSION_EXPIRED -> R.string.browser_session_needed
+                                        MediaResolutionFailure.NETWORK -> R.string.network_error
+                                        MediaResolutionFailure.ENGINE_REQUIRED,
+                                        MediaResolutionFailure.RUNTIME_UNAVAILABLE -> R.string.download_engine_error
+                                        else -> R.string.could_not_resolve_media
+                                    }
+                                ),
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold,
+                                color = colors.onErrorContainer
+                            )
+                            Row {
+                                IconButton({ onCopyError(errorText) }) {
+                                    Icon(Icons.Filled.ContentCopy, stringResource(R.string.copy_error), tint = colors.onErrorContainer)
                                 }
-                            ),
-                            fontWeight = FontWeight.Bold,
-                            color = colors.onErrorContainer
-                        )
-                        Row {
-                            IconButton({ onCopyError(errorText) }) {
-                                Icon(Icons.Filled.ContentCopy, stringResource(R.string.copy_error), tint = colors.onErrorContainer)
-                            }
-                            TextButton(onDismissError) {
-                                Text(stringResource(R.string.dismiss), color = colors.onErrorContainer)
+                                TextButton(onDismissError) {
+                                    Text(stringResource(R.string.dismiss), color = colors.onErrorContainer)
+                                }
                             }
                         }
-                    }
-                    SelectionContainer {
-                        Text(errorText, style = MaterialTheme.typography.bodySmall, color = colors.onErrorContainer)
-                    }
-                    if (state.showBrowserAction) {
-                        Button(onOpenBrowser, Modifier.fillMaxWidth().padding(top = 10.dp)) {
-                            Icon(Icons.Filled.Lock, stringResource(R.string.open_browser))
-                            Spacer(Modifier.size(8.dp))
-                            Text(stringResource(R.string.use_browser))
+                        SelectionContainer {
+                            Text(errorText, style = MaterialTheme.typography.bodySmall, color = colors.onErrorContainer)
+                        }
+                        if (state.showBrowserAction && !useBrowserSessions && onEnableSessions != null) {
+                            Text(stringResource(R.string.enable_sessions_guidance), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
+                            Button(onEnableSessions, Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                                Text(stringResource(R.string.enable_browser_sessions))
+                            }
+                        }
+                        if (state.showBrowserAction) {
+                            Button(onOpenBrowser, Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                                Icon(Icons.Filled.Lock, stringResource(R.string.open_browser))
+                                Spacer(Modifier.size(8.dp))
+                                Text(stringResource(R.string.use_browser))
+                            }
                         }
                     }
                 }
@@ -463,7 +433,7 @@ internal fun BottomControlsSection(
                         )
                     },
                     shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.height(48.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                     enabled = !state.isSaving && state.savingItemIndex == null
                 )
 

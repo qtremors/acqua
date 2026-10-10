@@ -64,6 +64,8 @@ data class DownloaderUiState(
     val audioFormat: AudioOutputFormat = AudioOutputFormat.ORIGINAL,
     val embedMetadata: Boolean = true,
     val embedThumbnail: Boolean = true,
+    val cropArtwork: Boolean = true,
+    val preserveOriginalMetadata: Boolean = false,
     val downloadProgress: Float = 0f,
     val downloadEtaSeconds: Long = 0L,
     val downloadedBytes: Long = 0L,

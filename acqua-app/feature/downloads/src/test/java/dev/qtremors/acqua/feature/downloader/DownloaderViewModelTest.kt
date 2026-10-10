@@ -15,6 +15,7 @@ import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.downloader.DownloadQueueGateway
 import dev.qtremors.acqua.downloader.DownloadQueueItem
 import dev.qtremors.acqua.downloader.DownloadQueueSnapshot
+import dev.qtremors.acqua.downloader.DownloadQueueState
 import dev.qtremors.acqua.downloader.YtDlpCancellation
 import dev.qtremors.acqua.downloader.YtDlpDownloadOptions
 import java.util.UUID
@@ -50,6 +51,8 @@ class DownloaderViewModelTest {
         viewModel.setMaximumVideoHeight(720)
         viewModel.setAudioFormat(AudioOutputFormat.MP3)
         viewModel.setEmbedMetadata(false)
+        viewModel.setCropArtwork(false)
+        viewModel.setPreserveOriginalMetadata(true)
 
         val restored = createViewModel(settings = settings, savedState = savedState).state.value
         assertEquals("https://example.com/media", restored.url)
@@ -58,6 +61,8 @@ class DownloaderViewModelTest {
         assertEquals(720, restored.maximumVideoHeight)
         assertEquals(AudioOutputFormat.MP3, restored.audioFormat)
         assertFalse(restored.embedMetadata)
+        assertFalse(restored.cropArtwork)
+        assertTrue(restored.preserveOriginalMetadata)
         assertEquals(DownloadEngine.ACQUA, settings.engine)
         assertEquals(DownloadContentType.AUDIO, settings.contentType)
     }
@@ -130,17 +135,49 @@ class DownloaderViewModelTest {
         assertFalse(viewModel.state.value.isResolving)
     }
 
+    @Test
+    fun `metadata rename reaches the active transfer and stops when finalization begins`() = runTest {
+        val item = ResolvedMedia("https://cdn.example.com/song.m4a", MediaKind.AUDIO, title = "Original title")
+        val resolution = object : MediaResolutionGateway {
+            override suspend fun resolve(
+                input: String, browserSessionsEnabled: Boolean, forceBrowserResolution: Boolean,
+                engine: DownloadEngine, allowBrowserFallback: Boolean,
+                browserResolver: suspend (String, Boolean) -> List<ResolvedMedia>
+            ) = listOf(item)
+        }
+        val queue = FakeQueueGateway(hold = true)
+        val viewModel = createViewModel(resolution = resolution, queue = queue)
+        viewModel.updateUrl("https://example.com/song")
+        viewModel.resolve(false, 1) { _, _ -> emptyList() }
+        advanceUntilIdle()
+        viewModel.downloadOne(item, 0, 0, 0)
+        runCurrent()
+        assertEquals(0, viewModel.state.value.savingItemIndex)
+
+        viewModel.renameMedia(0, "My song")
+        val id = UUID.fromString(queue.jobs.value.single().id)
+        assertEquals("My song", queue.renamed[id])
+        assertEquals("My song", viewModel.state.value.media!!.single().downloadName)
+        assertEquals("Original title", viewModel.state.value.media!!.single().title)
+        queue.acceptsRename = false
+        viewModel.renameMedia(0, "Too late")
+        assertEquals("My song", viewModel.state.value.media!!.single().downloadName)
+        queue.jobs.value = queue.jobs.value.map { it.copy(state = DownloadQueueState.SUCCEEDED) }
+        advanceUntilIdle()
+    }
+
     private fun createViewModel(
         settings: FakeSettingsStore = FakeSettingsStore(),
         savedState: SavedStateHandle = SavedStateHandle(),
         resolution: MediaResolutionGateway = EmptyResolution,
-        cancellation: FakeCancellation = FakeCancellation()
+        cancellation: FakeCancellation = FakeCancellation(),
+        queue: FakeQueueGateway = FakeQueueGateway()
     ) = DownloaderViewModel(
         history = HistoryWriter { 1L },
         resolution = resolution,
         settings = settings,
         ytDlpEngine = cancellation,
-        ytDlpDownloads = FakeQueueGateway(),
+        ytDlpDownloads = queue,
         savedStateHandle = savedState,
         ioDispatcher = mainDispatcherRule.dispatcher
     )
@@ -161,19 +198,27 @@ class DownloaderViewModelTest {
         override fun cancelAll() { count += 1 }
     }
 
-    private class FakeQueueGateway : DownloadQueueGateway {
+    private class FakeQueueGateway(val hold: Boolean = false) : DownloadQueueGateway {
         private val queue = MutableStateFlow(DownloadQueueSnapshot())
+        val jobs = MutableStateFlow<List<DownloadQueueItem>>(emptyList())
+        val renamed = mutableMapOf<UUID, String>()
+        var acceptsRename = true
         override fun enqueue(
             media: ResolvedMedia,
             outputMedia: ResolvedMedia,
             options: YtDlpDownloadOptions,
             sourceUrl: String
         ) = UUID.randomUUID()
-        override fun enqueueDirect(media: ResolvedMedia, index: Int, sourceUrl: String, itemCount: Int) =
-            UUID.randomUUID()
-        override fun observe(ids: List<UUID>): Flow<List<DownloadQueueItem>> = flowOf(emptyList())
+        override fun enqueueDirect(media: ResolvedMedia, index: Int, sourceUrl: String, itemCount: Int): UUID =
+            UUID.randomUUID().also { if (hold) jobs.value = listOf(DownloadQueueItem(it.toString(), DownloadQueueState.RUNNING)) }
+        override fun observe(ids: List<UUID>): Flow<List<DownloadQueueItem>> = if (hold) jobs else flowOf(emptyList())
         override fun observeQueue(): Flow<DownloadQueueSnapshot> = queue
         override fun cancel(id: UUID) = Unit
+        override fun rename(id: UUID, name: String): Boolean {
+            if (!acceptsRename) return false
+            renamed[id] = name
+            return true
+        }
     }
 
     private class FakeSettingsStore : SettingsStore {
@@ -196,6 +241,8 @@ class DownloaderViewModelTest {
         override fun setAudioFormat(value: AudioOutputFormat) { media = media.copy(audioFormat = value) }
         override fun setEmbedMetadata(enabled: Boolean) { media = media.copy(embedMetadata = enabled) }
         override fun setEmbedThumbnail(enabled: Boolean) { media = media.copy(embedThumbnail = enabled) }
+        override fun setCropArtwork(enabled: Boolean) { media = media.copy(cropArtwork = enabled) }
+        override fun setPreserveOriginalMetadata(enabled: Boolean) { media = media.copy(preserveOriginalMetadata = enabled) }
         override fun setAutoUpdateYtDlp(enabled: Boolean) { media = media.copy(autoUpdateYtDlp = enabled) }
         override fun lastDownloadEngine() = engine
         override fun setLastDownloadEngine(value: DownloadEngine) { engine = value }

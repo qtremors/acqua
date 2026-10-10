@@ -36,16 +36,26 @@ internal class UserInitiatedDownloadScheduler(context: Context) {
             applicationContext,
             DownloadQueueItem(id.toString(), DownloadQueueState.QUEUED)
         )
-        return if (scheduler.schedule(info) == JobScheduler.RESULT_SUCCESS) {
+        DownloadNameOverrides.register(applicationContext, id.toString())
+        val scheduled = try {
+            scheduler.schedule(info)
+        } catch (error: Exception) {
+            DownloadNameOverrides.finish(applicationContext, id.toString())
+            UserInitiatedDownloadRegistry.remove(applicationContext, id)
+            throw error
+        }
+        return if (scheduled == JobScheduler.RESULT_SUCCESS) {
             id
         } else {
             UserInitiatedDownloadRegistry.remove(applicationContext, id)
+            DownloadNameOverrides.finish(applicationContext, id.toString())
             null
         }
     }
 
     @RequiresApi(34)
     fun cancel(id: UUID) {
+        DownloadNameOverrides.finish(applicationContext, id.toString())
         scheduler.cancel(jobId(id))
         UserInitiatedDownloadRegistry.update(
             applicationContext,

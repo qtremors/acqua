@@ -17,10 +17,12 @@ import dev.qtremors.acqua.data.updater.TrackedRepo
 import dev.qtremors.acqua.data.updater.TrackedRepoStore
 import java.io.File
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -125,6 +127,116 @@ class FeedsViewModelTest {
         mainDispatcherRule.dispatcher
     )
 
+    @Test
+    fun `returning from installer refreshes version and removes the completed install action`() = runTest {
+        val store = FakeTrackedRepoStore()
+        val repo = trackedRepo().copy(latestTagName = "v0.3.1", isUpdateAvailable = true)
+        store.trackedRepos.value = listOf(repo)
+        val matcher = FakeInstalledApps()
+        val api = FakeGitHubService()
+        val viewModel = viewModel(store = store, matcher = matcher, api = api)
+        advanceUntilIdle()
+        viewModel.download(repo)
+        advanceUntilIdle()
+        assertTrue(viewModel.state.value.downloadStates[repo.fullName] is UpdateDownloadState.Downloaded)
+
+        matcher.app = InstalledApp("dev.qtremors.acqua", "Acqua", "0.3.1", 31)
+        viewModel.refreshInstalledStatus()
+        advanceUntilIdle()
+        val refreshed = store.trackedRepos.value.single()
+        assertEquals("0.3.1", refreshed.installedVersionName)
+        assertFalse(refreshed.isUpdateAvailable)
+        assertEquals(UpdateDownloadState.Idle, viewModel.state.value.downloadStates[repo.fullName])
+        assertTrue(api.completedRepoLookups.isEmpty())
+    }
+
+    @Test
+    fun `refresh updates a renamed and transferred repository using its stored identity`() = runTest {
+        val store = FakeTrackedRepoStore()
+        val original = trackedRepo()
+        store.trackedRepos.value = listOf(original)
+        val api = FakeGitHubService().apply {
+            repositoryInfo = GitHubRepositoryInfo("acqua-renamed", "new-owner/acqua-renamed",
+                html_url = "https://github.com/new-owner/acqua-renamed", owner = GitHubOwner("new-owner"))
+        }
+        val viewModel = viewModel(store = store, api = api)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.trackedRepos.collect {} }
+        advanceUntilIdle()
+
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        val refreshed = store.trackedRepos.value.single()
+        assertEquals("new-owner/acqua-renamed", refreshed.fullName)
+        assertEquals("new-owner", refreshed.owner)
+        assertEquals("acqua-renamed", refreshed.name)
+        assertEquals("v0.2.4", refreshed.latestTagName)
+        assertEquals(original.addedAt, refreshed.addedAt)
+        assertTrue(refreshed.lastCheckedAt > 0L)
+    }
+
+    @Test
+    fun `refresh selects the current APK after configuration changes during the request`() = runTest {
+        val store = FakeTrackedRepoStore()
+        store.trackedRepos.value = listOf(trackedRepo())
+        val arm64 = GitHubAsset("Acqua-arm64.apk", "https://downloads.example/Acqua-arm64.apk",
+            size = 1234L, url = "https://api.example/Acqua-arm64.apk")
+        val api = FakeGitHubService().apply {
+            extraAssets = listOf(arm64)
+            beforeRelease = {
+                store.trackedRepos.value = listOf(store.trackedRepos.value.single().copy(
+                    selectedApkName = arm64.name, notificationsEnabled = false,
+                    downloadUrl = arm64.browser_download_url, downloadApiUrl = arm64.url, apkSizeBytes = arm64.size))
+            }
+        }
+        val viewModel = viewModel(store = store, api = api)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.trackedRepos.collect {} }
+        advanceUntilIdle()
+
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        val refreshed = store.trackedRepos.value.single()
+        assertEquals(arm64.name, refreshed.selectedApkName)
+        assertEquals(arm64.browser_download_url, refreshed.downloadUrl)
+        assertEquals(arm64.url, refreshed.downloadApiUrl)
+        assertEquals(arm64.size, refreshed.apkSizeBytes)
+        assertFalse(refreshed.notificationsEnabled)
+    }
+
+    @Test
+    fun `refresh preserves release data when prerelease preferences change during the request`() = runTest {
+        val store = FakeTrackedRepoStore()
+        val latestTag = "v0.3.1-beta"
+        store.trackedRepos.value = listOf(trackedRepo())
+        val api = FakeGitHubService().apply {
+            beforeRelease = {
+                store.trackedRepos.value = listOf(store.trackedRepos.value.single().copy(
+                    allowPreReleases = true, latestTagName = latestTag))
+            }
+        }
+        val viewModel = viewModel(store = store, api = api)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.trackedRepos.collect {} }
+        advanceUntilIdle()
+        viewModel.refresh()
+        advanceUntilIdle()
+        assertTrue(store.trackedRepos.value.single().allowPreReleases)
+        assertEquals(latestTag, store.trackedRepos.value.single().latestTagName)
+    }
+
+    @Test
+    fun `refresh does not restore a repository removed during the request`() = runTest {
+        val store = FakeTrackedRepoStore()
+        store.trackedRepos.value = listOf(trackedRepo())
+        val api = FakeGitHubService().apply { beforeRelease = { store.trackedRepos.value = emptyList() } }
+        val viewModel = viewModel(store = store, api = api)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.trackedRepos.collect {} }
+        advanceUntilIdle()
+        viewModel.refresh()
+        advanceUntilIdle()
+        assertTrue(store.trackedRepos.value.isEmpty())
+    }
+
     private fun trackedRepo() = TrackedRepo(
         owner = "qtremors",
         name = "acqua",
@@ -157,6 +269,10 @@ class FeedsViewModelTest {
             trackedRepos.value = repos
         }
 
+        override suspend fun updateRepo(fullName: String, transform: (TrackedRepo) -> TrackedRepo) {
+            trackedRepos.value = trackedRepos.value.map { if (it.fullName == fullName) transform(it) else it }
+        }
+
         override suspend fun exportBackup(): String = "{}"
 
         override suspend fun importBackup(jsonString: String): Result<Int> = Result.success(0)
@@ -165,13 +281,16 @@ class FeedsViewModelTest {
     private class FakeGitHubService : GitHubRepositoryService {
         var failure: Throwable? = null
         var delayFirstRepository = false
+        var repositoryInfo: GitHubRepositoryInfo? = null
+        var beforeRelease: (() -> Unit)? = null
+        var extraAssets: List<GitHubAsset> = emptyList()
         val completedRepoLookups = mutableListOf<String>()
 
         override suspend fun getRepoInfo(owner: String, repo: String): GitHubRepositoryInfo {
             failure?.let { throw it }
             if (delayFirstRepository && repo == "slow") delay(1_000L)
             completedRepoLookups += repo
-            return GitHubRepositoryInfo(
+            return repositoryInfo ?: GitHubRepositoryInfo(
                 name = repo,
                 full_name = "$owner/$repo",
                 html_url = "https://github.com/$owner/$repo",
@@ -180,6 +299,7 @@ class FeedsViewModelTest {
         }
 
         override suspend fun getLatestRelease(owner: String, repo: String): GitHubRelease {
+            beforeRelease?.invoke()
             failure?.let { throw it }
             return GitHubRelease(
                 tag_name = "v0.2.4",
@@ -190,7 +310,7 @@ class FeedsViewModelTest {
                         browser_download_url = "https://downloads.example/Acqua.apk",
                         url = "https://api.example/Acqua.apk"
                     )
-                )
+                ) + extraAssets
             )
         }
 
@@ -218,10 +338,11 @@ class FeedsViewModelTest {
     }
 
     private class FakeInstalledApps : InstalledAppCatalog {
-        override suspend fun installedApps(): List<InstalledApp> = emptyList()
+        var app: InstalledApp? = null
+        override suspend fun installedApps(): List<InstalledApp> = listOfNotNull(app)
         override suspend fun findBestMatch(repoName: String): InstalledApp? = null
         override fun findBestMatch(repoName: String, apps: List<InstalledApp>): InstalledApp? = null
-        override fun installedVersion(packageName: String): InstalledApp? = null
+        override fun installedVersion(packageName: String): InstalledApp? = app?.takeIf { it.packageName == packageName }
     }
 
     private class FakeUpdateGateway : AppUpdateGateway {

@@ -314,6 +314,7 @@ fun DashboardScreen(
                         mediaDownloader = mediaDownloader,
                         fileActions = fileActions,
                         useBrowserSessions = browserState.useSessions,
+                        onUseBrowserSessionsChange = browserViewModel::setUseSessions,
                         sessionsInitialized = browserState.initialized,
                         browserRequestRevision = downloadRequestRevision,
                         resolveInBrowser = resolveInBrowser,

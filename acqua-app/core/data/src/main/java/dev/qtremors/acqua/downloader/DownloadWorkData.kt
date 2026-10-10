@@ -22,6 +22,8 @@ object DownloadWorkData {
     const val KEY_AUDIO_FORMAT = "audio_format"
     const val KEY_MAXIMUM_VIDEO_QUALITY = "maximum_video_quality"
     const val KEY_EMBED_METADATA = "embed_metadata"
+    const val KEY_CROP_ARTWORK = "crop_artwork"
+    const val KEY_ORIGINAL_METADATA = "original_metadata"
     const val KEY_EMBED_THUMBNAIL = "embed_thumbnail"
     const val KEY_BROWSER_SESSION_AUTHORIZED = "browser_session_authorized"
     const val KEY_IS_VIDEO = "is_video"
@@ -35,6 +37,7 @@ object DownloadWorkData {
     const val KEY_OUTPUT_HEIGHT = "output_height"
     const val KEY_THUMBNAIL_URL = "thumbnail_url"
     const val KEY_USERNAME = "username"
+    const val KEY_DOWNLOAD_NAME = "download_name"
     const val KEY_TITLE = "title"
     const val KEY_ARTIST = "artist"
     const val KEY_ALBUM = "album"
@@ -60,6 +63,8 @@ object DownloadWorkData {
         .putInt(KEY_MAXIMUM_VIDEO_QUALITY, options.maximumVideoHeight)
         .putBoolean(KEY_EMBED_METADATA, options.embedMetadata)
         .putBoolean(KEY_EMBED_THUMBNAIL, options.embedThumbnail)
+        .putBoolean(KEY_CROP_ARTWORK, options.cropArtwork)
+        .putBoolean(KEY_ORIGINAL_METADATA, options.preserveOriginalMetadata)
         .putInt(KEY_OUTPUT_WIDTH, outputMedia.width)
         .putInt(KEY_OUTPUT_HEIGHT, outputMedia.height)
         .build()
@@ -114,6 +119,7 @@ object DownloadWorkData {
             fileSize = data.positiveLong(KEY_FILE_SIZE),
             backend = backend,
             title = data.nonBlankString(KEY_TITLE),
+            downloadName = data.nonBlankString(KEY_DOWNLOAD_NAME),
             artist = data.nonBlankString(KEY_ARTIST),
             album = data.nonBlankString(KEY_ALBUM),
             sourceTimestampMillis = data.positiveLong(KEY_SOURCE_TIMESTAMP_MILLIS)
@@ -131,7 +137,9 @@ object DownloadWorkData {
                 maximumVideoHeight = data.getInt(KEY_MAXIMUM_VIDEO_QUALITY, 0).coerceAtLeast(0),
                 audioFormat = audioFormat,
                 embedMetadata = data.getBoolean(KEY_EMBED_METADATA, true),
-                embedThumbnail = data.getBoolean(KEY_EMBED_THUMBNAIL, true)
+                embedThumbnail = data.getBoolean(KEY_EMBED_THUMBNAIL, true),
+                cropArtwork = data.getBoolean(KEY_CROP_ARTWORK, true),
+                preserveOriginalMetadata = data.getBoolean(KEY_ORIGINAL_METADATA, false)
             )
         )
     }
@@ -201,6 +209,7 @@ object DownloadWorkData {
                     putString(KEY_THUMBNAIL_URL, it)
                 }
                 media.username?.takeIf(String::isNotBlank)?.let { putString(KEY_USERNAME, it) }
+                media.downloadName?.takeIf(String::isNotBlank)?.let { putString(KEY_DOWNLOAD_NAME, it) }
                 media.title?.takeIf(String::isNotBlank)?.let { putString(KEY_TITLE, it) }
                 media.artist?.takeIf(String::isNotBlank)?.let { putString(KEY_ARTIST, it) }
                 media.album?.takeIf(String::isNotBlank)?.let { putString(KEY_ALBUM, it) }
@@ -225,6 +234,7 @@ object DownloadWorkData {
         KEY_MEDIA_KIND,
         KEY_THUMBNAIL_URL,
         KEY_USERNAME,
+        KEY_DOWNLOAD_NAME,
         KEY_TITLE,
         KEY_ARTIST,
         KEY_ALBUM,
@@ -253,6 +263,8 @@ object DownloadWorkData {
     private val BOOLEAN_KEYS = setOf(
         KEY_EMBED_METADATA,
         KEY_EMBED_THUMBNAIL,
+        KEY_CROP_ARTWORK,
+        KEY_ORIGINAL_METADATA,
         KEY_BROWSER_SESSION_AUTHORIZED,
         KEY_IS_VIDEO
     )

@@ -1,5 +1,12 @@
 package dev.qtremors.acqua.feature.updater
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.compose.runtime.DisposableEffect
 import android.content.Intent
 import android.content.ClipboardManager
 import androidx.core.net.toUri
@@ -94,7 +101,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.data.updater.InstalledApp
 import dev.qtremors.acqua.data.updater.TrackedRepo
@@ -116,6 +123,20 @@ fun FeedsScreen(
     val state by viewModel.state.collectAsState()
     val repos by viewModel.trackedRepos.collectAsState()
     val context = LocalContext.current
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshInstalledStatus() }
+    DisposableEffect(context, viewModel) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) { viewModel.refreshInstalledStatus() }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_PACKAGE_ADDED)
+            addAction(Intent.ACTION_PACKAGE_REPLACED)
+            addAction(Intent.ACTION_PACKAGE_REMOVED)
+            addDataScheme("package")
+        }
+        ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        onDispose { context.unregisterReceiver(receiver) }
+    }
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     var showAddFlow by remember { mutableStateOf(false) }
@@ -169,9 +190,7 @@ fun FeedsScreen(
         }
     }
 
-    val pending = repos.filter { it.installedVersionName != null && it.isUpdateAvailable }
-    val current = repos.filter { it.installedVersionName != null && !it.isUpdateAvailable }
-    val notInstalled = repos.filter { it.installedVersionName == null }
+    val sortedRepos = repos.sortedWith(compareByDescending<TrackedRepo> { it.publishedAt.orEmpty() }.thenBy { it.fullName.lowercase() })
 
     BackHandler(enabled = showAddFlow) {
         showAddFlow = false
@@ -240,14 +259,8 @@ fun FeedsScreen(
                 )
             }
         }
-        if (pending.isNotEmpty()) {
-            item { RepoSection(stringResource(R.string.updates_available), pending, state, viewModel, { notesRepo = it }, { addingNewRepo = false; showAddFlow = true; viewModel.editRepo(it) }, { removeRepo = it }) }
-        }
-        if (current.isNotEmpty()) {
-            item { RepoSection(stringResource(R.string.up_to_date), current, state, viewModel, { notesRepo = it }, { addingNewRepo = false; showAddFlow = true; viewModel.editRepo(it) }, { removeRepo = it }) }
-        }
-        if (notInstalled.isNotEmpty()) {
-            item { RepoSection(stringResource(R.string.not_installed), notInstalled, state, viewModel, { notesRepo = it }, { addingNewRepo = false; showAddFlow = true; viewModel.editRepo(it) }, { removeRepo = it }) }
+        if (sortedRepos.isNotEmpty()) {
+            item { RepoSection(stringResource(R.string.latest_releases), sortedRepos, state, viewModel, { notesRepo = it }, { addingNewRepo = false; showAddFlow = true; viewModel.editRepo(it) }, { removeRepo = it }) }
         }
         }
 

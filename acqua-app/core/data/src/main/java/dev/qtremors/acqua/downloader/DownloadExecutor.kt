@@ -41,6 +41,7 @@ class DownloadExecutor(
 ) : DownloadExecution {
     private val appContext = context.applicationContext
     private val storage = MediaStorage(appContext, history, settings, mediaDownloader)
+    private val httpMedia = mediaDownloader
 
     override suspend fun execute(
         request: DownloadWorkRequest,
@@ -49,32 +50,51 @@ class DownloadExecutor(
         onPhase: (DownloadPhase) -> Unit
     ): DownloadExecutionResult {
         onPhase(DownloadPhase.TRANSFER)
-        return if (request.media.backend == dev.qtremors.acqua.domain.MediaBackend.DIRECT) {
-            executeDirect(request, onProgress, onPhase)
+        DownloadNameOverrides.reopen(appContext, taskKey)
+        val result = if (request.media.backend == dev.qtremors.acqua.domain.MediaBackend.DIRECT) {
+            try {
+                executeDirect(request.copy(media = request.media.copy(requestCookies = null,
+                    explicitBrowserSessionAuthorized = false)), taskKey, onProgress, onPhase)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (publicFailure: Exception) {
+                val couldNeedLogin = listOf("HTTP 401", "HTTP 403", "unsupported or incomplete file")
+                    .any { publicFailure.message.orEmpty().contains(it, ignoreCase = true) }
+                if (!settings.useBrowserSessions() || !couldNeedLogin) throw publicFailure
+                val cookies = request.media.requestCookies.takeIf { request.media.explicitBrowserSessionAuthorized }
+                    ?: runCatching { CookieManager.getInstance().getCookie(request.media.url) }
+                    .getOrNull()?.takeIf(String::isNotBlank) ?: throw publicFailure
+                executeDirect(request.copy(media = request.media.copy(requestCookies = cookies,
+                    explicitBrowserSessionAuthorized = true)), taskKey, onProgress, onPhase)
+            }
         } else {
             executeProcessed(request, taskKey, onProgress, onPhase)
         }
+        DownloadNameOverrides.finish(appContext, taskKey)
+        return result
     }
 
     private suspend fun executeDirect(
         request: DownloadWorkRequest,
+        taskKey: String,
         onProgress: (YtDlpProgress) -> Unit,
         onPhase: (DownloadPhase) -> Unit
     ): DownloadExecutionResult = withContext(Dispatchers.IO) {
-        val cookiesAllowed = request.media.explicitBrowserSessionAuthorized || settings.useBrowserSessions()
+        val cookiesAllowed = settings.useBrowserSessions() && request.media.explicitBrowserSessionAuthorized
         val requestCookies = if (cookiesAllowed) {
-            runCatching { CookieManager.getInstance().getCookie(request.media.url) }
+            request.media.requestCookies ?: runCatching { CookieManager.getInstance().getCookie(request.media.url) }
                 .getOrNull()
                 ?.takeIf(String::isNotBlank)
         } else {
             null
         }
         val media = request.media.copy(requestCookies = requestCookies)
-        val uri = storage.save(
+        val uri = if (!media.isAudio && !media.isVideo || !settings.mediaProcessingSettings().embedMetadata) storage.save(
             media,
             request.itemIndex,
             request.sourceUrl,
-            itemCount = request.itemCount
+            itemCount = request.itemCount,
+            finalDownloadName = { DownloadNameOverrides.freeze(appContext, taskKey) }
         ) { downloaded, total ->
             val percent = if (total > 0L) downloaded * 100f / total else 0f
             onProgress(
@@ -84,6 +104,32 @@ class DownloadExecutor(
                     totalBytes = total
                 )
             )
+        } else {
+            val directory = YtDlpTemporaryFiles.prepareTaskDirectory(appContext, "direct-$taskKey")
+            try {
+                val extension = media.fileExtension?.lowercase()?.replace(Regex("[^a-z0-9]"), "")
+                    ?.take(12)?.takeIf(String::isNotBlank) ?: if (media.isAudio) "m4a" else "mp4"
+                val source = File(directory, "source.$extension")
+                val output = File(directory, "tagged.$extension")
+                source.outputStream().use { stream ->
+                    httpMedia.downloadToStreamCancellable(media, stream, requestCookies) { downloaded, total ->
+                        onProgress(YtDlpProgress(percent = if (total > 0L) downloaded * 100f / total else 0f,
+                            downloadedBytes = downloaded, totalBytes = total))
+                    }
+                }
+                onPhase(DownloadPhase.PROCESSING)
+                val preserve = settings.mediaProcessingSettings().preserveOriginalMetadata
+                DirectMediaMetadata.write(appContext, source, output, request.sourceUrl,
+                    if (preserve) null else System.currentTimeMillis())
+                onPhase(DownloadPhase.FINALIZING)
+                storage.saveProcessedFile(output,
+                    media.copy(downloadName = DownloadNameOverrides.freeze(appContext, taskKey) ?: media.downloadName),
+                    if (media.isAudio) DownloadContentType.AUDIO else DownloadContentType.VIDEO,
+                    request.sourceUrl, preserveOriginalMetadata = preserve,
+                    index = request.itemIndex, itemCount = request.itemCount)
+            } finally {
+                directory.deleteRecursively()
+            }
         }
         onPhase(DownloadPhase.FINALIZING)
         DownloadExecutionResult(
@@ -107,14 +153,25 @@ class DownloadExecutor(
         val engine = engineFactory()
         var completedFile: File? = null
         try {
-            completedFile = runEngine(engine, request, taskKey, onProgress)
+            completedFile = try {
+                runEngine(engine, request.copy(media = request.media.copy(requestCookies = null,
+                    explicitBrowserSessionAuthorized = false)), taskKey, onProgress)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (publicFailure: Exception) {
+                if (!settings.useBrowserSessions() ||
+                    publicFailure.toYtDlpFailure() != YtDlpFailure.UNKNOWN
+                ) throw publicFailure
+                runEngine(engine, request.copy(media = request.media.copy(explicitBrowserSessionAuthorized = true)), taskKey, onProgress)
+            }
             onPhase(DownloadPhase.PROCESSING)
             val uri = withContext(Dispatchers.IO) {
                 storage.saveProcessedFile(
                     completedFile,
-                    request.outputMedia,
+                    request.outputMedia.copy(downloadName = DownloadNameOverrides.freeze(appContext, taskKey) ?: request.outputMedia.downloadName),
                     request.options.contentType,
-                    request.sourceUrl
+                    request.sourceUrl,
+                    preserveOriginalMetadata = request.options.preserveOriginalMetadata
                 )
             }
             onPhase(DownloadPhase.FINALIZING)

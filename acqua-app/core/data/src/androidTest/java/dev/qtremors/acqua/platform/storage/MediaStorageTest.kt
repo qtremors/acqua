@@ -3,6 +3,8 @@ package dev.qtremors.acqua.platform.storage
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
+import android.graphics.Bitmap
+import java.io.ByteArrayOutputStream
 import dev.qtremors.acqua.data.history.HistoryRepository
 import dev.qtremors.acqua.data.network.HttpMediaClient
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
@@ -29,14 +31,18 @@ class MediaStorageTest {
             setBaseFolder("AcquaTest")
             setCategorizeMedia(false)
             setFilenamePattern("${filenamePrefix}_{index}")
-            setUseBrowserSessions(false)
+            setUseBrowserSessions(true)
         }
         val savedUris = mutableListOf<android.net.Uri>()
+        val png = ByteArrayOutputStream().use { stream ->
+            Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.PNG, 100, stream)
+            stream.toByteArray()
+        }
         MockWebServer().use { server ->
             try {
                 server.enqueue(
                     MockResponse().setHeader("Content-Type", "image/png").setBody(
-                        okio.Buffer().write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
+                        okio.Buffer().write(png)
                     )
                 )
                 val storage = MediaStorage(context, history, settings, HttpMediaClient())
@@ -52,19 +58,23 @@ class MediaStorageTest {
                 val entry = history.load().single()
                 assertEquals("sessionid=explicit", server.takeRequest().getHeader("Cookie"))
                 assertEquals("image/png", entry.mimeType)
-                assertEquals("${filenamePrefix}_1.png", entry.fileName)
+                assertEquals("${filenamePrefix}.png", entry.fileName)
+
+                settings.setUseBrowserSessions(false)
 
                 server.enqueue(
                     MockResponse().setHeader("Content-Type", "image/png").setBody(
-                        okio.Buffer().write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
+                        okio.Buffer().write(png)
                     )
                 )
                 savedUris += storage.save(
-                    media.copy(explicitBrowserSessionAuthorized = false),
+                    media,
                     1,
-                    "https://example.com/source"
+                    "https://example.com/source",
+                    finalDownloadName = { "Renamed during transfer" }
                 )
                 assertNull(server.takeRequest().getHeader("Cookie"))
+                assertEquals("Renamed during transfer.png", history.load().first().fileName)
             } finally {
                 savedUris.forEach { context.contentResolver.delete(it, null, null) }
                 history.clear()

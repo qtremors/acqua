@@ -19,6 +19,8 @@ internal object DownloaderSavedState {
     const val MAXIMUM_HEIGHT = "downloader.maximum_height"
     const val AUDIO_FORMAT = "downloader.audio_format"
     const val EMBED_METADATA = "downloader.embed_metadata"
+    const val CROP_ARTWORK = "downloader.crop_artwork"
+    const val ORIGINAL_METADATA = "downloader.original_metadata"
     const val EMBED_THUMBNAIL = "downloader.embed_thumbnail"
 }
 
@@ -51,6 +53,8 @@ internal fun downloaderDefaultState(
         audioFormat = preferences.audioFormat,
         embedMetadata = preferences.embedMetadata,
         embedThumbnail = preferences.embedThumbnail,
+        cropArtwork = preferences.cropArtwork,
+        preserveOriginalMetadata = preferences.preserveOriginalMetadata,
         filenamePattern = downloadSettings.filenamePattern,
         audioFilenamePattern = downloadSettings.audioFilenamePattern
     )
@@ -73,6 +77,8 @@ internal fun restoredDownloaderState(
             ?.let { runCatching { AudioOutputFormat.valueOf(it) }.getOrNull() }
             ?: initial.audioFormat,
         embedMetadata = savedStateHandle[DownloaderSavedState.EMBED_METADATA] ?: initial.embedMetadata,
-        embedThumbnail = savedStateHandle[DownloaderSavedState.EMBED_THUMBNAIL] ?: initial.embedThumbnail
+        embedThumbnail = savedStateHandle[DownloaderSavedState.EMBED_THUMBNAIL] ?: initial.embedThumbnail,
+        cropArtwork = savedStateHandle[DownloaderSavedState.CROP_ARTWORK] ?: initial.cropArtwork,
+        preserveOriginalMetadata = savedStateHandle[DownloaderSavedState.ORIGINAL_METADATA] ?: initial.preserveOriginalMetadata
     )
 }
