@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -37,8 +36,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.platform.HapticSignal
@@ -58,17 +55,7 @@ fun <T> ExpressiveSegmentedButtonRow(
     trailingBadge: (@Composable (item: T, isSelected: Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val scaledHeight = height * LocalDensity.current.fontScale.coerceAtLeast(1f)
-    val density = LocalDensity.current
-    val textMeasurer = rememberTextMeasurer()
     val labels = items.map { label(it) }
-    val textStyle = MaterialTheme.typography.labelLarge
-    val widths = remember(labels, density, textStyle, leadingIcon != null, trailingBadge != null) {
-        labels.map { text ->
-            val extras = 24.dp + (if (leadingIcon != null) 24.dp else 0.dp) + (if (trailingBadge != null) 30.dp else 0.dp)
-            textMeasurer.measure(text, style = textStyle).size.width + with(density) { extras.toPx() }
-        }
-    }
     val reducedMotion = LocalReducedMotionEnabled.current
 
     val weightSpring = remember(reducedMotion) {
@@ -90,13 +77,12 @@ fun <T> ExpressiveSegmentedButtonRow(
         )
     }
 
-    Row(
+    ContentSizedRow(
         modifier = modifier
             .fillMaxWidth()
-            .heightIn(min = scaledHeight)
+            .heightIn(min = height)
             .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
+        spacing = 4.dp
     ) {
         items.forEachIndexed { index, item ->
             val isSelected = selectedIndex == index
@@ -116,7 +102,7 @@ fun <T> ExpressiveSegmentedButtonRow(
             val visualPressed = pressed || tapped
 
             val animatedWeight by animateFloatAsState(
-                targetValue = widths[index].coerceAtLeast(1f) * when {
+                targetValue = when {
                     visualPressed -> 1.35f
                     isSelected -> 1.18f
                     else -> 1f
@@ -180,10 +166,10 @@ fun <T> ExpressiveSegmentedButtonRow(
                     focusedElevation = 0.dp,
                     hoveredElevation = 0.dp
                 ),
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                 modifier = Modifier
-                    .weight(animatedWeight)
-                    .heightIn(min = scaledHeight)
+                    .contentSizedWeight(animatedWeight)
+                    .heightIn(min = height)
                     .graphicsLayer {
                         scaleX = contentScale
                         scaleY = contentScale
@@ -205,9 +191,7 @@ fun <T> ExpressiveSegmentedButtonRow(
                         text = labels[index],
                         modifier = Modifier.weight(1f, fill = false),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                     )
                     if (trailingBadge != null) {
                         trailingBadge(item, isSelected)

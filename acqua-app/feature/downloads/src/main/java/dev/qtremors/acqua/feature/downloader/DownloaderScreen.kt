@@ -112,10 +112,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -357,16 +359,6 @@ fun DownloaderScreen(
                 }
             }
 
-            onUseBrowserSessionsChange?.let { onChange ->
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(stringResource(R.string.use_browser_sessions), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                    androidx.compose.material3.Switch(checked = useBrowserSessions, onCheckedChange = onChange,
-                        enabled = !state.isSaving && state.savingItemIndex == null && !state.isResolving)
-                }
-            }
             val contentScrollState = rememberScrollState()
             LaunchedEffect(state.media) {
                 if (state.media != null) {
@@ -378,12 +370,14 @@ fun DownloaderScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(top = if (showLinkEditor && showHeaderCard) 4.dp else contentPadding.calculateTopPadding())
+                    .testTag("downloader-content")
+                    .padding(top = if (showLinkEditor) 0.dp else contentPadding.calculateTopPadding())
             ) {
                 val boxMaxHeight = maxHeight
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clipToBounds()
                         .heightIn(min = boxMaxHeight)
                         .verticalScroll(contentScrollState),
                     contentAlignment = if (state.media != null) Alignment.TopCenter else Alignment.Center
@@ -417,7 +411,13 @@ fun DownloaderScreen(
                             },
                             onOpenBrowser = { onOpenBrowser(state.url) },
                             useBrowserSessions = useBrowserSessions,
-                            onEnableSessions = onUseBrowserSessionsChange?.let { change -> { retryWithSession = true; change(true) } },
+                            previewMaxHeight = (boxMaxHeight - 112.dp).coerceAtLeast(128.dp),
+                            onUseBrowserSessionsChange = onUseBrowserSessionsChange?.let { change ->
+                                { enabled ->
+                                    retryWithSession = enabled
+                                    change(enabled)
+                                }
+                            },
                             onRename = viewModel::renameMedia
                         )
                     }
@@ -429,7 +429,7 @@ fun DownloaderScreen(
                     state = state,
                     onCancel = viewModel::cancelActiveDownload,
                     onClick = onStatusClick,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("download-status")
                 )
             }
 
@@ -472,5 +472,5 @@ internal fun DownloadFailure.messageResource(): Int = when (this) {
     DownloadFailure.STORAGE -> R.string.ytdlp_error_storage
     DownloadFailure.UPDATE_SERVICE -> R.string.ytdlp_error_update_service
     DownloadFailure.PLATFORM_LIMIT -> R.string.download_error_platform_limit
-    DownloadFailure.UNKNOWN -> R.string.ytdlp_error_unknown
+    DownloadFailure.UNKNOWN -> R.string.download_error_unknown
 }

@@ -113,9 +113,10 @@ class YtDlpEngine(context: Context) : YtDlpCancellation {
             YtDlpPostProcessing.options(options).forEach { (name, value) ->
                 if (value == null) addOption(name) else addOption(name, value)
             }
-            if (options.embedThumbnail && options.cropArtwork && options.contentType == DownloadContentType.AUDIO) {
+            if (options.embedThumbnail &&
+                options.cropArtwork && options.contentType == DownloadContentType.AUDIO) {
                 val ffmpeg = File(appContext.applicationInfo.nativeLibraryDir, "libffmpeg.so")
-                addOption("--exec", YtDlpPostProcessing.cropCommand(ffmpeg, File(taskDirectory, "cover-cropped.jpg")))
+                addOption("--exec", YtDlpPostProcessing.cropCommand(ffmpeg, File(taskDirectory, "cover-cropped.png")))
             }
         }
 
@@ -127,7 +128,7 @@ class YtDlpEngine(context: Context) : YtDlpCancellation {
             if (response.exitCode != 0) error(readableError(response.err))
             taskDirectory.walkTopDown()
                 .filter(File::isFile)
-                .filterNot { it.extension.lowercase() in SIDECAR_EXTENSIONS }
+                .filter { it.extension.lowercase() !in SIDECAR_EXTENSIONS }
                 .maxByOrNull(File::length)
                 ?.takeIf { it.length() > 0L }
                 ?: error("yt-dlp completed without producing a media file.")

@@ -336,6 +336,9 @@ class MediaStorage(
     }
 
     private fun mimeTypeFor(extension: String, audio: Boolean): String = when (extension) {
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "webp" -> "image/webp"
         "mp3" -> "audio/mpeg"
         "m4a" -> "audio/mp4"
         "opus" -> "audio/opus"

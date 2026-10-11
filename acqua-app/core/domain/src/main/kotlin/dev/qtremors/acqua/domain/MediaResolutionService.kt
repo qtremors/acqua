@@ -38,13 +38,13 @@ class MediaResolutionService(
             )
         if (engine == DownloadEngine.YT_DLP) {
             return try {
-                resolveWithYtDlp(url, false)
+                validateAndSelect(url, resolveWithYtDlp(url, false))
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
                 if (!browserSessionsEnabled) throw error
                 try {
-                    resolveWithYtDlp(url, true)
+                    validateAndSelect(url, resolveWithYtDlp(url, true))
                 } catch (error: CancellationException) {
                     throw error
                 } catch (sessionFailure: Exception) {

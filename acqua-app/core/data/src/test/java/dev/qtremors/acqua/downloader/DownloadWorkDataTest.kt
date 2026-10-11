@@ -58,6 +58,17 @@ class DownloadWorkDataTest {
     }
 
     @Test
+    fun `retired artwork requests are rejected rather than downloading audio`() {
+        val normal = DownloadWorkData.processedRequest(completeMedia(backend = MediaBackend.YT_DLP),
+            completeMedia(backend = MediaBackend.YT_DLP), YtDlpDownloadOptions(contentType = DownloadContentType.AUDIO), SOURCE_URL)
+        for (mode in listOf("ONLY", "ALONGSIDE")) {
+            assertNull(DownloadWorkData.decode(Data.Builder().putAll(normal).putString("artwork_mode", mode).build()))
+        }
+        assertEquals(DownloadContentType.AUDIO,
+            DownloadWorkData.decode(Data.Builder().putAll(normal).putString("artwork_mode", "NONE").build())!!.options.contentType)
+    }
+
+    @Test
     fun `direct request preserves transport metadata`() {
         val media = completeMedia(backend = MediaBackend.DIRECT)
 

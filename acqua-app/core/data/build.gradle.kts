@@ -11,8 +11,8 @@ android {
         minSdk = 24
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "APPLICATION_ID", "\"dev.qtremors.acqua\"")
-        buildConfigField("String", "VERSION_NAME", "\"0.3.1\"")
-        buildConfigField("int", "VERSION_CODE", "31")
+        buildConfigField("String", "VERSION_NAME", "\"0.3.2\"")
+        buildConfigField("int", "VERSION_CODE", "32")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

@@ -88,6 +88,8 @@ object DownloadWorkData {
         .build()
 
     fun decode(data: Data): DownloadWorkRequest? {
+        // Removed artwork requests must not turn into full audio downloads after an upgrade.
+        if (data.getString("artwork_mode") in setOf("ONLY", "ALONGSIDE")) return null
         val mediaUrl = data.getString(KEY_MEDIA_URL)?.takeIf(String::isNotBlank) ?: return null
         val sourceUrl = data.getString(KEY_SOURCE_URL)?.takeIf(String::isNotBlank) ?: return null
         val backend = enumValueOrDefault(

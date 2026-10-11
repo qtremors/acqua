@@ -11,6 +11,7 @@ import coil3.fetch.ImageFetchResult
 import coil3.fetch.FetchResult
 import coil3.fetch.Fetcher
 import coil3.request.Options
+import coil3.size.Scale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -28,6 +29,33 @@ class AudioAlbumArtFetcher(
         val context = options.context
         val targetSize = ThumbnailTargetSize.fromOptions(options)
 
+        val retriever = MediaMetadataRetriever()
+        try {
+            if (contentUri != null) {
+                retriever.setDataSource(context, contentUri.toUri())
+            } else {
+                if (!file.exists() || !file.isFile) return@withContext null
+                retriever.setDataSource(file.absolutePath)
+            }
+            val art = retriever.embeddedPicture
+            if (art != null && art.size <= MAX_EMBEDDED_ART_BYTES) {
+                val bitmap = BoundedBitmapDecoder.decode(art, targetSize, targetSize, fill = options.scale == Scale.FILL)
+                if (bitmap != null) {
+                    return@withContext ImageFetchResult(
+                        image = bitmap.asImage(),
+                        isSampled = true,
+                        dataSource = DataSource.DISK
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+        } finally {
+            retriever.release()
+        }
+
+        // System thumbnails can be smaller or stale. Use them only when the file
+        // has no readable embedded cover, rather than stretching them over it.
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && contentUri != null) {
                 val bitmap = context.contentResolver.loadThumbnail(contentUri.toUri(), Size(targetSize, targetSize), null)
@@ -40,33 +68,7 @@ class AudioAlbumArtFetcher(
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
         }
-
-        val retriever = MediaMetadataRetriever()
-        try {
-            if (contentUri != null) {
-                retriever.setDataSource(context, contentUri.toUri())
-            } else {
-                if (!file.exists() || !file.isFile) return@withContext null
-                retriever.setDataSource(file.absolutePath)
-            }
-            val art = retriever.embeddedPicture
-            if (art != null && art.size <= MAX_EMBEDDED_ART_BYTES) {
-                val bitmap = BoundedBitmapDecoder.decode(art, targetSize, targetSize)
-                    ?: return@withContext null
-                ImageFetchResult(
-                    image = bitmap.asImage(),
-                    isSampled = true,
-                    dataSource = DataSource.DISK
-                )
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            null
-        } finally {
-            retriever.release()
-        }
+        null
     }
 
     class Factory : Fetcher.Factory<File> {

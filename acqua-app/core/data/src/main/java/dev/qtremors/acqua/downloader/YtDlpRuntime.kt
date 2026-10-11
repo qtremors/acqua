@@ -6,6 +6,7 @@ import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import com.yausername.youtubedl_android.YoutubeDLResponse
+import java.io.File
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -22,6 +23,7 @@ object YtDlpRuntime {
                 YtDlpTemporaryFiles.cleanupAbandoned(context.applicationContext)
                 YoutubeDL.getInstance().init(context.applicationContext)
                 FFmpeg.getInstance().init(context.applicationContext)
+                YtDlpPythonShell.repair(File(context.noBackupFilesDir, "${YoutubeDL.baseName}/packages/python/usr/lib"))
                 initialized = true
             } catch (error: Throwable) {
                 Log.e(TAG, "Unable to initialize the yt-dlp runtime", SafeDiagnostics.redact(error))

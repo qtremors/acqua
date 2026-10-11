@@ -2,6 +2,25 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.2] - 2026-10-11
+
+### Changed
+
+- Show the session toggle beside the browser action only when media resolution or a download fails.
+
+### Fixed
+
+- Fit downloader tabs, engine selectors, and action buttons to their content, including larger text and changing download counts.
+- Preserve artwork quality and reliably crop embedded audio covers to an exact square, including fallback thumbnails.
+- Fix audio downloads with square artwork enabled and show download errors without misleading update messages.
+- Keep artwork previews sharp, prefer embedded audio covers, and show the selected square crop in the downloader.
+- Show previews in a full-width looping carousel with consistent card heights, original aspect ratios, and small gaps.
+- Remove extra header spacing and keep download progress below previews.
+- Prevent WebView renderer crashes or memory reclamation from crashing Acqua by safely closing the affected browser.
+- Refresh failed links when enabling sessions and clear old errors when retrying individual downloads in either engine.
+- Validate yt-dlp results and correctly handle multiple items.
+- Keep download options reachable on small screens.
+
 ## [0.3.1] - 2026-10-10
 
 ### Added

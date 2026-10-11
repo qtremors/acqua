@@ -63,6 +63,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -240,12 +241,14 @@ fun MediaPreviewCard(
     useBrowserSessions: Boolean,
     previewCache: MediaPreviewCache,
     contentType: DownloadContentType,
+    cropArtwork: Boolean,
     cardWidth: Dp,
     cardHeight: Dp,
     modifier: Modifier = Modifier,
     onBitmapDimensions: (width: Int, height: Int) -> Unit = { _, _ -> }
 ) {
     val audioPreview = item.isAudioPreview(contentType)
+    val cropPreview = audioPreview && cropArtwork
     val previewUrl = item.previewUrl
     val density = LocalDensity.current
     val previewWidthPixels = with(density) { cardWidth.roundToPx() }
@@ -265,16 +268,18 @@ fun MediaPreviewCard(
             else -> CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
         }
     }
-    val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies, previewWidthPixels, previewHeightPixels) {
+    val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies, previewWidthPixels, previewHeightPixels, cropPreview) {
         val loaded = if (previewUrl == null) null else withContext(Dispatchers.IO) {
             previewCache.loadBitmap(
                 item.copy(url = previewUrl, requestCookies = null),
                 previewWidthPixels,
-                previewHeightPixels
+                previewHeightPixels,
+                fill = cropPreview
             ) ?: if (cookies != null) previewCache.loadBitmap(
                 item.copy(url = previewUrl, requestCookies = cookies),
                 previewWidthPixels,
-                previewHeightPixels
+                previewHeightPixels,
+                fill = cropPreview
             ) else null
         }
         failed = previewUrl != null && loaded == null
@@ -286,7 +291,7 @@ fun MediaPreviewCard(
     val isVideo = item.isVideo && !audioPreview
 
     Card(
-        modifier = modifier.size(cardWidth, cardHeight),
+        modifier = modifier.size(cardWidth, cardHeight).testTag("media-preview-$index"),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
@@ -304,8 +309,8 @@ fun MediaPreviewCard(
                         contentDescription = stringResource(
                             if (audioPreview) R.string.audio else if (item.isVideo) R.string.video_preview else R.string.image_preview
                         ),
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit
+                        modifier = Modifier.fillMaxSize().testTag("loaded-media-preview-$index"),
+                        contentScale = if (cropPreview) ContentScale.Crop else ContentScale.Fit
                     )
                 }
                 previewUrl == null || failed -> {

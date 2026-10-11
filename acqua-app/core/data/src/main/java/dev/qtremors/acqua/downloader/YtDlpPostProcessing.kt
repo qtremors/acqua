@@ -4,6 +4,7 @@ import java.io.File
 
 internal object YtDlpPostProcessing {
     fun options(options: YtDlpDownloadOptions): List<Pair<String, String?>> = buildList {
+        val audio = options.contentType == DownloadContentType.AUDIO
         if (options.embedMetadata) {
             if (!options.preserveOriginalMetadata) {
                 // Evaluate the clock after transfer, immediately before metadata embedding.
@@ -19,23 +20,29 @@ internal object YtDlpPostProcessing {
             add("--no-embed-info-json" to null)
             if (options.contentType == DownloadContentType.VIDEO) add("--embed-chapters" to null)
         }
-        if (options.embedThumbnail && options.contentType == DownloadContentType.AUDIO) {
+        if (audio && options.embedThumbnail) {
             add("--embed-thumbnail" to null)
-            add("--convert-thumbnails" to "jpg")
-            add("--postprocessor-args" to "ThumbnailsConvertor+ffmpeg_o:-q:v 1")
+            // Keep cropped artwork lossless.
+            val losslessArtwork = options.cropArtwork
+            add("--convert-thumbnails" to if (losslessArtwork) "png" else "jpg")
+            if (!losslessArtwork) {
+                add("--postprocessor-args" to "ThumbnailsConvertor+ffmpeg_o:-q:v 1")
+            }
             // ID3v2.3 stores only the year when artwork is attached. Keep the full timestamp.
             add("--postprocessor-args" to "EmbedThumbnail+ffmpeg_o:-id3v2_version 4")
         }
     }
 
     fun cropCommand(ffmpeg: File, temporaryCover: File): String {
-        // before_dl runs after thumbnails are written. Crop even already-JPEG artwork,
-        // which yt-dlp's thumbnail converter otherwise skips. Template q quotes remote paths.
         val executable = shellQuote(ffmpeg.absolutePath)
         val output = shellQuote(temporaryCover.absolutePath)
-        return "before_dl:cover=%(thumbnails.-1.filepath|)q; if [ -f \"\$cover\" ]; then " +
-            "$executable -nostdin -y -i \"\$cover\" -vf \"crop='min(iw,ih)':'min(iw,ih)'\" " +
-            "-frames:v 1 -q:v 1 $output && mv $output \"\$cover\"; fi"
+        // The converter runs first. Iterate actual files so thumbnail fallback works and
+        // already-PNG artwork is cropped too. Stop on failure rather than embed a bad crop.
+        return "before_dl:for cover in %(thumbnails.:.filepath|)#q; do " +
+            "if [ -f \"\$cover\" ]; then " +
+            "$executable -nostdin -loglevel error -y -i \"\$cover\" " +
+            "-vf \"crop='min(iw,ih)':'min(iw,ih)':exact=1,setsar=1\" " +
+            "-frames:v 1 -c:v png -update 1 $output && mv $output \"\$cover\" || exit 1; fi; done"
     }
 
     private fun shellQuote(value: String): String = "'${value.replace("'", "'\\''")}'"

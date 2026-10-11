@@ -176,7 +176,8 @@ internal fun DownloadConfigBottomSheet(
         containerColor = colors.surfaceContainerLow
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp).padding(bottom = 24.dp)
         ) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -350,7 +351,7 @@ internal fun DownloadConfigBottomSheet(
                     onResolve()
                 },
                 enabled = canResolve && !state.isResolving,
-                modifier = Modifier.fillMaxWidth().height(48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 shape = RoundedCornerShape(14.dp)
             ) {
                 if (state.isResolving) {

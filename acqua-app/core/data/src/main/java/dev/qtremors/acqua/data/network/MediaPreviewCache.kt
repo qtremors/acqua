@@ -14,23 +14,23 @@ class MediaPreviewCache(
     private val directory = File(context.applicationContext.cacheDir, CACHE_DIRECTORY)
     private val lock = Any()
 
-    fun loadBitmap(item: ResolvedMedia, maxWidth: Int, maxHeight: Int): MediaPreviewBitmap? = synchronized(lock) {
+    fun loadBitmap(item: ResolvedMedia, maxWidth: Int, maxHeight: Int, fill: Boolean = false): MediaPreviewBitmap? = synchronized(lock) {
         val cacheFile = File(directory, cacheKey(item))
         runCatching {
             prune()
             downloader.fetchPreviewToFile(item, cacheFile, MAX_FILE_BYTES)
             cacheFile.setLastModified(System.currentTimeMillis())
             prune()
-            decodeSampled(cacheFile, maxWidth.coerceAtLeast(1), maxHeight.coerceAtLeast(1))
+            decodeSampled(cacheFile, maxWidth.coerceAtLeast(1), maxHeight.coerceAtLeast(1), fill)
                 ?: error("The cached preview is not a readable image.")
         }.onFailure {
             cacheFile.delete()
         }.getOrNull()
     }
 
-    private fun decodeSampled(file: File, maxWidth: Int, maxHeight: Int): MediaPreviewBitmap? {
+    private fun decodeSampled(file: File, maxWidth: Int, maxHeight: Int, fill: Boolean): MediaPreviewBitmap? {
         val bounds = BoundedBitmapDecoder.bounds(file) ?: return null
-        val bitmap = BoundedBitmapDecoder.decode(file, maxWidth, maxHeight) ?: return null
+        val bitmap = BoundedBitmapDecoder.decode(file, maxWidth, maxHeight, fill) ?: return null
         return MediaPreviewBitmap(bitmap, bounds.width, bounds.height)
     }
 

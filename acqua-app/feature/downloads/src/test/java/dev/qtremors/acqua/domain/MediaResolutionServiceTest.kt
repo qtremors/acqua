@@ -11,6 +11,35 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class MediaResolutionServiceTest {
     @Test
+    fun `empty results fail consistently in both engines without opening the browser`() {
+        val service = MediaResolutionService(MediaResolver { emptyList() }, MediaResolver { emptyList() }) { it }
+        for (engine in DownloadEngine.entries) {
+            val failure = assertThrows(MediaResolutionException::class.java) {
+                runBlocking {
+                    service.resolve("https://instagram.com/p/post", false, engine = engine) { _, _ ->
+                        error("A failure must not automatically open the browser")
+                    }
+                }
+            }
+            assertEquals(MediaResolutionFailure.UNSUPPORTED_MEDIA, failure.failure)
+        }
+    }
+
+    @Test
+    fun `yt-dlp results are deduplicated without inspecting webpage URLs as direct media`() = runBlocking {
+        val item = ResolvedMedia("https://example.com/watch/abc", MediaKind.VIDEO, backend = MediaBackend.YT_DLP)
+        val service = MediaResolutionService(MediaResolver { emptyList() }, MediaResolver { listOf(item, item) }) {
+            error("Processed media must not use direct file inspection")
+        }
+
+        val result = service.resolve(item.url, false, engine = DownloadEngine.YT_DLP) { _, _ ->
+            error("Unexpected browser launch")
+        }
+
+        assertEquals(listOf(item), result)
+    }
+
+    @Test
     fun `yt-dlp preview follows selected output type`() {
         val video = ResolvedMedia("https://example.com/video", MediaKind.VIDEO, backend = MediaBackend.YT_DLP)
 

@@ -7,11 +7,13 @@ import dev.qtremors.acqua.data.settings.DownloadSettings
 import dev.qtremors.acqua.data.settings.MediaProcessingSettings
 import dev.qtremors.acqua.data.settings.SettingsStore
 import dev.qtremors.acqua.domain.DownloadEngine
+import dev.qtremors.acqua.domain.MediaBackend
 import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.MediaResolutionGateway
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
+import dev.qtremors.acqua.downloader.DownloadFailure
 import dev.qtremors.acqua.downloader.DownloadQueueGateway
 import dev.qtremors.acqua.downloader.DownloadQueueItem
 import dev.qtremors.acqua.downloader.DownloadQueueSnapshot
@@ -24,6 +26,7 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -166,6 +169,82 @@ class DownloaderViewModelTest {
         advanceUntilIdle()
     }
 
+    @Test
+    fun `session retry resolves fresh media after a failed browser seeded download in either engine`() = runTest {
+        for (backend in MediaBackend.entries) {
+            val original = ResolvedMedia("https://example.com/expired", MediaKind.VIDEO, backend = backend)
+            val refreshed = original.copy(url = "https://example.com/current", explicitBrowserSessionAuthorized = true)
+            var calls = 0
+            val resolution = object : MediaResolutionGateway {
+                override suspend fun resolve(
+                    input: String, browserSessionsEnabled: Boolean, forceBrowserResolution: Boolean,
+                    engine: DownloadEngine, allowBrowserFallback: Boolean,
+                    browserResolver: suspend (String, Boolean) -> List<ResolvedMedia>
+                ): List<ResolvedMedia> {
+                    calls++
+                    assertTrue(browserSessionsEnabled)
+                    assertEquals(if (backend == MediaBackend.DIRECT) DownloadEngine.ACQUA else DownloadEngine.YT_DLP, engine)
+                    return listOf(refreshed)
+                }
+            }
+            val queue = FakeQueueGateway().apply { nextState = DownloadQueueState.FAILED }
+            val viewModel = createViewModel(resolution = resolution, queue = queue)
+            viewModel.seedResolvedMedia("https://example.com/post", listOf(original))
+            viewModel.downloadOne(original, 0, 0, 0)
+            advanceUntilIdle()
+            assertTrue(viewModel.state.value.error is DownloaderProblem.Download)
+
+            viewModel.resetResolution()
+            viewModel.resolve(true, 1) { _, _ -> error("Unexpected browser launch") }
+            advanceUntilIdle()
+
+            assertEquals(1, calls)
+            assertEquals(listOf(refreshed), viewModel.state.value.media)
+            assertNull(viewModel.state.value.error)
+            assertFalse(viewModel.state.value.showBrowserAction)
+        }
+    }
+
+    @Test
+    fun `individual retries clear the failure and browser actions in either engine`() = runTest {
+        for (backend in MediaBackend.entries) {
+            val item = ResolvedMedia("https://example.com/media", MediaKind.VIDEO, backend = backend)
+            val queue = FakeQueueGateway().apply { nextState = DownloadQueueState.FAILED }
+            val viewModel = createViewModel(queue = queue)
+            viewModel.seedResolvedMedia("https://example.com/post", listOf(item))
+            viewModel.downloadOne(item, 0, 0, 0)
+            advanceUntilIdle()
+            assertTrue(viewModel.state.value.showBrowserAction)
+
+            queue.nextState = DownloadQueueState.SUCCEEDED
+            viewModel.downloadOne(item, 0, 0, 0)
+            advanceUntilIdle()
+
+            assertNull(viewModel.state.value.error)
+            assertNull(viewModel.state.value.resolutionFailure)
+            assertFalse(viewModel.state.value.showBrowserAction)
+            assertEquals(MediaKind.VIDEO, viewModel.state.value.lastDownloadedKind)
+        }
+    }
+
+    @Test
+    fun `download all routes each item through its own backend`() = runTest {
+        for (backend in MediaBackend.entries) {
+            val items = (0..1).map { ResolvedMedia("https://example.com/$it", MediaKind.VIDEO, backend = backend) }
+            val queue = FakeQueueGateway()
+            val viewModel = createViewModel(queue = queue)
+            viewModel.seedResolvedMedia("https://example.com/post", items)
+
+            viewModel.downloadAll(false) { _, _ -> error("Media is already resolved") }
+            advanceUntilIdle()
+
+            assertEquals(items, if (backend == MediaBackend.DIRECT) queue.direct else queue.processed)
+            assertTrue((if (backend == MediaBackend.DIRECT) queue.processed else queue.direct).isEmpty())
+            assertEquals(MediaKind.VIDEO, viewModel.state.value.lastDownloadedKind)
+            assertNull(viewModel.state.value.error)
+        }
+    }
+
     private fun createViewModel(
         settings: FakeSettingsStore = FakeSettingsStore(),
         savedState: SavedStateHandle = SavedStateHandle(),
@@ -202,16 +281,32 @@ class DownloaderViewModelTest {
         private val queue = MutableStateFlow(DownloadQueueSnapshot())
         val jobs = MutableStateFlow<List<DownloadQueueItem>>(emptyList())
         val renamed = mutableMapOf<UUID, String>()
+        val processed = mutableListOf<ResolvedMedia>()
+        val options = mutableListOf<YtDlpDownloadOptions>()
+        val direct = mutableListOf<ResolvedMedia>()
+        var nextState = if (hold) DownloadQueueState.RUNNING else DownloadQueueState.SUCCEEDED
         var acceptsRename = true
         override fun enqueue(
             media: ResolvedMedia,
             outputMedia: ResolvedMedia,
             options: YtDlpDownloadOptions,
             sourceUrl: String
-        ) = UUID.randomUUID()
+        ): UUID {
+            processed += media
+            this.options += options
+            return enqueueJob()
+        }
         override fun enqueueDirect(media: ResolvedMedia, index: Int, sourceUrl: String, itemCount: Int): UUID =
-            UUID.randomUUID().also { if (hold) jobs.value = listOf(DownloadQueueItem(it.toString(), DownloadQueueState.RUNNING)) }
-        override fun observe(ids: List<UUID>): Flow<List<DownloadQueueItem>> = if (hold) jobs else flowOf(emptyList())
+            enqueueJob().also { direct += media }
+        private fun enqueueJob(): UUID = UUID.randomUUID().also { id ->
+            jobs.value += DownloadQueueItem(id.toString(), nextState, error =
+                if (nextState == DownloadQueueState.FAILED) DownloadFailure.NETWORK.code else null)
+        }
+        override fun observe(ids: List<UUID>): Flow<List<DownloadQueueItem>> {
+            val requested = ids.map(UUID::toString).toSet()
+            return if (hold) jobs.map { items -> items.filter { it.id in requested } }
+            else flowOf(jobs.value.filter { it.id in requested })
+        }
         override fun observeQueue(): Flow<DownloadQueueSnapshot> = queue
         override fun cancel(id: UUID) = Unit
         override fun rename(id: UUID, name: String): Boolean {

@@ -23,9 +23,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PageSize
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -96,6 +93,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import dev.qtremors.acqua.ui.components.ExpressiveSegmentedButtonRow
+import dev.qtremors.acqua.ui.components.ContentSizedRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -116,12 +114,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.data.network.HttpMediaClient
@@ -150,8 +150,9 @@ internal fun MediaContentSection(
     onCopyError: (String) -> Unit,
     onOpenBrowser: () -> Unit,
     useBrowserSessions: Boolean,
+    previewMaxHeight: Dp,
     modifier: Modifier = Modifier,
-    onEnableSessions: (() -> Unit)? = null,
+    onUseBrowserSessionsChange: ((Boolean) -> Unit)? = null,
     onRename: (Int, String) -> Unit = { _, _ -> }
 ) {
     val colors = MaterialTheme.colorScheme
@@ -163,60 +164,28 @@ internal fun MediaContentSection(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             state.media?.let { media ->
-                val density = LocalDensity.current
-                val containerSize = LocalWindowInfo.current.containerSize
-                val screenWidth = availableWidth
-                val screenHeight = with(density) { containerSize.height.toDp() }
-                val isMulti = media.size > 1
-                val loopMultiplier = 1000
-                val pageCount = if (isMulti) media.size * loopMultiplier else 1
-                val initialPage = if (isMulti) (loopMultiplier / 2) * media.size else 0
-                val pagerState = rememberPagerState(
-                    initialPage = initialPage,
-                    pageCount = { pageCount }
-                )
-                val loadedDimensions = remember(media) { mutableStateMapOf<Int, Pair<Int, Int>>() }
-
-                val activeIndex = pagerState.currentPage % media.size
+                val mediaKey = media.map { it.url }
+                val loadedDimensions = remember(mediaKey) { mutableStateMapOf<Int, Pair<Int, Int>>() }
+                var activeIndex by remember(mediaKey) { mutableIntStateOf(0) }
                 val activeItem = media[activeIndex]
                 val activeDimensions = loadedDimensions[activeIndex]
+                val slotWidth = minOf(availableWidth, previewMaxHeight, 360.dp)
 
-                val slotWidth = minOf((screenWidth - 32.dp).coerceAtLeast(1.dp), screenHeight * 0.42f, 360.dp)
-                val horizontalPadding = ((screenWidth - slotWidth) / 2).coerceAtLeast(0.dp)
-
-                HorizontalPager(
-                    state = pagerState,
-                    pageSize = PageSize.Fixed(slotWidth),
-                    contentPadding = PaddingValues(horizontal = horizontalPadding),
-                    pageSpacing = 12.dp,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(slotWidth)
-                ) { page ->
-                    val index = page % media.size
-                    val item = media[index]
-
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        MediaPreviewCard(
-                            item = item,
-                            index = index,
-                            useBrowserSessions = useBrowserSessions,
-                            previewCache = previewCache,
-                            contentType = state.downloadContentType,
-                            cardWidth = slotWidth,
-                            cardHeight = slotWidth,
-                            onBitmapDimensions = { width, height ->
-                                loadedDimensions[index] = width to height
-                                onMediaDimensions(index, width, height)
-                            }
-                        )
+                MediaPreviewCarousel(
+                    media = media,
+                    dimensions = loadedDimensions,
+                    contentType = state.downloadContentType,
+                    cropArtwork = state.cropArtwork,
+                    previewCache = previewCache,
+                    useBrowserSessions = useBrowserSessions,
+                    side = slotWidth,
+                    onActiveIndex = { activeIndex = it },
+                    onBitmapDimensions = { index, width, height ->
+                        loadedDimensions[index] = width to height
+                        onMediaDimensions(index, width, height)
                     }
-                }
-
-                Spacer(Modifier.height(10.dp))
+                )
+                Spacer(Modifier.height(8.dp))
 
                 MediaMetadataContainer(
                     content = MediaMetadataContent(
@@ -247,6 +216,7 @@ internal fun MediaContentSection(
                     ),
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag("media-metadata")
                         .padding(horizontal = 16.dp)
                 )
             }
@@ -296,10 +266,25 @@ internal fun MediaContentSection(
                         SelectionContainer {
                             Text(errorText, style = MaterialTheme.typography.bodySmall, color = colors.onErrorContainer)
                         }
-                        if (state.showBrowserAction && !useBrowserSessions && onEnableSessions != null) {
-                            Text(stringResource(R.string.enable_sessions_guidance), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
-                            Button(onEnableSessions, Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                                Text(stringResource(R.string.enable_browser_sessions))
+                        if (state.showBrowserAction && onUseBrowserSessionsChange != null) {
+                            if (!useBrowserSessions) {
+                                Text(stringResource(R.string.enable_sessions_guidance), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 10.dp))
+                            }
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 6.dp)
+                                    .toggleable(
+                                        value = useBrowserSessions,
+                                        enabled = !state.isSaving && state.savingItemIndex == null && !state.isResolving,
+                                        role = Role.Switch,
+                                        onValueChange = onUseBrowserSessionsChange
+                                    ).semantics(mergeDescendants = true) { },
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(stringResource(R.string.use_browser_sessions), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.onErrorContainer)
+                                Switch(checked = useBrowserSessions, onCheckedChange = null,
+                                    enabled = !state.isSaving && state.savingItemIndex == null && !state.isResolving,
+                                    modifier = Modifier.clearAndSetSemantics { })
                             }
                         }
                         if (state.showBrowserAction) {
@@ -361,12 +346,8 @@ internal fun BottomControlsSection(
                         )
                     },
                     leadingIcon = {
-                        Icon(
-                            Icons.Filled.Link,
-                            stringResource(R.string.media_link),
-                            tint = colors.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Icon(Icons.Filled.Link, stringResource(R.string.media_link),
+                            tint = colors.primary, modifier = Modifier.size(20.dp))
                     },
                     trailingIcon = if (state.url.isNotEmpty()) {
                         {
@@ -398,10 +379,9 @@ internal fun BottomControlsSection(
                 )
             }
 
-            Row(
+            ContentSizedRow(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+                stackWhenNeeded = true
             ) {
                 FilterChip(
                     selected = state.downloadEngine == DownloadEngine.YT_DLP,
@@ -414,8 +394,7 @@ internal fun BottomControlsSection(
                                 stringResource(R.string.acqua_engine)
                             },
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            modifier = Modifier.padding(vertical = 8.dp)
                         )
                     },
                     leadingIcon = {
@@ -433,7 +412,7 @@ internal fun BottomControlsSection(
                         )
                     },
                     shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                    modifier = Modifier.heightIn(min = 48.dp),
                     enabled = !state.isSaving && state.savingItemIndex == null
                 )
 
@@ -441,7 +420,8 @@ internal fun BottomControlsSection(
                     Button(
                         onClick = onResolve,
                         enabled = state.validity == LinkValidity.VALID && canResolve && !state.isResolving,
-                        modifier = Modifier.weight(1f).height(48.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(14.dp)
                     ) {
                         if (state.isResolving) {
@@ -453,15 +433,14 @@ internal fun BottomControlsSection(
                         }
                         Text(
                             stringResource(if (state.isResolving) R.string.resolving_media else R.string.fetch),
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 } else {
                     Button(
                         onClick = onDownloadAll,
-                        modifier = Modifier.weight(1f).height(48.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
                         enabled = !state.isResolving && !state.isSaving && !state.saved && state.savingItemIndex == null,
                         shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
@@ -478,9 +457,7 @@ internal fun BottomControlsSection(
                                         state.savingIndex,
                                         total
                                     ) else stringResource(R.string.saving),
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                             state.saved -> {
@@ -488,8 +465,7 @@ internal fun BottomControlsSection(
                                 Spacer(Modifier.size(8.dp))
                                 Text(
                                     stringResource(state.lastDownloadedKind.downloadedMessageResource()),
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                             else -> {
@@ -504,9 +480,7 @@ internal fun BottomControlsSection(
                                 }
                                 Text(
                                     label,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }

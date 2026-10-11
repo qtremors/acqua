@@ -251,7 +251,7 @@ class DownloaderViewModel(
             requestRevision,
             snapshot.downloadEngine
         )
-        if (snapshot.media != null && lastAutomaticRequest == null) {
+        if (snapshot.media != null && snapshot.error == null && lastAutomaticRequest == null) {
             lastAutomaticRequest = requestKey
             return
         }
@@ -339,17 +339,11 @@ class DownloaderViewModel(
                 savingIndex = 0,
                 lastDownloadedKind = null
             )
-            val isProcessedDownload = items.size == 1 && items.single().backend == MediaBackend.YT_DLP
-            val workIds = if (isProcessedDownload) {
-                listOf(enqueueYtDlpDownload(items.single(), url))
-            } else {
-                items.mapIndexed { index, item -> ytDlpDownloads.enqueueDirect(item, index, url, items.size) }
+            val workIds = items.mapIndexed { index, item ->
+                if (item.backend == MediaBackend.YT_DLP) enqueueYtDlpDownload(item, url)
+                else ytDlpDownloads.enqueueDirect(item, index, url, items.size)
             }
-            val downloadedKind = if (isProcessedDownload) {
-                if (mutableState.value.downloadContentType == DownloadContentType.AUDIO) MediaKind.AUDIO else MediaKind.VIDEO
-            } else {
-                items.map(ResolvedMedia::kind).distinct().singleOrNull()
-            }
+            val downloadedKind = items.map(::downloadedKind).distinct().singleOrNull()
             observeDownloads(workIds, downloadedKind = downloadedKind)
         }
     }
@@ -361,7 +355,10 @@ class DownloaderViewModel(
             mutableState.value = mutableState.value.copy(
                 savingItemIndex = index,
                 savedItemIndex = null,
-                lastDownloadedKind = null
+                lastDownloadedKind = null,
+                error = null,
+                resolutionFailure = null,
+                showBrowserAction = false
             )
             val sourceUrl = WebLink.normalize(mutableState.value.url).orEmpty()
             val mediaWithDimensions = if (item.isVideo) item else item.copy(width = width, height = height)
@@ -370,10 +367,7 @@ class DownloaderViewModel(
             } else {
                 ytDlpDownloads.enqueueDirect(mediaWithDimensions, index, sourceUrl, mutableState.value.media?.size ?: 1)
             }
-            val downloadedKind = if (
-                item.backend == MediaBackend.YT_DLP && mutableState.value.downloadContentType == DownloadContentType.AUDIO
-            ) MediaKind.AUDIO else item.kind
-            observeDownloads(listOf(workId), itemIndex = index, downloadedKind = downloadedKind)
+            observeDownloads(listOf(workId), itemIndex = index, downloadedKind = downloadedKind(item))
         }
     }
 
@@ -424,6 +418,12 @@ class DownloaderViewModel(
         return ytDlpDownloads.enqueue(media, outputMedia, options, sourceUrl).also {
             activeWorkIds = listOf(it)
         }
+    }
+
+    private fun downloadedKind(media: ResolvedMedia): MediaKind {
+        if (media.backend != MediaBackend.YT_DLP) return media.kind
+        val snapshot = mutableState.value
+        return if (snapshot.downloadContentType == DownloadContentType.AUDIO) MediaKind.AUDIO else MediaKind.VIDEO
     }
 
     private suspend fun observeDownloads(
