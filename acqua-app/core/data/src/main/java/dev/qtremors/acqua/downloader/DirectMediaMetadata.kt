@@ -1,7 +1,6 @@
 package dev.qtremors.acqua.downloader
 
 import android.content.Context
-import com.yausername.ffmpeg.FFmpeg
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -15,11 +14,13 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 /** Writes tags by copying streams; it never re-encodes audio or video. */
 internal object DirectMediaMetadata {
     suspend fun write(context: Context, source: File, output: File, sourceUrl: String, timestamp: Long?) {
-        FFmpeg.getInstance().init(context.applicationContext)
+        YtDlpRuntime.initialize(context.applicationContext)
         val nativeDirectory = context.applicationInfo.nativeLibraryDir
         val command = listOf(File(nativeDirectory, "libffmpeg.so").absolutePath) + arguments(source, output, sourceUrl, timestamp)
         val builder = ProcessBuilder(command).redirectErrorStream(true)
-        builder.environment()["LD_LIBRARY_PATH"] = "$nativeDirectory:${File(context.noBackupFilesDir, "youtubedl-android/packages/ffmpeg/usr/lib").absolutePath}"
+        builder.environment()["LD_LIBRARY_PATH"] = listOf(nativeDirectory,
+            File(context.noBackupFilesDir, "youtubedl-android/packages/ffmpeg/usr/lib").absolutePath,
+            File(context.noBackupFilesDir, "youtubedl-android/packages/python/usr/lib").absolutePath).joinToString(":")
         val process = builder.start()
         suspendCancellableCoroutine<Unit> { continuation ->
             continuation.invokeOnCancellation { process.destroy() }

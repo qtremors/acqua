@@ -154,6 +154,27 @@ internal class DownloadNotificationController(
         }
     }
 
+    fun failed(failure: DownloadFailure) {
+        runCatching {
+            val launch = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName)
+                ?.putExtra(DownloadDiagnosticsStore.EXTRA_TASK_ID, workId.toString())
+                ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            val builder = NotificationCompat.Builder(applicationContext, COMPLETED_CHANNEL_ID)
+                .setSmallIcon(R.drawable.acqua_monochrome)
+                .setContentTitle(applicationContext.getString(R.string.download_failed_title))
+                .setContentText(applicationContext.getString(R.string.download_failed_diagnostics))
+                .setAutoCancel(true)
+                .setSubText(applicationContext.getString(when (failure) {
+                    DownloadFailure.NETWORK -> R.string.network_error
+                    DownloadFailure.STORAGE -> R.string.ytdlp_error_storage
+                    else -> R.string.download_error_unknown
+                }))
+            if (launch != null) builder.setContentIntent(PendingIntent.getActivity(applicationContext, completedNotificationId,
+                launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            notificationManager.notify(completedNotificationId, builder.build())
+        }
+    }
+
     private fun buildNotification(
         title: String?,
         progress: Float,

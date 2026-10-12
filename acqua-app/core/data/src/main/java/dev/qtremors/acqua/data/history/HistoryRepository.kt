@@ -24,10 +24,13 @@ data class HistoryPageRequest(
     val order: HistoryOrder = HistoryOrder.NEWEST,
     val terms: List<String> = emptyList(),
     val limit: Int = 100,
-    val offset: Int = 0
+    val offset: Int = 0,
+    val sourceHost: String? = null
 )
 
 data class HistoryPage(val entries: List<HistoryEntry>, val hasMore: Boolean)
+
+data class HistoryFileStatusCursor(val timestamp: Long, val id: String)
 
 data class HistoryDatabaseSummary(
     val downloads: Int,
@@ -49,13 +52,20 @@ data class HistoryEntry(
     val mimeType: String,
     val sizeBytes: Long,
     val isDownloaded: Boolean,
-    val thumbnailUrl: String? = null
+    val thumbnailUrl: String? = null,
+    val title: String? = null,
+    val author: String? = null,
+    val sourceIdentity: String? = null,
+    val sourceHost: String? = null
 ) {
     val type: HistoryEntryType
         get() = if (isDownloaded) HistoryEntryType.DOWNLOAD else HistoryEntryType.LINK
 
     val isAudio: Boolean
         get() = isDownloaded && mimeType.startsWith("audio/")
+
+    val isCaption: Boolean
+        get() = isDownloaded && (mimeType.startsWith("text/") || mimeType == "application/x-subrip")
 }
 
 fun interface HistoryWriter {
@@ -70,6 +80,10 @@ class HistoryRepository(context: Context) : HistoryWriter {
 
     fun load(): List<HistoryEntry> = readEntries(databaseHelper.readableDatabase)
 
+    fun find(id: String): HistoryEntry? = databaseHelper.readableDatabase.query(
+        TABLE_HISTORY, null, "id = ?", arrayOf(id), null, null, null, "1"
+    ).use(::readCursor).firstOrNull()
+
     fun loadPage(request: HistoryPageRequest): HistoryPage {
         val safeLimit = request.limit.coerceIn(1, MAX_PAGE_SIZE)
         val selection = mutableListOf<String>()
@@ -77,21 +91,25 @@ class HistoryRepository(context: Context) : HistoryWriter {
         selection += when (request.category) {
             HistoryCategory.ALL -> "1"
             HistoryCategory.MEDIA -> "is_downloaded = 1"
-            HistoryCategory.PHOTOS -> "is_downloaded = 1 AND is_video = 0 AND mime_type NOT LIKE 'audio/%'"
+            HistoryCategory.PHOTOS -> "is_downloaded = 1 AND is_video = 0 AND (mime_type LIKE 'image/%' OR mime_type = '')"
             HistoryCategory.VIDEOS -> "is_downloaded = 1 AND is_video = 1 AND mime_type NOT LIKE 'audio/%'"
             HistoryCategory.AUDIO -> "is_downloaded = 1 AND mime_type LIKE 'audio/%'"
             HistoryCategory.LINKS -> "is_downloaded = 0"
             HistoryCategory.UNAVAILABLE -> "is_downloaded = 1 AND file_status IN ('MISSING', 'UNAVAILABLE')"
         }
+        request.sourceHost?.let {
+            selection += "source_host = ?"
+            arguments += it
+        }
         request.terms.map(String::trim).filter(String::isNotEmpty).forEach { term ->
-            selection += "(file_name LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\' OR mime_type LIKE ? ESCAPE '\\')"
+            selection += "(file_name LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\' OR mime_type LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\' OR source_identity LIKE ? ESCAPE '\\')"
             val pattern = "%${escapeLike(term)}%"
-            repeat(3) { arguments += pattern }
+            repeat(6) { arguments += pattern }
         }
         val orderBy = when (request.order) {
-            HistoryOrder.NEWEST -> "timestamp DESC"
-            HistoryOrder.OLDEST -> "timestamp ASC"
-            HistoryOrder.LARGEST -> "size_bytes DESC, timestamp DESC"
+            HistoryOrder.NEWEST -> "timestamp DESC, id DESC"
+            HistoryOrder.OLDEST -> "timestamp ASC, id ASC"
+            HistoryOrder.LARGEST -> "size_bytes DESC, timestamp DESC, id DESC"
         }
         val entries = databaseHelper.readableDatabase.query(
             TABLE_HISTORY,
@@ -106,6 +124,18 @@ class HistoryRepository(context: Context) : HistoryWriter {
         return HistoryPage(entries.take(safeLimit), entries.size > safeLimit)
     }
 
+    fun loadFileStatusEntries(after: HistoryFileStatusCursor? = null, limit: Int = STATUS_REFRESH_PAGE_SIZE): List<HistoryEntry> =
+        databaseHelper.readableDatabase.query(
+            TABLE_HISTORY,
+            null,
+            "is_downloaded = 1" + if (after != null) " AND (timestamp < ? OR (timestamp = ? AND id < ?))" else "",
+            after?.let { arrayOf(it.timestamp.toString(), it.timestamp.toString(), it.id) },
+            null,
+            null,
+            "timestamp DESC, id DESC",
+            limit.coerceIn(1, MAX_PAGE_SIZE).toString()
+        ).use(::readCursor)
+
     fun loadUnknownFileStatusEntries(limit: Int = STATUS_REFRESH_PAGE_SIZE): List<HistoryEntry> =
         databaseHelper.readableDatabase.query(
             TABLE_HISTORY,
@@ -117,6 +147,10 @@ class HistoryRepository(context: Context) : HistoryWriter {
             "timestamp DESC",
             limit.coerceIn(1, MAX_PAGE_SIZE).toString()
         ).use(::readCursor)
+
+    fun sources(): List<String> = databaseHelper.readableDatabase.rawQuery(
+        "SELECT DISTINCT source_host FROM $TABLE_HISTORY WHERE source_host IS NOT NULL AND source_host != '' ORDER BY source_host", null
+    ).use { cursor -> buildList { while (cursor.moveToNext()) add(cursor.getString(0)) } }
 
     fun hasUnknownFileStatuses(): Boolean = databaseHelper.readableDatabase.rawQuery(
         "SELECT 1 FROM $TABLE_HISTORY WHERE is_downloaded = 1 AND file_status IS NULL LIMIT 1",
@@ -138,7 +172,7 @@ class HistoryRepository(context: Context) : HistoryWriter {
         SELECT
             SUM(CASE WHEN is_downloaded = 1 THEN 1 ELSE 0 END),
             SUM(CASE WHEN is_downloaded = 0 THEN 1 ELSE 0 END),
-            SUM(CASE WHEN is_downloaded = 1 AND is_video = 0 AND mime_type NOT LIKE 'audio/%' THEN 1 ELSE 0 END),
+            SUM(CASE WHEN is_downloaded = 1 AND is_video = 0 AND (mime_type LIKE 'image/%' OR mime_type = '') THEN 1 ELSE 0 END),
             SUM(CASE WHEN is_downloaded = 1 AND is_video = 1 AND mime_type NOT LIKE 'audio/%' THEN 1 ELSE 0 END),
             SUM(CASE WHEN is_downloaded = 1 AND mime_type LIKE 'audio/%' THEN 1 ELSE 0 END),
             SUM(CASE WHEN is_downloaded = 1 AND file_status IN ('MISSING', 'UNAVAILABLE') THEN 1 ELSE 0 END),
@@ -183,7 +217,11 @@ class HistoryRepository(context: Context) : HistoryWriter {
                     mimeType = cursor.getString(cursor.getColumnIndexOrThrow("mime_type")),
                     sizeBytes = cursor.getLong(cursor.getColumnIndexOrThrow("size_bytes")),
                     isDownloaded = cursor.getInt(cursor.getColumnIndexOrThrow("is_downloaded")) == 1,
-                    thumbnailUrl = cursor.getString(cursor.getColumnIndexOrThrow("thumbnail_url"))
+                    thumbnailUrl = cursor.getString(cursor.getColumnIndexOrThrow("thumbnail_url")),
+                    title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
+                    author = cursor.getString(cursor.getColumnIndexOrThrow("author")),
+                    sourceIdentity = cursor.getString(cursor.getColumnIndexOrThrow("source_identity")),
+                    sourceHost = cursor.getString(cursor.getColumnIndexOrThrow("source_host"))
                 )
             )
         }
@@ -194,14 +232,16 @@ class HistoryRepository(context: Context) : HistoryWriter {
         database.beginTransaction()
         val rowId: Long
         try {
-            val id = if (entry.type == HistoryEntryType.LINK) {
+            val previous = if (entry.type == HistoryEntryType.LINK) {
                 database.query(
-                    TABLE_HISTORY, arrayOf("id"), "url = ? AND is_downloaded = 0",
+                    TABLE_HISTORY, null, "url = ? AND is_downloaded = 0",
                     arrayOf(entry.url), null, null, null
-                ).use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else entry.id }
-            } else entry.id
+                ).use(::readCursor).firstOrNull()
+            } else null
             rowId = database.insertWithOnConflict(
-                TABLE_HISTORY, null, values(entry.copy(id = id)), SQLiteDatabase.CONFLICT_REPLACE
+                TABLE_HISTORY, null, values(entry.copy(id = previous?.id ?: entry.id,
+                    title = entry.title ?: previous?.title, author = entry.author ?: previous?.author,
+                    sourceIdentity = entry.sourceIdentity ?: previous?.sourceIdentity)), SQLiteDatabase.CONFLICT_REPLACE
             )
             check(rowId != -1L) { "Could not save history" }
             database.setTransactionSuccessful()
@@ -248,6 +288,16 @@ class HistoryRepository(context: Context) : HistoryWriter {
 
     fun fileExists(entry: HistoryEntry): Boolean = fileStatus(entry) == HistoryFileStatus.AVAILABLE
 
+    fun relink(id: String, uri: android.net.Uri) {
+        require(uri.scheme == "content")
+        val entry = find(id)?.takeIf(HistoryEntry::isDownloaded) ?: return
+        require(fileExists(entry.copy(fileUri = uri.toString())))
+        val updated = databaseHelper.writableDatabase.update(TABLE_HISTORY, ContentValues().apply {
+            put("file_uri", uri.toString()); put("file_status", HistoryFileStatus.AVAILABLE.name)
+        }, "id = ?", arrayOf(id))
+        if (updated > 0) revision.update { it + 1 }
+    }
+
     fun fileStatus(entry: HistoryEntry): HistoryFileStatus {
         if (!entry.isDownloaded || entry.fileUri.isBlank()) return HistoryFileStatus.UNAVAILABLE
         return try {
@@ -278,6 +328,10 @@ class HistoryRepository(context: Context) : HistoryWriter {
         // Remote thumbnail URLs are deliberately not retained. History previews use local files only.
         putNull("thumbnail_url")
         putNull("file_status")
+        put("title", entry.title)
+        put("author", entry.author)
+        put("source_identity", entry.sourceIdentity)
+        put("source_host", entry.sourceHost ?: dev.qtremors.acqua.domain.WebLink.host(entry.url))
     }
 
     private class DatabaseHelper private constructor(context: Context) :
@@ -297,11 +351,16 @@ class HistoryRepository(context: Context) : HistoryWriter {
                     size_bytes INTEGER,
                     is_downloaded INTEGER,
                     thumbnail_url TEXT,
-                    file_status TEXT
+                    file_status TEXT,
+                    title TEXT,
+                    author TEXT,
+                    source_identity TEXT,
+                    source_host TEXT
                 )
                 """.trimIndent()
             )
             createIndexes(database)
+            database.execSQL("CREATE INDEX IF NOT EXISTS history_source_timestamp_idx ON $TABLE_HISTORY(source_host, timestamp DESC)")
         }
 
         override fun onUpgrade(database: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -314,6 +373,19 @@ class HistoryRepository(context: Context) : HistoryWriter {
             if (oldVersion < 4) {
                 database.execSQL("ALTER TABLE $TABLE_HISTORY ADD COLUMN file_status TEXT")
                 createIndexes(database)
+            }
+            if (oldVersion < 5) {
+                listOf("title", "author", "source_identity", "source_host").forEach { column ->
+                    database.execSQL("ALTER TABLE $TABLE_HISTORY ADD COLUMN $column TEXT")
+                }
+                database.query(TABLE_HISTORY, arrayOf("id", "url"), null, null, null, null, null).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val host = dev.qtremors.acqua.domain.WebLink.host(cursor.getString(1).orEmpty())
+                        database.update(TABLE_HISTORY, ContentValues().apply { put("source_host", host) }, "id = ?", arrayOf(cursor.getString(0)))
+                    }
+                }
+                createIndexes(database)
+                database.execSQL("CREATE INDEX IF NOT EXISTS history_source_timestamp_idx ON $TABLE_HISTORY(source_host, timestamp DESC)")
             }
         }
 
@@ -340,7 +412,7 @@ class HistoryRepository(context: Context) : HistoryWriter {
         val revision = MutableStateFlow(0L)
         const val TABLE_HISTORY = "history"
         const val DATABASE_NAME = "acqua_history.db"
-        const val DATABASE_VERSION = 4
+        const val DATABASE_VERSION = 5
         const val STATUS_REFRESH_PAGE_SIZE = 50
         const val MAX_PAGE_SIZE = 250
 

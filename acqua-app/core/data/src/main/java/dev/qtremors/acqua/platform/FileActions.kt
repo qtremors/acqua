@@ -15,6 +15,12 @@ import dev.qtremors.acqua.core.data.R
 class FileActions(context: Context) {
     private val appContext = context.applicationContext
 
+    // Call off the main thread: resolving a retained scheduler request may touch disk.
+    fun retryDownload(id: String): Boolean = runCatching {
+        val requestId = java.util.UUID.fromString(id)
+        dev.qtremors.acqua.downloader.DownloadWorkCoordinator(appContext).retry(requestId) != null
+    }.getOrDefault(false)
+
     fun open(uri: String, mimeType: String) = runCatching {
         appContext.startActivity(Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri.toUri(), mimeType)

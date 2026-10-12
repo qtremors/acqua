@@ -25,6 +25,7 @@ class AppUpdater(
     private val context: Context,
     private val httpClient: OkHttpClient = OkHttpClient()
 ) : AppUpdateGateway {
+    private val assetClient = httpClient.newBuilder().addNetworkInterceptor(AssetDownloadPolicy.stripUntrustedCredentials).build()
 
     companion object {
         const val GITHUB_RELEASES_URL = "https://api.github.com/repos/qtremors/acqua/releases/latest"
@@ -177,6 +178,7 @@ class AppUpdater(
         onProgress: (bytesDownloaded: Long, totalBytes: Long, progressPercent: Int) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
+            if (!authorizationToken.isNullOrBlank()) AssetDownloadPolicy.requireTrusted(downloadUrl)
             val requestedFileName = fileName.substringAfterLast('/').substringAfterLast('\\')
             require(requestedFileName.isNotBlank() && requestedFileName.endsWith(".apk", ignoreCase = true)) {
                 "Update asset is not an APK"
@@ -203,7 +205,7 @@ class AppUpdater(
             }
 
             try {
-                httpClient.newCall(requestBuilder.build()).execute().use { response ->
+                assetClient.newCall(requestBuilder.build()).execute().use { response ->
                     if (!response.isSuccessful) {
                         error("Failed to download APK: HTTP ${response.code}")
                     }

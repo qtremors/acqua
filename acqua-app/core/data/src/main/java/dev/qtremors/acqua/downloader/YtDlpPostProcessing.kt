@@ -18,7 +18,8 @@ internal object YtDlpPostProcessing {
             }
             add("--embed-metadata" to null)
             add("--no-embed-info-json" to null)
-            if (options.contentType == DownloadContentType.VIDEO) add("--embed-chapters" to null)
+            if (options.contentType == DownloadContentType.VIDEO && options.clipStartSeconds == null) add("--embed-chapters" to null)
+            if (options.clipStartSeconds != null) add("--postprocessor-args" to "Metadata+ffmpeg_o:-map_chapters -1")
         }
         if (audio && options.embedThumbnail) {
             add("--embed-thumbnail" to null)

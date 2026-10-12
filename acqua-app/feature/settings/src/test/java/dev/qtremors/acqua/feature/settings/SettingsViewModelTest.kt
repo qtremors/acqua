@@ -11,6 +11,8 @@ import dev.qtremors.acqua.downloader.YtDlpFailure
 import dev.qtremors.acqua.downloader.YtDlpMaintenanceGateway
 import dev.qtremors.acqua.downloader.YtDlpMaintenanceResult
 import dev.qtremors.acqua.downloader.YtDlpUpdateStatus
+import dev.qtremors.acqua.downloader.YtDlpUpdateChannel
+import dev.qtremors.acqua.downloader.YtDlpUpdateInterval
 import java.io.IOException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +28,24 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun `saved low and inspected quality values remain selectable after reload and recreation`() = runTest {
+        val store = FakeSettingsStore()
+        val viewModel = SettingsViewModel(store, FakeMaintenance(), { _, _ -> })
+        for (height in listOf(360, 540, 0)) {
+            store.setMaximumVideoHeight(height)
+            viewModel.reload()
+            assertEquals(height, viewModel.state.value.maximumVideoHeight)
+            assertTrue(height in viewModel.state.value.videoQualities)
+            val restored = SettingsViewModel(store, FakeMaintenance(), { _, _ -> }).state.value
+            assertEquals(height, restored.maximumVideoHeight)
+            assertTrue(height in restored.videoQualities)
+            assertEquals(0, restored.videoQualities.first())
+            assertEquals(1, restored.videoQualities.count { it == height })
+        }
+        advanceUntilIdle()
+    }
 
     @Test
     fun `preference intents update the store and authoritative state`() = runTest {
@@ -87,6 +107,30 @@ class SettingsViewModelTest {
         assertEquals(YtDlpUpdateStatus.ALREADY_CURRENT, viewModel.state.value.ytDlpUpdateStatus)
     }
 
+    @Test fun `update channel and interval choices survive reload and recreation`() = runTest {
+        val store = FakeSettingsStore()
+        val model = SettingsViewModel(store, FakeMaintenance(), { _, _ -> })
+        model.setYtDlpUpdateChannel(YtDlpUpdateChannel.NIGHTLY)
+        model.setYtDlpUpdateInterval(YtDlpUpdateInterval.DAILY)
+        model.reload()
+        assertEquals(YtDlpUpdateChannel.NIGHTLY, model.state.value.ytDlpUpdateChannel)
+        val restored = SettingsViewModel(store, FakeMaintenance(), { _, _ -> }).state.value
+        assertEquals(YtDlpUpdateChannel.NIGHTLY, restored.ytDlpUpdateChannel)
+        assertEquals(YtDlpUpdateInterval.DAILY, restored.ytDlpUpdateInterval)
+        advanceUntilIdle()
+    }
+
+    @Test fun `extended diagnostics preference survives reload without changing history defaults`() = runTest {
+        val store = FakeSettingsStore().apply { defaults = dev.qtremors.acqua.downloader.YtDlpDownloadOptions(recordHistory = false) }
+        val model = SettingsViewModel(store, FakeMaintenance(), { _, _ -> })
+        model.setVerboseDiagnostics(true)
+        model.reload()
+        assertTrue(model.state.value.verboseDiagnostics)
+        assertFalse(store.defaults.recordHistory)
+        assertTrue(SettingsViewModel(store, FakeMaintenance(), { _, _ -> }).state.value.verboseDiagnostics)
+        advanceUntilIdle()
+    }
+
     private class FakeMaintenance(
         var result: Result<YtDlpMaintenanceResult> = Result.success(
             YtDlpMaintenanceResult(null, null, 0L)
@@ -100,6 +144,9 @@ class SettingsViewModelTest {
     }
 
     private class FakeSettingsStore : SettingsStore {
+        var defaults = dev.qtremors.acqua.downloader.YtDlpDownloadOptions()
+        override fun downloadDefaults() = defaults
+        override fun setDownloadDefaults(options: dev.qtremors.acqua.downloader.YtDlpDownloadOptions) { defaults = options }
         val protection = MutableStateFlow(false)
         var download = DownloadSettings(
             baseFolder = "Acqua",
@@ -131,6 +178,8 @@ class SettingsViewModelTest {
         override fun setCropArtwork(enabled: Boolean) { media = media.copy(cropArtwork = enabled) }
         override fun setPreserveOriginalMetadata(enabled: Boolean) { media = media.copy(preserveOriginalMetadata = enabled) }
         override fun setAutoUpdateYtDlp(enabled: Boolean) { media = media.copy(autoUpdateYtDlp = enabled) }
+        override fun setYtDlpUpdateChannel(value: YtDlpUpdateChannel) { media = media.copy(ytDlpUpdateChannel = value) }
+        override fun setYtDlpUpdateInterval(value: YtDlpUpdateInterval) { media = media.copy(ytDlpUpdateInterval = value) }
         override fun lastDownloadEngine() = DownloadEngine.YT_DLP
         override fun setLastDownloadEngine(value: DownloadEngine) = Unit
         override fun lastDownloadContentType() = null

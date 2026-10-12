@@ -127,6 +127,32 @@ class DownloadWorkerTest {
         assertTrue(cancelled)
     }
 
+    @Test fun `two backend transfers can overlap and cancelling one leaves the other running`() = runBlocking {
+        val settings = dev.qtremors.acqua.data.settings.AppSettingsRepository(context)
+        settings.setMaximumConcurrentDownloads(2)
+        val started = kotlinx.coroutines.channels.Channel<MediaBackend>(2)
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val executor = FakeExecution { request, _, _, _ ->
+            started.send(request.media.backend)
+            release.await()
+            completedResult()
+        }
+        val direct = launch { worker(executor).doWork() }
+        val processed = launch { worker(executor, input = processedInput()).doWork() }
+        try {
+            val backends = kotlinx.coroutines.withTimeout(2000) { setOf(started.receive(), started.receive()) }
+            assertEquals(setOf(MediaBackend.DIRECT, MediaBackend.YT_DLP), backends)
+            direct.cancelAndJoin()
+            assertTrue(processed.isActive)
+            release.complete(Unit)
+            processed.join()
+            assertEquals(2, executor.executions)
+        } finally {
+            release.complete(Unit); direct.cancelAndJoin(); processed.cancelAndJoin()
+            settings.setMaximumConcurrentDownloads(1)
+        }
+    }
+
     private fun worker(
         executor: DownloadExecution,
         runAttemptCount: Int = 0,

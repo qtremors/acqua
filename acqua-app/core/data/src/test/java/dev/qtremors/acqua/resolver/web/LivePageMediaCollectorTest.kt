@@ -8,10 +8,75 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class LivePageMediaCollectorTest {
+    @Test
+    fun `callbacks from a previous page cannot replace current page media`() {
+        val collector = LivePageMediaCollector(requiredStablePasses = 1)
+        val oldGeneration = collector.reset()
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val lateCapture = executor.submit {
+                started.countDown()
+                check(release.await(5, TimeUnit.SECONDS))
+                collector.captureNetworkVideo("https://cdn.test/old.mp4", oldGeneration)
+            }
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            val currentGeneration = collector.reset()
+            collector.captureNetworkVideo("https://cdn.test/current.mp4", currentGeneration)
+            release.countDown()
+            lateCapture.get(5, TimeUnit.SECONDS)
+            assertEquals(LivePageExtractionOutcome.Continue,
+                collector.consume(payload("https://cdn.test/old.jpg", 1080), SOURCE_URL, oldGeneration))
+            val outcome = collector.consume(JSONObject().put("expectsVideo", true).put("structuredCarousel", true),
+                SOURCE_URL, currentGeneration) as LivePageExtractionOutcome.Complete
+            assertEquals(listOf("https://cdn.test/current.mp4"), outcome.media.map { it.url })
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `concurrent network capture consumption and resets leave a clean current page`() {
+        val collector = LivePageMediaCollector(maximumAttempts = 1000)
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(3)
+        try {
+            val jobs = listOf(
+                executor.submit {
+                    check(start.await(5, TimeUnit.SECONDS))
+                    repeat(150) { collector.captureNetworkVideo("https://cdn.test/$it.mp4") }
+                },
+                executor.submit {
+                    check(start.await(5, TimeUnit.SECONDS))
+                    repeat(150) { collector.consume(JSONObject().put("expectsVideo", true), SOURCE_URL) }
+                },
+                executor.submit {
+                    check(start.await(5, TimeUnit.SECONDS))
+                    repeat(50) { collector.reset() }
+                }
+            )
+            start.countDown()
+            jobs.forEach { it.get(5, TimeUnit.SECONDS) }
+            val generation = collector.reset()
+            collector.captureNetworkVideo("https://cdn.test/final.mp4", generation)
+            val outcome = collector.consume(JSONObject().put("expectsVideo", true).put("structuredCarousel", true),
+                SOURCE_URL, generation) as LivePageExtractionOutcome.Complete
+            assertEquals(listOf("https://cdn.test/final.mp4"), outcome.media.map { it.url })
+        } finally {
+            start.countDown()
+            executor.shutdownNow()
+        }
+    }
+
     @Test
     fun `signed variants of one Instagram image produce one preview`() {
         val collector = LivePageMediaCollector(maximumAttempts = 3, requiredStablePasses = 1)

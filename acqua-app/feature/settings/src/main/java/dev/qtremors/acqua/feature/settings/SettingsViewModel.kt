@@ -4,12 +4,15 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.qtremors.acqua.data.settings.SettingsStore
+import dev.qtremors.acqua.domain.videoQualityChoices
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.YtDlpMaintenanceGateway
 import dev.qtremors.acqua.downloader.YtDlpFailure
 import dev.qtremors.acqua.downloader.SafeDiagnostics
 import dev.qtremors.acqua.downloader.YtDlpUpdateStatus
+import dev.qtremors.acqua.downloader.YtDlpUpdateChannel
+import dev.qtremors.acqua.downloader.YtDlpUpdateInterval
 import dev.qtremors.acqua.downloader.toYtDlpFailure
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -31,8 +34,14 @@ data class SettingsUiState(
     val lastYtDlpUpdate: Long = 0L,
     val ytDlpUpdateStatus: YtDlpUpdateStatus? = null,
     val isUpdatingYtDlp: Boolean = false,
-    val ytDlpUpdateError: YtDlpFailure? = null
-)
+    val ytDlpUpdateError: YtDlpFailure? = null,
+    val ytDlpUpdateChannel: YtDlpUpdateChannel = YtDlpUpdateChannel.STABLE,
+    val ytDlpUpdateInterval: YtDlpUpdateInterval = YtDlpUpdateInterval.WEEKLY,
+    val verboseDiagnostics: Boolean = false,
+    val maximumConcurrentDownloads: Int = 1
+) {
+    val videoQualities: List<Int> get() = videoQualityChoices(maximumVideoHeight)
+}
 
 class SettingsViewModel(
     private val repository: SettingsStore,
@@ -67,6 +76,11 @@ class SettingsViewModel(
     fun setCategorizeMedia(enabled: Boolean) {
         repository.setCategorizeMedia(enabled)
         mutableState.value = mutableState.value.copy(categorizeMedia = enabled)
+    }
+
+    fun setMaximumConcurrentDownloads(value: Int) {
+        repository.setMaximumConcurrentDownloads(value)
+        mutableState.value = mutableState.value.copy(maximumConcurrentDownloads = repository.maximumConcurrentDownloads)
     }
 
     fun setFilenamePattern(value: String) {
@@ -119,6 +133,21 @@ class SettingsViewModel(
     fun setScreenProtectionEnabled(enabled: Boolean) {
         repository.setScreenProtectionEnabled(enabled)
         mutableState.value = mutableState.value.copy(screenProtectionEnabled = enabled)
+    }
+
+    fun setYtDlpUpdateChannel(value: YtDlpUpdateChannel) {
+        repository.setYtDlpUpdateChannel(value)
+        reload()
+    }
+
+    fun setYtDlpUpdateInterval(value: YtDlpUpdateInterval) {
+        repository.setYtDlpUpdateInterval(value)
+        reload()
+    }
+
+    fun setVerboseDiagnostics(enabled: Boolean) {
+        repository.setDownloadDefaults(repository.downloadDefaults().copy(verboseDiagnostics = enabled))
+        reload()
     }
 
     fun reload() {
@@ -176,6 +205,10 @@ private fun SettingsStore.readSettingsUiState(
         embedThumbnail = media.embedThumbnail,
         autoUpdateYtDlp = media.autoUpdateYtDlp,
         screenProtectionEnabled = screenProtectionEnabled(),
-        lastYtDlpUpdate = media.lastYtDlpUpdate
+        lastYtDlpUpdate = media.lastYtDlpUpdate,
+        ytDlpUpdateChannel = media.ytDlpUpdateChannel,
+        ytDlpUpdateInterval = media.ytDlpUpdateInterval,
+        verboseDiagnostics = downloadDefaults().verboseDiagnostics,
+        maximumConcurrentDownloads = maximumConcurrentDownloads
     )
 }

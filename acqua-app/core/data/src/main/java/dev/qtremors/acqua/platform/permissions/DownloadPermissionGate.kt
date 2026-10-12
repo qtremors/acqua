@@ -21,6 +21,7 @@ class DownloadPermissionGate(
 
     private var pendingAction: (() -> Unit)? = null
     private var pendingNeedsNotification = false
+    val hasPendingAction: Boolean get() = pendingAction != null
 
     val hasRequestedStorage: Boolean
         get() = savedStateHandle[KEY_STORAGE_REQUESTED] ?: false

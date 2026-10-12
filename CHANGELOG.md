@@ -2,6 +2,21 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.3] - 2026-10-12
+
+### Added
+
+- Fetch public direct image, video, and audio links without enabling browser sessions.
+- Use source, collection, chapter, and upload-date filename variables, with fallbacks for missing values.
+- Inspect nested collections in one list while keeping unavailable entries visible and retaining each item's source and collection context.
+
+### Fixed
+
+- Keep long filenames within safe byte limits, including captions, artwork, and collision numbers.
+- Retry temporary HTTP 429 and server failures within the existing automatic retry limit.
+- Fix metadata embedding for direct video and audio downloads.
+- Refresh asset metadata before downloading updates and restrict saved credentials to trusted asset endpoints, including redirects.
+
 ## [0.3.2] - 2026-10-11
 
 ### Changed

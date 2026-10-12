@@ -473,4 +473,11 @@ internal fun DownloadFailure.messageResource(): Int = when (this) {
     DownloadFailure.UPDATE_SERVICE -> R.string.ytdlp_error_update_service
     DownloadFailure.PLATFORM_LIMIT -> R.string.download_error_platform_limit
     DownloadFailure.UNKNOWN -> R.string.download_error_unknown
+    DownloadFailure.NO_CHAPTERS -> R.string.download_error_no_chapters
+    DownloadFailure.NO_SEGMENTS -> R.string.download_error_no_segments
+    DownloadFailure.SEGMENT_SERVICE -> R.string.download_error_segment_service
+    DownloadFailure.SOURCE_STREAMS_CHANGED -> R.string.download_error_source_streams_changed
+    DownloadFailure.COMMAND_TEMPLATE -> R.string.download_error_command_template
+    DownloadFailure.MEDIA_TIMELINE -> R.string.download_error_media_timeline
+    DownloadFailure.COOKIE_PROFILE -> R.string.download_error_cookie_profile
 }

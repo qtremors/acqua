@@ -26,7 +26,7 @@ import dev.qtremors.acqua.resolver.ytdlp.YtDlpResolver
 class MainDependencies(context: Context) {
     val history = HistoryRepository(context)
     val settings = AppSettingsRepository(context)
-    val mediaDownloader = HttpMediaClient()
+    val mediaDownloader = HttpMediaClient(networkOptions = { settings.downloadDefaults().network })
     val instagramSessions = InstagramSessionStore(context)
     val savedWebsites = SavedWebsiteRepository(context)
     val instagramResolver = InstagramResolver()
@@ -43,6 +43,14 @@ class MainDependencies(context: Context) {
     val resolution = MediaResolutionService(
         sourceResolver = instagramResolver,
         ytDlpResolver = ytDlpResolver,
+        publicMediaProbe = mediaDownloader::resolvePublicMedia,
+        profileResolver = { url, id, engine ->
+            val store = dev.qtremors.acqua.data.session.CookieProfileStore(context)
+            val snapshot = store.restore(store.accepted(id, url)).json()
+            if (engine == dev.qtremors.acqua.domain.DownloadEngine.YT_DLP) ytDlpEngine.inspectItems(url, true, snapshot)
+            else listOf(mediaDownloader.resolveSessionMedia(url, snapshot) ?: throw dev.qtremors.acqua.domain.MediaResolutionException(
+                dev.qtremors.acqua.domain.MediaResolutionFailure.ENGINE_REQUIRED, "Use the processing engine for webpages with a saved session."))
+        },
         inspectMedia = mediaDownloader::validateAndResolveMetadata
     )
     val fileActions = FileActions(context)

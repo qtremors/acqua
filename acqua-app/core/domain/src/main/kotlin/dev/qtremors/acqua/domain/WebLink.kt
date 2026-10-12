@@ -14,6 +14,7 @@ object WebLink {
         } else {
             trimmed
         }.trimEnd(*trailingPunctuation)
+        if (candidate.contains("://") && !candidate.startsWith("http://", true) && !candidate.startsWith("https://", true)) return null
         val withScheme = if (candidate.startsWith("http://", true) || candidate.startsWith("https://", true)) {
             candidate
         } else {
@@ -29,6 +30,10 @@ object WebLink {
     }
 
     fun extractFirst(input: String): String? = normalize(input)
+
+    fun extractAll(input: String): List<String> = webUrlPattern.findAll(input)
+        .mapNotNull { normalize(it.value) }.distinct().toList()
+        .ifEmpty { normalize(input)?.let(::listOf).orEmpty() }
 
     fun host(url: String): String? = normalize(url)?.let { normalized ->
         runCatching { URI(normalized).host?.lowercase() }.getOrNull()

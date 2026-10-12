@@ -3,6 +3,7 @@ package dev.qtremors.acqua.resolver.web
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -37,7 +38,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 
-class RenderedPageResolverActivity : ComponentActivity() {
+class RenderedPageResolverActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
     private val dependencies by lazy { application as RenderedPageResolverDependencies }
     private val savedWebsites by lazy { dependencies.resolverSavedWebsites }
     private val instagramSessions by lazy { dependencies.resolverInstagramSessions }
@@ -159,6 +160,11 @@ class RenderedPageResolverActivity : ComponentActivity() {
     }
 
     private fun resolverWebViewClient() = object : WebViewClient() {
+        override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+            super.onPageStarted(view, url, favicon)
+            mediaCollector.reset()
+        }
+
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             if (!request.isForMainFrame) return false
             val scheme = request.url.scheme?.lowercase(Locale.ROOT)
@@ -175,12 +181,12 @@ class RenderedPageResolverActivity : ComponentActivity() {
 
         override fun onPageFinished(view: WebView, url: String?) {
             super.onPageFinished(view, url)
-            url?.let(savedWebsites::record)
+            if (finishedWithResult || isFinishing || url != view.url) return
+            url?.let { savedWebsites.record(it, view.settings.userAgentString.orEmpty()) }
             if (url != null && WebLink.isInstagramHost(url) && url.contains("/accounts/login")) {
                 finishWithExpiredSession(getString(R.string.session_expired))
                 return
             }
-            mediaCollector.reset()
             scheduleExtraction(250L)
         }
 
@@ -213,10 +219,11 @@ class RenderedPageResolverActivity : ComponentActivity() {
     }
 
     private fun captureVideoRequest(request: WebResourceRequest) {
-        captureVideoUrl(request.url.toString())
+        val generation = mediaCollector.generation
+        captureVideoUrl(request.url.toString(), generation)
     }
 
-    private fun captureVideoUrl(rawUrl: String) {
+    private fun captureVideoUrl(rawUrl: String, generation: Long) {
         val lowerUrl = rawUrl.lowercase(Locale.ROOT)
         val looksLikeMp4 = lowerUrl.contains(".mp4") ||
             lowerUrl.contains("mime_type=video") ||
@@ -229,21 +236,22 @@ class RenderedPageResolverActivity : ComponentActivity() {
             .removeAllQueryParameters("byteend")
             .build()
             .toString()
-        mediaCollector.captureNetworkVideo(normalized)
+        mediaCollector.captureNetworkVideo(normalized, generation)
     }
 
-    private fun scheduleExtraction(delayMillis: Long = EXTRACTION_INTERVAL_MS) {
-        if (finishedWithResult || isFinishing) return
-        webView.postDelayed({ extractRenderedMedia() }, delayMillis)
+    private fun scheduleExtraction(delayMillis: Long = EXTRACTION_INTERVAL_MS, generation: Long = mediaCollector.generation) {
+        if (finishedWithResult || isFinishing || generation != mediaCollector.generation) return
+        webView.postDelayed({ extractRenderedMedia(generation) }, delayMillis)
     }
 
-    private fun extractRenderedMedia() {
-        if (finishedWithResult || isFinishing) return
+    private fun extractRenderedMedia(generation: Long) {
+        if (finishedWithResult || isFinishing || generation != mediaCollector.generation) return
+        val sourceUrl = webView.url.orEmpty()
         webView.evaluateJavascript(extractionScript) { rawValue ->
-            if (finishedWithResult || isFinishing) return@evaluateJavascript
+            if (finishedWithResult || isFinishing || generation != mediaCollector.generation) return@evaluateJavascript
             val payload = WebExtractionEngine.decodeResult(rawValue)
-            when (val outcome = mediaCollector.consume(payload, webView.url.orEmpty())) {
-                LivePageExtractionOutcome.Continue -> scheduleExtraction()
+            when (val outcome = mediaCollector.consume(payload, sourceUrl, generation)) {
+                LivePageExtractionOutcome.Continue -> scheduleExtraction(generation = generation)
                 is LivePageExtractionOutcome.Complete -> finishWithMedia(outcome.media)
                 is LivePageExtractionOutcome.Failed -> when (outcome.reason) {
                     LivePageExtractionFailure.SESSION_EXPIRED ->
@@ -311,6 +319,8 @@ class RenderedPageResolverActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        finishedWithResult = true
+        mediaCollector.reset()
         if (::webView.isInitialized) {
             webView.stopLoading()
             webView.loadUrl("about:blank")

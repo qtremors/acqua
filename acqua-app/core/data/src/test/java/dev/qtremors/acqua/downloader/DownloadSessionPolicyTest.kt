@@ -49,19 +49,20 @@ class DownloadSessionPolicyTest {
         val cookies = CookieManager.getInstance()
         cookies.setAcceptCookie(true)
         cookies.setCookie("https://www.youtube.com", "sessionid=saved-session; Path=/; Secure")
-        val engine = YtDlpEngine(context)
-        val create = YtDlpEngine::class.java.getDeclaredMethod("createCookieFile", String::class.java, Boolean::class.javaPrimitiveType)
-            .apply { isAccessible = true }
+        dev.qtremors.acqua.data.session.BrowserIdentityStore(context).record("https://www.youtube.com/", "Observed Browser UA")
+        val transfer = dev.qtremors.acqua.data.session.BrowserSessionTransfer(context, capture = { name, url ->
+            dev.qtremors.acqua.data.session.BrowserCookieCapture(context, { null }).capture(name, url)
+        })
 
         settings.setUseBrowserSessions(false)
-        assertNull(create.invoke(engine, "https://youtu.be/private", true))
+        assertNull(transfer.create("https://youtu.be/private", true))
         settings.setUseBrowserSessions(true)
-        assertNull(create.invoke(engine, "https://youtu.be/private", false))
-        val file = create.invoke(engine, "https://youtu.be/private", true) as File
+        assertNull(transfer.create("https://youtu.be/private", false))
+        val file = transfer.create("https://youtu.be/private", true)!!.file
         try {
             assertTrue(file.readText().contains("sessionid\tsaved-session"))
             settings.setUseBrowserSessions(false)
-            assertNull(create.invoke(engine, "https://youtu.be/private", true))
+            assertNull(transfer.create("https://youtu.be/private", true))
         } finally {
             file.delete()
             cookies.removeAllCookies(null)
@@ -88,7 +89,7 @@ class DownloadSessionPolicyTest {
                 itemIndex = 0, options = YtDlpDownloadOptions())
             val executor = DownloadExecutor(context, settings, HistoryRepository(context), HttpMediaClient())
 
-            val failure = assertThrows(IllegalStateException::class.java) {
+            val failure = assertThrows(dev.qtremors.acqua.data.network.MediaHttpException::class.java) {
                 runBlocking { executor.execute(request, UUID.randomUUID().toString(), {}, {}) }
             }
 

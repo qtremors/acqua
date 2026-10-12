@@ -36,7 +36,8 @@ class DownloadWorkDataTest {
             embedMetadata = false,
             embedThumbnail = false,
             cropArtwork = false,
-            preserveOriginalMetadata = true
+            preserveOriginalMetadata = true,
+            downloadThumbnail = true
         )
 
         val decoded = DownloadWorkData.decode(

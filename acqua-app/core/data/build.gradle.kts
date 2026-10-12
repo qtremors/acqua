@@ -11,8 +11,8 @@ android {
         minSdk = 24
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "APPLICATION_ID", "\"dev.qtremors.acqua\"")
-        buildConfigField("String", "VERSION_NAME", "\"0.3.2\"")
-        buildConfigField("int", "VERSION_CODE", "32")
+        buildConfigField("String", "VERSION_NAME", "\"0.3.3\"")
+        buildConfigField("int", "VERSION_CODE", "33")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -20,6 +20,7 @@ android {
     }
     buildFeatures { buildConfig = true }
     testOptions { unitTests.isIncludeAndroidResources = true }
+    packaging { jniLibs.useLegacyPackaging = true }
 }
 
 kotlin {

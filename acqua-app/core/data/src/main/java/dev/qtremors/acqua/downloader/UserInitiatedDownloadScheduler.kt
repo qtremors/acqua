@@ -15,8 +15,7 @@ internal class UserInitiatedDownloadScheduler(context: Context) {
     private val scheduler = applicationContext.getSystemService(JobScheduler::class.java)
 
     @RequiresApi(34)
-    fun schedule(input: Data): UUID? {
-        val id = UUID.randomUUID()
+    fun schedule(input: Data, id: UUID = UUID.randomUUID()): UUID? {
         val extras = DownloadWorkData.toPersistableBundle(input).apply {
             putString(KEY_TASK_ID, id.toString())
         }

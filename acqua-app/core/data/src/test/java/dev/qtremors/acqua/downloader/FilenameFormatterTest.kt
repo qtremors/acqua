@@ -2,10 +2,54 @@ package dev.qtremors.acqua.downloader
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
 import java.util.Date
 
 class FilenameFormatterTest {
+    @get:Rule val temporary = TemporaryFolder()
+
+    @Test fun `source collection chapter and UTC upload date expressions support literal braces and fallbacks`() {
+        val context = FilenameContext("abc", "Source", "Playlist", 3, 4, uploadTimestampMillis = 1_704_067_200_000L)
+        val name = FilenameFormatter.format(
+            "{{literal}}_{source_id}_{extractor}_{collection}_{collection_index}_{collection_count}_{chapter|Whole}_{upload_date}",
+            null, 0, 0, 0, "mp4", context = context)
+        assertEquals("{literal}_abc_Source_Playlist_3_4_Whole_20240101.mp4", name)
+        assertEquals("{date}_Unknown.mp3", FilenameFormatter.format("{title}_{artist|Unknown}", null, 0, 0, 0, "mp3", title = "{date}"))
+        assertEquals("{unknown}_{unfinished.mp4", FilenameFormatter.format("{unknown}_{unfinished", null, 0, 0, 0, "mp4"))
+    }
+
+    @Test fun `long ASCII multibyte and emoji names reserve space for sidecars extensions and collisions`() {
+        for (title in listOf("a".repeat(1000), "測試".repeat(1000), "😀".repeat(1000))) {
+            val name = FilenameFormatter.format("{title}", null, 0, 0, 0, "mp4", title = title)
+            val sidecar = FilenameFormatter.withArtifactSuffix(name, "." + "language".repeat(20), "srt")
+            val collision = FilenameFormatter.withCollisionSuffix(sidecar, Int.MAX_VALUE)
+            for (result in listOf(name, sidecar, collision)) {
+                assertTrue(result.toByteArray(Charsets.UTF_8).size <= FilenameFormatter.MAX_FILENAME_BYTES)
+                assertEquals(result, String(result.toByteArray(Charsets.UTF_8), Charsets.UTF_8))
+                assertFalse(result.contains('\uFFFD'))
+                java.io.File(temporary.root, result).writeText("fixture")
+            }
+            assertTrue(name.endsWith(".mp4"))
+            assertTrue(collision.endsWith(" (${Int.MAX_VALUE}).srt"))
+            assertTrue(sidecar.startsWith(name.substringBeforeLast('.')))
+        }
+    }
+
+    @Test fun `collisions keep every original file and output names sanitize malicious context`() {
+        val name = FilenameFormatter.format("{source_id}_{collection}_{chapter}", null, 0, 0, 0, "mp4",
+            context = FilenameContext(sourceId = "../id", collection = "a/b", chapter = "bad\u0000:chapter"))
+        assertFalse(name.contains('/'))
+        assertFalse(name.contains('\u0000'))
+        val first = java.io.File(temporary.root, name).apply { writeText("first") }
+        val second = java.io.File(temporary.root, FilenameFormatter.withCollisionSuffix(name, 1)).apply { writeText("second") }
+        assertEquals("first", first.readText())
+        assertEquals("second", second.readText())
+        assertFalse(first == second)
+        assertTrue(FilenameFormatter.withCollisionSuffix("name." + "x".repeat(1000), 1).toByteArray().size <= FilenameFormatter.MAX_FILENAME_BYTES)
+    }
     @Test
     fun `only collections include filename indexes`() {
         fun filename(count: Int, index: Int) = FilenameFormatter.format(

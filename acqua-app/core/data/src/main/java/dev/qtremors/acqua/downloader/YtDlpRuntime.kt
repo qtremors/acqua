@@ -44,10 +44,14 @@ object YtDlpRuntime {
 
     fun cancel(processId: String): Boolean = YoutubeDL.getInstance().destroyProcessById(processId)
 
-    fun update(context: Context): YtDlpUpdateStatus = lifecycleLock.write {
+    fun update(context: Context, channel: YtDlpUpdateChannel = YtDlpUpdateChannel.STABLE): YtDlpUpdateStatus = lifecycleLock.write {
         initialize(context)
         YoutubeDL.getInstance()
-            .updateYoutubeDL(context.applicationContext, YoutubeDL.UpdateChannel.STABLE)
+            .updateYoutubeDL(context.applicationContext, when (channel) {
+                YtDlpUpdateChannel.STABLE -> YoutubeDL.UpdateChannel.STABLE
+                YtDlpUpdateChannel.NIGHTLY -> YoutubeDL.UpdateChannel.NIGHTLY
+                YtDlpUpdateChannel.MASTER -> YoutubeDL.UpdateChannel.MASTER
+            })
             .toAcquaUpdateStatus()
     }
 

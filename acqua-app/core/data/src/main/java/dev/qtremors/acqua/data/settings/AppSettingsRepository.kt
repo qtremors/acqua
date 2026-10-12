@@ -5,17 +5,22 @@ import androidx.core.content.edit
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
+import dev.qtremors.acqua.downloader.DownloadOptionsCodec
+import dev.qtremors.acqua.downloader.YtDlpDownloadOptions
 import dev.qtremors.acqua.domain.DownloadEngine
+import dev.qtremors.acqua.domain.MediaKind
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 
 data class DownloadSettings(
     val baseFolder: String,
     val categorizeMedia: Boolean,
     val filenamePattern: String,
-    val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN
+    val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN,
+    val destinations: DownloadDestinations = DownloadDestinations()
 )
 
 data class MediaProcessingSettings(
@@ -26,10 +31,15 @@ data class MediaProcessingSettings(
     val autoUpdateYtDlp: Boolean,
     val lastYtDlpUpdate: Long,
     val cropArtwork: Boolean = true,
-    val preserveOriginalMetadata: Boolean = false
+    val preserveOriginalMetadata: Boolean = false,
+    val ytDlpUpdateChannel: dev.qtremors.acqua.downloader.YtDlpUpdateChannel = dev.qtremors.acqua.downloader.YtDlpUpdateChannel.STABLE,
+    val ytDlpUpdateInterval: dev.qtremors.acqua.downloader.YtDlpUpdateInterval = dev.qtremors.acqua.downloader.YtDlpUpdateInterval.WEEKLY,
+    val lastYtDlpAttempt: Long = 0L
 )
 
-interface SettingsStore {
+data class LastDownloadSelection(val engine: DownloadEngine, val options: YtDlpDownloadOptions)
+
+interface SettingsStore : ConcurrentDownloadSettings {
     fun screenProtectionEnabled(): Boolean
     fun setScreenProtectionEnabled(enabled: Boolean)
     fun screenProtectionEnabledFlow(): Flow<Boolean>
@@ -46,14 +56,64 @@ interface SettingsStore {
     fun setCropArtwork(enabled: Boolean)
     fun setPreserveOriginalMetadata(enabled: Boolean)
     fun setAutoUpdateYtDlp(enabled: Boolean)
+    fun setYtDlpUpdateChannel(value: dev.qtremors.acqua.downloader.YtDlpUpdateChannel) {}
+    fun setYtDlpUpdateInterval(value: dev.qtremors.acqua.downloader.YtDlpUpdateInterval) {}
     fun lastDownloadEngine(): DownloadEngine
     fun setLastDownloadEngine(value: DownloadEngine)
     fun lastDownloadContentType(): DownloadContentType?
     fun setLastDownloadContentType(value: DownloadContentType)
+    fun downloadDefaults(): YtDlpDownloadOptions = YtDlpDownloadOptions()
+    fun setDownloadDefaults(options: YtDlpDownloadOptions) {}
+    fun preferenceChanges(): Flow<Unit> = emptyFlow()
+    fun lastDownloadSelection(kind: MediaKind): LastDownloadSelection? = null
+    fun rememberDownloadSelection(kind: MediaKind, selection: LastDownloadSelection) {}
 }
 
-class AppSettingsRepository(context: Context) : SettingsStore {
+class AppSettingsRepository(context: Context) : SettingsStore, ConcurrentDownloadSettings by DownloadConcurrencyPreferences(context) {
     private val preferences = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val destinationStore = DownloadDestinationStore(context)
+
+
+    override fun lastDownloadSelection(kind: MediaKind): LastDownloadSelection? = runCatching {
+        val encoded = preferences.getString("$KEY_LAST_SELECTION.${kind.name}", null) ?: return null
+        val engine = preferences.getString("$KEY_LAST_SELECTION.${kind.name}.engine", null)
+            ?.let(DownloadEngine::valueOf) ?: lastDownloadEngine()
+        LastDownloadSelection(engine, DownloadOptionsCodec.decode(encoded, YtDlpDownloadOptions()))
+    }.getOrNull()
+
+    override fun rememberDownloadSelection(kind: MediaKind, selection: LastDownloadSelection) {
+        val reusable = selection.options.copy(videoFormatId = null, audioFormatId = null,
+            cookieProfileId = null, cookieProfileFingerprint = null,
+            additionalAudioFormatIds = emptySet(), acceptedStreams = emptyList(),
+            commandTemplateId = null, commandTemplateSnapshot = null, formatSelectorOverride = null, templateAudioMultistreams = false,
+            videoFormatIncludesAudio = true, clipStartSeconds = null, clipEndSeconds = null, clipRanges = emptyList(), captionTiming = dev.qtremors.acqua.downloader.CaptionTiming(), splitChapters = false,
+            filenamePatternOverride = null, audioFilenamePatternOverride = null)
+        val remembered = selection.copy(options = reusable)
+        if (lastDownloadSelection(kind) == remembered) return
+        preferences.edit {
+            putString("$KEY_LAST_SELECTION.${kind.name}", DownloadOptionsCodec.encode(reusable))
+            putString("$KEY_LAST_SELECTION.${kind.name}.engine", selection.engine.name)
+        }
+    }
+
+    override fun downloadDefaults(): YtDlpDownloadOptions = runCatching {
+        DownloadOptionsCodec.decode(preferences.getString(KEY_DOWNLOAD_DEFAULTS, null), YtDlpDownloadOptions())
+    }.getOrDefault(YtDlpDownloadOptions())
+
+    override fun setDownloadDefaults(options: YtDlpDownloadOptions) {
+        val defaults = YtDlpDownloadOptions(captionMode = options.captionMode, captionFormat = options.captionFormat,
+            captionLanguages = options.captionLanguages, automaticCaptions = options.automaticCaptions,
+            skipArchived = options.skipArchived, recordHistory = options.recordHistory, verboseDiagnostics = options.verboseDiagnostics,
+            network = options.network.validated(), removeSegments = options.removeSegments.toSet(), formatPolicy = options.formatPolicy.validated().copy(deviceCodecs = emptySet()))
+        preferences.edit { putString(KEY_DOWNLOAD_DEFAULTS, DownloadOptionsCodec.encode(defaults)) }
+    }
+
+    override fun preferenceChanges(): Flow<Unit> = callbackFlow {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> trySend(Unit) }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        trySend(Unit)
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
 
     fun useBrowserSessions(): Boolean = preferences.getBoolean(KEY_USE_BROWSER_SESSIONS, false)
 
@@ -90,7 +150,8 @@ class AppSettingsRepository(context: Context) : SettingsStore {
         audioFilenamePattern = preferences.getString(
             KEY_AUDIO_FILENAME_PATTERN,
             FilenameFormatter.DEFAULT_AUDIO_PATTERN
-        ).orEmpty().ifBlank { FilenameFormatter.DEFAULT_AUDIO_PATTERN }
+        ).orEmpty().ifBlank { FilenameFormatter.DEFAULT_AUDIO_PATTERN },
+        destinations = destinationStore.get()
     )
 
     override fun setBaseFolder(value: String) {
@@ -119,15 +180,26 @@ class AppSettingsRepository(context: Context) : SettingsStore {
         autoUpdateYtDlp = preferences.getBoolean(KEY_AUTO_UPDATE_YT_DLP, true),
         lastYtDlpUpdate = preferences.getLong(KEY_LAST_YT_DLP_UPDATE, 0L),
         cropArtwork = preferences.getBoolean(KEY_CROP_ARTWORK, true),
-        preserveOriginalMetadata = preferences.getBoolean(KEY_ORIGINAL_METADATA, false)
+        preserveOriginalMetadata = preferences.getBoolean(KEY_ORIGINAL_METADATA, false),
+        ytDlpUpdateChannel = dev.qtremors.acqua.downloader.YtDlpUpdateChannel.entries.firstOrNull {
+            it.name == preferences.getString(KEY_YT_DLP_CHANNEL, null) } ?: dev.qtremors.acqua.downloader.YtDlpUpdateChannel.STABLE,
+        ytDlpUpdateInterval = dev.qtremors.acqua.downloader.YtDlpUpdateInterval.entries.firstOrNull {
+            it.name == preferences.getString(KEY_YT_DLP_INTERVAL, null) } ?: dev.qtremors.acqua.downloader.YtDlpUpdateInterval.WEEKLY,
+        lastYtDlpAttempt = preferences.getLong(KEY_YT_DLP_ATTEMPT, 0L)
     )
 
     override fun setMaximumVideoHeight(value: Int) {
         preferences.edit { putInt(KEY_MAXIMUM_VIDEO_HEIGHT, value.coerceAtLeast(0)) }
+        lastDownloadSelection(MediaKind.VIDEO)?.let {
+            rememberDownloadSelection(MediaKind.VIDEO, it.copy(options = it.options.copy(maximumVideoHeight = value.coerceAtLeast(0))))
+        }
     }
 
     override fun setAudioFormat(value: AudioOutputFormat) {
         preferences.edit { putString(KEY_AUDIO_FORMAT, value.preferenceValue) }
+        lastDownloadSelection(MediaKind.AUDIO)?.let {
+            rememberDownloadSelection(MediaKind.AUDIO, it.copy(options = it.options.copy(audioFormat = value)))
+        }
     }
 
     override fun setEmbedMetadata(enabled: Boolean) {
@@ -166,8 +238,21 @@ class AppSettingsRepository(context: Context) : SettingsStore {
         preferences.edit { putBoolean(KEY_AUTO_UPDATE_YT_DLP, enabled) }
     }
 
-    fun markYtDlpUpdated(timestamp: Long = System.currentTimeMillis()) {
-        preferences.edit { putLong(KEY_LAST_YT_DLP_UPDATE, timestamp) }
+    override fun setYtDlpUpdateChannel(value: dev.qtremors.acqua.downloader.YtDlpUpdateChannel) {
+        if (mediaProcessingSettings().ytDlpUpdateChannel == value) return
+        preferences.edit { putString(KEY_YT_DLP_CHANNEL, value.name); remove(KEY_LAST_YT_DLP_UPDATE); remove(KEY_YT_DLP_ATTEMPT) }
+    }
+
+    override fun setYtDlpUpdateInterval(value: dev.qtremors.acqua.downloader.YtDlpUpdateInterval) {
+        preferences.edit { putString(KEY_YT_DLP_INTERVAL, value.name) }
+    }
+
+    fun cachedYtDlpVersion(): String? = preferences.getString(KEY_YT_DLP_VERSION, null)
+
+    fun markYtDlpAttempt(timestamp: Long) { preferences.edit { putLong(KEY_YT_DLP_ATTEMPT, timestamp) } }
+
+    fun markYtDlpUpdated(timestamp: Long = System.currentTimeMillis(), version: String? = null) {
+        preferences.edit { putLong(KEY_LAST_YT_DLP_UPDATE, timestamp); putString(KEY_YT_DLP_VERSION, version) }
     }
 
     fun sanitizedBaseFolder(value: String): String = value
@@ -194,8 +279,14 @@ class AppSettingsRepository(context: Context) : SettingsStore {
         private const val KEY_EMBED_THUMBNAIL = "acqua_embed_thumbnail"
         private const val KEY_DOWNLOAD_ENGINE = "acqua_last_download_engine"
         private const val KEY_DOWNLOAD_CONTENT_TYPE = "acqua_last_download_content_type"
+        private const val KEY_DOWNLOAD_DEFAULTS = "acqua_download_defaults"
+        private const val KEY_LAST_SELECTION = "acqua_last_selection"
         private const val KEY_AUTO_UPDATE_YT_DLP = "acqua_auto_update_ytdlp"
         private const val KEY_LAST_YT_DLP_UPDATE = "acqua_last_ytdlp_update"
+        private const val KEY_YT_DLP_ATTEMPT = "acqua_ytdlp_attempt"
+        private const val KEY_YT_DLP_CHANNEL = "acqua_ytdlp_channel"
+        private const val KEY_YT_DLP_INTERVAL = "acqua_ytdlp_interval"
+        private const val KEY_YT_DLP_VERSION = "acqua_ytdlp_version"
         private const val DEFAULT_BASE_FOLDER = "Acqua"
     }
 }
