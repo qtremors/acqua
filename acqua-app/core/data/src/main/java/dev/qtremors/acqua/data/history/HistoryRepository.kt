@@ -84,6 +84,21 @@ class HistoryRepository(context: Context) : HistoryWriter {
         TABLE_HISTORY, null, "id = ?", arrayOf(id), null, null, null, "1"
     ).use(::readCursor).firstOrNull()
 
+    fun fileDeletionGateway(): HistoryFileDeletionGateway = HistoryFileDeleter(appContext)
+    fun transfer(): HistoryTransfer = HistoryTransfer(appContext, this)
+
+    fun exportEntries(ids: Set<String>?): List<HistoryEntry> = databaseHelper.readableDatabase.transaction(exclusive = false) {
+        buildList {
+            var offset = 0
+            do {
+                val page = loadPage(HistoryPageRequest(limit = MAX_PAGE_SIZE, offset = offset))
+                addAll(page.entries.filter { ids == null || it.id in ids })
+                if (size > HistoryTransfer.MAX_RECORDS) throw InvalidHistoryDocumentException()
+                offset += page.entries.size
+            } while (page.hasMore)
+        }
+    }
+
     fun loadPage(request: HistoryPageRequest): HistoryPage {
         val safeLimit = request.limit.coerceIn(1, MAX_PAGE_SIZE)
         val selection = mutableListOf<String>()
@@ -287,6 +302,25 @@ class HistoryRepository(context: Context) : HistoryWriter {
     }
 
     fun fileExists(entry: HistoryEntry): Boolean = fileStatus(entry) == HistoryFileStatus.AVAILABLE
+
+    fun importEntries(entries: List<HistoryEntry>): Int {
+        var count = 0
+        databaseHelper.writableDatabase.transaction {
+            val existing = readEntries(this)
+            val ids = existing.mapTo(mutableSetOf(), HistoryEntry::id)
+            val identities = existing.mapTo(mutableSetOf(), HistoryTransfer::identity)
+            entries.forEach { entry ->
+                if (entry.id !in ids && HistoryTransfer.identity(entry) !in identities) {
+                    check(insertWithOnConflict(TABLE_HISTORY, null, values(entry), SQLiteDatabase.CONFLICT_IGNORE) != -1L)
+                    ids += entry.id
+                    identities += HistoryTransfer.identity(entry)
+                    count++
+                }
+            }
+        }
+        if (count > 0) revision.update { it + 1 }
+        return count
+    }
 
     fun relink(id: String, uri: android.net.Uri) {
         require(uri.scheme == "content")

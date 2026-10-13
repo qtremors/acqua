@@ -294,24 +294,23 @@ class FeedsViewModel(
         installedStatusJob?.cancel()
         installedStatusJob = viewModelScope.launch {
             val apps = matcher.installedApps()
-            val installed = withContext(ioDispatcher) {
-                repository.trackedRepos.first().associate { repo ->
-                    repo.fullName to (repo.mappedPackageName?.let(matcher::installedVersion)
-                        ?: repo.takeIf { it.autoMatchInstalledApp }?.let { matcher.findBestMatch(it.name, apps) })
+            val fullNames = repository.trackedRepos.first().map { it.fullName }
+            fullNames.forEach { fullName ->
+                withContext(ioDispatcher) {
+                    repository.updateRepo(fullName) { current ->
+                        val app = current.mappedPackageName?.let(matcher::installedVersion)
+                            ?: current.takeIf { it.autoMatchInstalledApp }?.let { matcher.findBestMatch(it.name, apps) }
+                        current.copy(
+                            mappedPackageName = app?.packageName ?: current.mappedPackageName,
+                            mappedAppName = app?.appName ?: current.mappedAppName,
+                            installedVersionName = app?.versionName,
+                            isUpdateAvailable = app?.let { AppUpdater.compareVersions(current.latestTagName, it.versionName) > 0 } ?: false
+                        )
+                    }
                 }
-            }
-            installed.forEach { (fullName, app) ->
-                repository.updateRepo(fullName) { current ->
-                    current.copy(
-                        mappedPackageName = app?.packageName ?: current.mappedPackageName,
-                        mappedAppName = app?.appName ?: current.mappedAppName,
-                        installedVersionName = app?.versionName,
-                        isUpdateAvailable = app?.let { AppUpdater.compareVersions(current.latestTagName, it.versionName) > 0 } ?: false
-                    )
-                }
-                if (app != null && _state.value.downloadStates[fullName] is UpdateDownloadState.Downloaded) {
+                if (_state.value.downloadStates[fullName] is UpdateDownloadState.Downloaded) {
                     val repo = repository.trackedRepos.first().firstOrNull { it.fullName == fullName }
-                    if (repo != null && !repo.isUpdateAvailable) {
+                    if (repo?.installedVersionName != null && !repo.isUpdateAvailable) {
                         _state.value = _state.value.withDownload(fullName, UpdateDownloadState.Idle)
                     }
                 }
@@ -320,28 +319,39 @@ class FeedsViewModel(
     }
 
     fun download(repo: TrackedRepo) {
-        if (repo.downloadUrl == null && repo.downloadApiUrl == null) {
-            return showMessage(AppUpdateNotice.Failure(AppUpdateFailure.NO_APK))
-        }
         when (val download = _state.value.downloadStates[repo.fullName]) {
             is UpdateDownloadState.Downloading -> return
             is UpdateDownloadState.Downloaded -> return install(repo, download.apkFile)
             else -> Unit
         }
+        _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Downloading(0, 0, 0))
         viewModelScope.launch {
+            fun fail(failure: AppUpdateFailure) {
+                _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Error(failure))
+                showMessage(AppUpdateNotice.Failure(failure))
+            }
             val token = withContext(ioDispatcher) { auth.token }
-            val url = (if (!token.isNullOrBlank()) repo.downloadApiUrl ?: repo.downloadUrl else repo.downloadUrl)
-                ?: return@launch showMessage(AppUpdateNotice.Failure(AppUpdateFailure.NO_APK))
-            _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Downloading(0, repo.apkSizeBytes, 0))
+            val asset = try {
+                val release = if (repo.allowPreReleases) api.getReleases(repo.owner, repo.name)
+                    .firstOrNull { !it.draft } else api.getLatestRelease(repo.owner, repo.name)
+                release?.assets?.let { assets ->
+                    if (repo.selectedApkName == TrackedRepo.AUTO_APK) AppUpdater.selectBestApkAsset(assets)
+                    else assets.firstOrNull { it.name == repo.selectedApkName && it.name.endsWith(".apk", true) }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                return@launch fail(AppUpdateFailure.DOWNLOAD)
+            } ?: return@launch fail(AppUpdateFailure.NO_APK)
+            val url = (if (!token.isNullOrBlank()) asset.url ?: asset.browser_download_url else asset.browser_download_url)
+                ?: return@launch fail(AppUpdateFailure.NO_APK)
+            _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Downloading(0, asset.size, 0))
             updater.downloadUpdate(
                 downloadUrl = url,
-                fileName = repo.selectedApkName.takeUnless { it == TrackedRepo.AUTO_APK }
-                    ?: repo.downloadUrl?.substringAfterLast('/')
-                    ?: url.substringAfterLast('/'),
-                expectedSizeBytes = repo.apkSizeBytes,
+                fileName = asset.name,
+                expectedSizeBytes = asset.size,
                 expectedPackageName = repo.mappedPackageName,
                 requireNewerThanInstalled = repo.installedVersionName != null,
-                authorizationToken = token.takeIf { url == repo.downloadApiUrl }
+                authorizationToken = token.takeIf { url == asset.url }
             ) { bytes, total, percent ->
                 _state.value = _state.value.withDownload(
                     repo.fullName,

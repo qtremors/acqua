@@ -112,6 +112,23 @@ class FeedsViewModelTest {
         assertEquals(1, updater.downloadCalls)
     }
 
+    @Test fun `downloads refresh trusted asset metadata instead of using imported endpoints`() = runTest {
+        var lookedUp = false
+        val api = FakeGitHubService().apply { beforeRelease = { lookedUp = true } }
+        val updater = FakeUpdateGateway()
+        val viewModel = viewModel(api = api, updater = updater,
+            auth = FakeAuthStore().apply { token = "dummy-token" })
+        val imported = trackedRepo().copy(downloadUrl = "https://untrusted.example/evil.apk",
+            downloadApiUrl = "https://untrusted.example/asset", selectedApkName = "Acqua.apk")
+        advanceUntilIdle()
+        viewModel.download(imported)
+        advanceUntilIdle()
+        assertTrue(lookedUp)
+        assertEquals("https://api.github.com/repos/owner/repo/releases/assets/123", updater.requestedUrl)
+        assertEquals("dummy-token", updater.requestedToken)
+        assertEquals(1, updater.downloadCalls)
+    }
+
     private fun viewModel(
         store: FakeTrackedRepoStore = FakeTrackedRepoStore(),
         api: FakeGitHubService = FakeGitHubService(),
@@ -237,6 +254,85 @@ class FeedsViewModelTest {
         assertTrue(store.trackedRepos.value.isEmpty())
     }
 
+    @Test
+    fun `installed status keeps package edits made before the atomic write`() = runTest {
+        val store = FakeTrackedRepoStore()
+        store.trackedRepos.value = listOf(trackedRepo())
+        val matcher = FakeInstalledApps().apply {
+            app = InstalledApp("other.package", "Other app", "0.3.0", 30)
+        }
+        val viewModel = viewModel(store = store, matcher = matcher)
+        advanceUntilIdle()
+        store.beforeUpdate = {
+            store.trackedRepos.value = listOf(store.trackedRepos.value.single().copy(
+                mappedPackageName = "other.package", mappedAppName = "Other app", autoMatchInstalledApp = false))
+        }
+
+        viewModel.refreshInstalledStatus()
+        advanceUntilIdle()
+
+        val saved = store.trackedRepos.value.single()
+        assertEquals("other.package", saved.mappedPackageName)
+        assertEquals("Other app", saved.mappedAppName)
+        assertEquals("0.3.0", saved.installedVersionName)
+        assertFalse(saved.autoMatchInstalledApp)
+    }
+
+    @Test
+    fun `installed status does not restore a cleared mapping or a removed repository`() = runTest {
+        val store = FakeTrackedRepoStore()
+        val original = trackedRepo()
+        store.trackedRepos.value = listOf(original)
+        val matcher = FakeInstalledApps().apply {
+            app = InstalledApp("dev.qtremors.acqua", "Acqua", "0.3.0", 30)
+        }
+        val viewModel = viewModel(store = store, matcher = matcher)
+        advanceUntilIdle()
+        store.beforeUpdate = {
+            store.trackedRepos.value = listOf(original.copy(
+                mappedPackageName = null, mappedAppName = null, autoMatchInstalledApp = false))
+        }
+        viewModel.refreshInstalledStatus()
+        advanceUntilIdle()
+        assertNull(store.trackedRepos.value.single().mappedPackageName)
+        assertNull(store.trackedRepos.value.single().installedVersionName)
+
+        store.beforeUpdate = { store.trackedRepos.value = emptyList() }
+        viewModel.refreshInstalledStatus()
+        advanceUntilIdle()
+        assertTrue(store.trackedRepos.value.isEmpty())
+    }
+
+    @Test
+    fun `import during release refresh keeps imported membership and package choices`() = runTest {
+        val store = FakeTrackedRepoStore()
+        val original = trackedRepo()
+        store.trackedRepos.value = listOf(original)
+        val arm64 = GitHubAsset("arm64.apk", "https://downloads.example/arm64.apk", size = 123)
+        store.importedRepos = listOf(
+            original.copy(selectedApkName = arm64.name, mappedPackageName = "imported.package",
+                autoMatchInstalledApp = false, notificationsEnabled = false),
+            original.copy(owner = "new", name = "app", fullName = "new/app")
+        )
+        val api = FakeGitHubService().apply { extraAssets = listOf(arm64) }
+        val viewModel = viewModel(store = store, api = api)
+        api.beforeRelease = { viewModel.importBackup("backup").getOrThrow() }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.trackedRepos.collect {} }
+        advanceUntilIdle()
+
+        viewModel.refresh()
+        advanceUntilIdle()
+
+        assertEquals(2, store.trackedRepos.value.size)
+        val saved = store.trackedRepos.value.single { it.fullName == original.fullName }
+        assertEquals("imported.package", saved.mappedPackageName)
+        assertEquals(arm64.name, saved.selectedApkName)
+        assertEquals(arm64.browser_download_url, saved.downloadUrl)
+        assertFalse(saved.autoMatchInstalledApp)
+        assertFalse(saved.notificationsEnabled)
+        assertTrue(store.trackedRepos.value.any { it.fullName == "new/app" })
+    }
+
     private fun trackedRepo() = TrackedRepo(
         owner = "qtremors",
         name = "acqua",
@@ -251,6 +347,8 @@ class FeedsViewModelTest {
     private class FakeTrackedRepoStore : TrackedRepoStore {
         override val trackedRepos = MutableStateFlow<List<TrackedRepo>>(emptyList())
         var ensureCalls = 0
+        var beforeUpdate: (() -> Unit)? = null
+        var importedRepos: List<TrackedRepo> = emptyList()
 
         override suspend fun addOrUpdateRepo(repo: TrackedRepo) {
             trackedRepos.value = trackedRepos.value.filterNot { it.fullName == repo.fullName } + repo
@@ -270,19 +368,23 @@ class FeedsViewModelTest {
         }
 
         override suspend fun updateRepo(fullName: String, transform: (TrackedRepo) -> TrackedRepo) {
+            beforeUpdate?.also { beforeUpdate = null }?.invoke()
             trackedRepos.value = trackedRepos.value.map { if (it.fullName == fullName) transform(it) else it }
         }
 
         override suspend fun exportBackup(): String = "{}"
 
-        override suspend fun importBackup(jsonString: String): Result<Int> = Result.success(0)
+        override suspend fun importBackup(jsonString: String): Result<Int> {
+            trackedRepos.value = (trackedRepos.value + importedRepos).associateBy { it.fullName }.values.toList()
+            return Result.success(importedRepos.size)
+        }
     }
 
     private class FakeGitHubService : GitHubRepositoryService {
         var failure: Throwable? = null
         var delayFirstRepository = false
         var repositoryInfo: GitHubRepositoryInfo? = null
-        var beforeRelease: (() -> Unit)? = null
+        var beforeRelease: (suspend () -> Unit)? = null
         var extraAssets: List<GitHubAsset> = emptyList()
         val completedRepoLookups = mutableListOf<String>()
 
@@ -308,7 +410,7 @@ class FeedsViewModelTest {
                     GitHubAsset(
                         name = "Acqua.apk",
                         browser_download_url = "https://downloads.example/Acqua.apk",
-                        url = "https://api.example/Acqua.apk"
+                        url = "https://api.github.com/repos/owner/repo/releases/assets/123"
                     )
                 ) + extraAssets
             )
@@ -346,6 +448,8 @@ class FeedsViewModelTest {
     }
 
     private class FakeUpdateGateway : AppUpdateGateway {
+        var requestedUrl: String? = null
+        var requestedToken: String? = null
         val downloadedFile = File("Acqua-test.apk")
         var downloadCalls = 0
         val installedFiles = mutableListOf<File>()
@@ -361,6 +465,8 @@ class FeedsViewModelTest {
             onProgress: (Long, Long, Int) -> Unit
         ): Result<File> {
             downloadCalls += 1
+            requestedUrl = downloadUrl
+            requestedToken = authorizationToken
             onProgress(50L, 100L, 50)
             onProgress(100L, 100L, 100)
             return Result.success(downloadedFile)

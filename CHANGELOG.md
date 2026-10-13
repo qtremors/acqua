@@ -2,6 +2,12 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.4] - 2026-10-13
+
+### Fixed
+
+- Preserve package choices changed during installed-app refreshes in Feeds.
+
 ## [0.3.3] - 2026-10-12
 
 ### Added
