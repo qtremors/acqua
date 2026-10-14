@@ -35,6 +35,7 @@ import kotlinx.coroutines.launch
 
 class AcquaApp : Application(), SingletonImageLoader.Factory, Configuration.Provider,
     DownloadExecutionProvider, RenderedPageResolverDependencies {
+    override fun attachBaseContext(base: android.content.Context) { super.attachBaseContext(dev.qtremors.acqua.settings.AppLanguages.wrap(base)) }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val appSessionTracker = AppSessionTracker()
     val dependencies by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { MainDependencies(this) }
@@ -51,14 +52,34 @@ class AcquaApp : Application(), SingletonImageLoader.Factory, Configuration.Prov
 
     override fun onCreate() {
         super.onCreate()
+        val diagnosticStore = dev.qtremors.acqua.downloader.DownloadDiagnosticsStore(this)
+        val crashHandler = Thread.getDefaultUncaughtExceptionHandler()
+        if (crashHandler != null && crashHandler !is dev.qtremors.acqua.downloader.DiagnosticCrashHandler) {
+            Thread.setDefaultUncaughtExceptionHandler(dev.qtremors.acqua.downloader.DiagnosticCrashHandler(
+                diagnosticStore, { AppSettingsRepository(this).downloadDefaults().verboseDiagnostics }, crashHandler))
+        }
 
+        val abandonedDocuments = dev.qtremors.acqua.platform.storage.PendingDocumentRegistry.snapshot(this)
+        val abandonedFolderTransfers = cacheDir.listFiles().orEmpty().filter {
+            it.isFile && it.name.startsWith("folder-download-") && it.name.endsWith(".part")
+        }
         applicationScope.launch {
+            runCatching { diagnosticStore.load() }
+            dev.qtremors.acqua.platform.storage.PendingDocumentRegistry.cleanup(this@AcquaApp, abandonedDocuments)
+            abandonedFolderTransfers.forEach { it.delete() }
             PendingMediaStoreRegistry.cleanup(this@AcquaApp)
             YtDlpTemporaryFiles.cleanupAfterProcessRestart(this@AcquaApp)
         }
 
         SensitiveMemory.clearDelegate = { SingletonImageLoader.get(this).memoryCache?.clear() }
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) {
+                applicationScope.launch {
+                    runCatching { dependencies.ytDlpMaintenance.update(force = false) }
+                        .onFailure { android.util.Log.w("AcquaApp", "Engine update check failed", dev.qtremors.acqua.downloader.SafeDiagnostics.redact(it)) }
+                }
+            }
+
             override fun onStop(owner: LifecycleOwner) {
                 SensitiveMemory.clear()
             }

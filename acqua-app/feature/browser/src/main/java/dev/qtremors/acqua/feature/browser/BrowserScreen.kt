@@ -312,6 +312,7 @@ fun BrowserScreen(
     if (showManageDialog || showBookmarksSheet) {
         ManageWebsiteDataDialog(
             websites = state.websites,
+            supportsSiteRemoval = viewModel.supportsSiteRemoval,
             onDismiss = {
                 showManageDialog = false
                 showBookmarksSheet = false
@@ -324,12 +325,13 @@ fun BrowserScreen(
             onClearSelected = {
                 showManageDialog = false
                 showBookmarksSheet = false
+                activeWebView?.apply { stopLoading(); loadUrl("about:blank"); clearFocus() }
                 viewModel.clearSelected(it)
             },
             onClearAll = {
                 showManageDialog = false
                 showBookmarksSheet = false
-                activeWebView?.clearFocus()
+                activeWebView?.apply { stopLoading(); loadUrl("about:blank"); clearFocus() }
                 viewModel.clearAll()
             }
         )

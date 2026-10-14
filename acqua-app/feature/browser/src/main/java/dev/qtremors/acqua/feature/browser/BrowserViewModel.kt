@@ -53,6 +53,9 @@ class BrowserViewModel(
     )
     val state = mutableState.asStateFlow()
     private var sessionJob: Job? = null
+    private val persistenceLock = Any()
+    @Volatile private var dataGeneration = 0L
+    val supportsSiteRemoval: Boolean get() = browserData.supportsSiteRemoval
     internal var savedWebViewState: Bundle? = null
         private set
 
@@ -172,19 +175,35 @@ class BrowserViewModel(
         mutableState.value = mutableState.value.copy(websites = savedWebsites.load())
     }
 
-    fun recordVisit(url: String) = viewModelScope.launch(Dispatchers.IO) {
-        savedWebsites.record(url)
-    }
-
-    fun updateWebsiteIcon(url: String, icon: Bitmap) = viewModelScope.launch(Dispatchers.IO) {
-        savedWebsites.updateIcon(url, icon)
-    }
-
-    fun saveSession(session: dev.qtremors.acqua.data.session.SavedInstagramSession) =
-        viewModelScope.launch(Dispatchers.IO) {
-            instagramSessions.save(session)
-            mutableState.value = mutableState.value.copy(savedSession = session)
+    fun recordVisit(url: String, userAgent: String? = null): Job {
+        val generation = dataGeneration
+        return viewModelScope.launch(Dispatchers.IO) {
+            synchronized(persistenceLock) {
+                if (generation == dataGeneration && mutableState.value.currentUrl != null) savedWebsites.record(url, userAgent)
+            }
         }
+    }
+
+    fun updateWebsiteIcon(url: String, icon: Bitmap): Job {
+        val generation = dataGeneration
+        return viewModelScope.launch(Dispatchers.IO) {
+            synchronized(persistenceLock) {
+                if (generation == dataGeneration && mutableState.value.currentUrl != null) savedWebsites.updateIcon(url, icon)
+            }
+        }
+    }
+
+    fun saveSession(session: dev.qtremors.acqua.data.session.SavedInstagramSession): Job {
+        val generation = dataGeneration
+        return viewModelScope.launch(Dispatchers.IO) {
+            synchronized(persistenceLock) {
+                if (generation == dataGeneration && WebLink.isInstagramHost(mutableState.value.currentUrl.orEmpty())) {
+                    instagramSessions.save(session)
+                    mutableState.value = mutableState.value.copy(savedSession = session)
+                }
+            }
+        }
+    }
 
     fun removeWebsite(url: String) {
         val host = WebLink.host(url)?.removePrefix("www.") ?: return
@@ -216,7 +235,15 @@ class BrowserViewModel(
     }
 
     fun clearSelected(origins: Collection<String>) {
-        browserData.clearWebsites(origins) { refresh() }
+        sessionJob?.cancel()
+        savedWebViewState = null
+        savedStateHandle.remove<String>(KEY_CURRENT_URL)
+        mutableState.value = BrowserUiState(initialized = true, useSessions = settings.useBrowserSessions())
+        synchronized(persistenceLock) { dataGeneration++ }
+        browserData.clearWebsites(origins) {
+            if (!supportsSiteRemoval || origins.any(WebLink::isInstagramHost)) instagramResolver.clearSessionCookies()
+            refresh()
+        }
     }
 
     fun updateWebsite(originalOrigin: String, name: String, url: String) {
@@ -227,8 +254,10 @@ class BrowserViewModel(
     fun clearAll() {
         sessionJob?.cancel()
         savedWebViewState = null
+        savedStateHandle.remove<String>(KEY_CURRENT_URL)
         // Stop the live page before clearing cookies so it cannot save them again.
         mutableState.value = BrowserUiState(initialized = true)
+        synchronized(persistenceLock) { dataGeneration++ }
         browserData.clearAll {
             instagramResolver.clearSessionCookies()
         }

@@ -71,7 +71,7 @@ import kotlin.system.exitProcess
 
 // Notification permission constants are only reached through explicit API 33 runtime guards.
 @SuppressLint("InlinedApi")
-class MainActivity : ComponentActivity() {
+class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
     private val dependencies by lazy { (application as AcquaApp).dependencies }
     private val browserResolutionCoordinator by viewModels<BrowserResolutionCoordinator>()
     private val downloadPermissionGate by viewModels<DownloadPermissionGate>()

@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Before
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -20,6 +21,12 @@ import org.robolectric.shadows.ShadowToast
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class BrowserActivityTest {
+    @Before fun disableAutomaticNetworkUpdates() {
+        dev.qtremors.acqua.data.settings.AppSettingsRepository(
+            androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>()
+        ).setAutoUpdateYtDlp(false)
+    }
+
     @Test
     fun `renderer crash closes the browser and cleans up the dead view`() {
         verifyRendererTermination(didCrash = true)

@@ -2,6 +2,24 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.5] - 2026-10-14
+
+### Added
+
+- Choose the yt-dlp update channel and check interval, with automatic checks when opening Acqua.
+- Enable high contrast with stronger app colors and outlines while retaining the chosen theme for when the option is off.
+- Choose an app language, with starter Spanish, Hindi, and Arabic translations for review and English fallback for untranslated text.
+- Optionally run two downloads together, with independent cancellation and notifications, while keeping one download at a time as the default.
+- Save validated command templates and import or export them through files or the clipboard.
+- Save named browser sessions with their user agents, and refresh or export them.
+- Choose separate photo, audio, and video folders, organize by website or collection, and optionally hide new files from compatible galleries.
+
+### Fixed
+
+- Keep browser media detection consistent across page changes and ignore stale extraction callbacks.
+- Clear complete website data on supported WebViews and explain the all-cookie fallback on older versions.
+- Wrap Settings descriptions at large font sizes.
+
 ## [0.3.4] - 2026-10-13
 
 ### Fixed

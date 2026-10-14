@@ -52,7 +52,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
-class BrowserActivity : ComponentActivity() {
+class BrowserActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
     private val dependencies by lazy { (application as AcquaApp).dependencies }
     private val savedWebsites by lazy { dependencies.savedWebsites }
     private val instagramSessions by lazy { dependencies.instagramSessions }

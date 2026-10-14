@@ -22,6 +22,7 @@ class ThemePreferences(private val context: Context) {
         val THEME_PRESET_KEY = stringPreferencesKey("theme_preset")
         val CUSTOM_PRIMARY_KEY = stringPreferencesKey("custom_primary_hex")
         val CUSTOM_BACKGROUND_KEY = stringPreferencesKey("custom_bg_hex")
+        val HIGH_CONTRAST_KEY = booleanPreferencesKey("high_contrast")
     }
 
     val themeState: Flow<ThemeState> = context.themeDataStore.data.map { preferences ->
@@ -40,7 +41,8 @@ class ThemePreferences(private val context: Context) {
             vibrationsEnabled = vibrations,
             themePreset = ThemePreset.entries.find { it.name == themePresetStr } ?: ThemePreset.NONE,
             customPrimaryColorHex = customPrimary,
-            customBackgroundColorHex = customBackground
+            customBackgroundColorHex = customBackground,
+            highContrast = preferences[HIGH_CONTRAST_KEY] ?: false
         )
     }
 
@@ -53,6 +55,7 @@ class ThemePreferences(private val context: Context) {
             preferences[THEME_PRESET_KEY] = state.themePreset.name
             preferences[CUSTOM_PRIMARY_KEY] = state.customPrimaryColorHex
             preferences[CUSTOM_BACKGROUND_KEY] = state.customBackgroundColorHex
+            preferences[HIGH_CONTRAST_KEY] = state.highContrast
         }
     }
 }

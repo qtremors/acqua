@@ -164,7 +164,7 @@ internal fun SettingsPreferenceSections(
         }
     ) {
         SettingsSection(title = stringResource(R.string.appearance)) {
-            SettingsCardContainer(index = 0, count = 3) {
+            SettingsCardContainer(index = 0, count = 5) {
                 ThemeModeSelector(
                     currentMode = themeState.themeMode,
                     onModeSelected = { newMode ->
@@ -180,7 +180,7 @@ internal fun SettingsPreferenceSections(
             }
             SettingsSwitchRow(
                 index = 1,
-                count = 3,
+                count = 5,
                 title = stringResource(R.string.harmonize_colors),
                 description = stringResource(R.string.harmonize_colors_description),
                 checked = themeState.harmonizeColors,
@@ -191,7 +191,7 @@ internal fun SettingsPreferenceSections(
             )
             SettingsSwitchRow(
                 index = 2,
-                count = 3,
+                count = 5,
                 title = stringResource(R.string.vibrations),
                 description = stringResource(R.string.vibrations_description),
                 checked = themeState.vibrationsEnabled,
@@ -200,6 +200,8 @@ internal fun SettingsPreferenceSections(
                     onThemeChange(themeState.copy(vibrationsEnabled = vibrations))
                 }
             )
+            HighContrastSetting(themeState.highContrast, count = 5) { onThemeChange(themeState.copy(highContrast = it)) }
+            LanguageSetting()
         }
     }
 
@@ -211,7 +213,7 @@ internal fun SettingsPreferenceSections(
         }
     ) {
         SettingsSection(title = stringResource(R.string.downloads_and_filenames)) {
-            SettingsCardContainer(index = 0, count = 4) {
+            SettingsCardContainer(index = 0, count = 5) {
                 OutlinedTextField(
                     value = settingsState.baseFolder,
                     onValueChange = viewModel::setBaseFolder,
@@ -225,14 +227,14 @@ internal fun SettingsPreferenceSections(
             }
             SettingsSwitchRow(
                 index = 1,
-                count = 4,
+                count = 5,
                 title = stringResource(R.string.categorize_media),
                 description = stringResource(R.string.category_explanation),
                 checked = settingsState.categorizeMedia,
                 leadingIcon = Icons.Filled.FolderSpecial,
                 onCheckedChange = viewModel::setCategorizeMedia
             )
-            SettingsCardContainer(index = 2, count = 4) {
+            SettingsCardContainer(index = 2, count = 5) {
                 OutlinedTextField(
                     value = settingsState.filenamePattern,
                     onValueChange = viewModel::setFilenamePattern,
@@ -276,7 +278,7 @@ internal fun SettingsPreferenceSections(
                     Text(stringResource(R.string.reset_filename_pattern))
                 }
             }
-            SettingsCardContainer(index = 3, count = 4) {
+            SettingsCardContainer(index = 3, count = 5) {
                 OutlinedTextField(
                     value = settingsState.audioFilenamePattern,
                     onValueChange = viewModel::setAudioFilenamePattern,
@@ -320,6 +322,7 @@ internal fun SettingsPreferenceSections(
                     Text(stringResource(R.string.reset_audio_filename_pattern))
                 }
             }
+            ConcurrentDownloadsSetting(settingsState.maximumConcurrentDownloads, viewModel::setMaximumConcurrentDownloads)
         }
     }
 
@@ -331,7 +334,7 @@ internal fun SettingsPreferenceSections(
         }
     ) {
         SettingsSection(title = stringResource(R.string.media_processing)) {
-            SettingsCardContainer(index = 0, count = 4) {
+            SettingsCardContainer(index = 0, count = 2) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -344,7 +347,7 @@ internal fun SettingsPreferenceSections(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf(0, 2160, 1440, 1080, 720, 480).forEach { height ->
+                    settingsState.videoQualities.forEach { height ->
                         FilterChip(
                             selected = settingsState.maximumVideoHeight == height,
                             onClick = { viewModel.setMaximumVideoHeight(height) },
@@ -353,7 +356,7 @@ internal fun SettingsPreferenceSections(
                     }
                 }
             }
-            SettingsCardContainer(index = 1, count = 4) {
+            SettingsCardContainer(index = 1, count = 2) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -383,24 +386,6 @@ internal fun SettingsPreferenceSections(
                     }
                 }
             }
-            SettingsSwitchRow(
-                index = 2,
-                count = 4,
-                title = stringResource(R.string.embed_metadata),
-                description = stringResource(R.string.embed_metadata_explanation),
-                checked = settingsState.embedMetadata,
-                leadingIcon = Icons.Filled.Movie,
-                onCheckedChange = viewModel::setEmbedMetadata
-            )
-            SettingsSwitchRow(
-                index = 3,
-                count = 4,
-                title = stringResource(R.string.embed_thumbnail),
-                description = stringResource(R.string.embed_thumbnail_explanation),
-                checked = settingsState.embedThumbnail,
-                leadingIcon = Icons.Filled.Image,
-                onCheckedChange = viewModel::setEmbedThumbnail
-            )
         }
     }
 }

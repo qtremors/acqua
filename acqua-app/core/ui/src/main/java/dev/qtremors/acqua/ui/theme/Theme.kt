@@ -40,7 +40,7 @@ fun AcquaTheme(
         ThemeMode.OLED -> true
     }
 
-    val colorScheme = when (themeState.themePreset) {
+    val baseColorScheme = when (themeState.themePreset) {
         ThemePreset.DRACULA -> {
             if (effectivelyDark) {
                 if (themeState.themeMode == ThemeMode.OLED) DraculaOledColorScheme else DraculaDarkColorScheme
@@ -126,6 +126,7 @@ fun AcquaTheme(
         }
     }
 
+    val colorScheme = if (themeState.highContrast) HighContrast.scheme(baseColorScheme, effectivelyDark) else baseColorScheme
     val baseCategoryColors = if (effectivelyDark) DarkCategoryColors else LightCategoryColors
     val baseSemanticColors = if (effectivelyDark) DarkSemanticColors else LightSemanticColors
 
@@ -176,8 +177,8 @@ fun AcquaTheme(
     }
 
     CompositionLocalProvider(
-        LocalCategoryColors provides categoryColors,
-        LocalSemanticColors provides semanticColors,
+        LocalCategoryColors provides if (themeState.highContrast) HighContrast.categories(categoryColors, colorScheme.surfaceContainer) else categoryColors,
+        LocalSemanticColors provides if (themeState.highContrast) HighContrast.semantic(semanticColors, colorScheme) else semanticColors,
         LocalSpacing provides Spacing(),
         LocalHapticsEnabled provides themeState.vibrationsEnabled,
         LocalHapticFeedback provides customHapticFeedback,

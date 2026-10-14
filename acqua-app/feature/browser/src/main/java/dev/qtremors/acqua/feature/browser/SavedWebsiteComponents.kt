@@ -211,7 +211,8 @@ internal fun ManageWebsiteDataDialog(
     onDismiss: () -> Unit,
     onOpenWebsite: ((String) -> Unit)? = null,
     onClearSelected: (Set<String>) -> Unit,
-    onClearAll: () -> Unit
+    onClearAll: () -> Unit,
+    supportsSiteRemoval: Boolean = false
 ) {
     var selected by remember(websites) { mutableStateOf(emptySet<String>()) }
     val allOrigins = websites.mapTo(mutableSetOf(), SavedWebsite::origin)
@@ -267,7 +268,7 @@ internal fun ManageWebsiteDataDialog(
                     }
                 }
                 Text(
-                    stringResource(R.string.website_data_explanation),
+                    stringResource(if (supportsSiteRemoval) R.string.website_data_explanation else R.string.website_data_fallback_explanation),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
