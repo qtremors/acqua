@@ -134,6 +134,7 @@ import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.MediaResolutionFailure
 import dev.qtremors.acqua.downloader.DownloadFailure
 import dev.qtremors.acqua.domain.ResolvedMedia
+import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.downloader.DownloadQueueState
@@ -159,7 +160,8 @@ fun DownloaderScreen(
     onOpenAbout: () -> Unit = {},
     showHeaderCard: Boolean = true,
     onStatusClick: (() -> Unit)? = null,
-    onUseBrowserSessionsChange: ((Boolean) -> Unit)? = null
+    onUseBrowserSessionsChange: ((Boolean) -> Unit)? = null,
+    initialConfigurationKey: String? = null
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -167,7 +169,14 @@ fun DownloaderScreen(
     val currentOnMediaSaved by rememberUpdatedState(onMediaSaved)
     val colors = MaterialTheme.colorScheme
     val previewCache = remember(mediaDownloader) { MediaPreviewCache(context, mediaDownloader) }
-    var showConfigSheet by remember { mutableStateOf(false) }
+    var showConfigSheet by rememberSaveable { mutableStateOf(false) }
+    var consumedConfigurationKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(initialConfigurationKey) {
+        if (initialConfigurationKey != null && consumedConfigurationKey != initialConfigurationKey) {
+            consumedConfigurationKey = initialConfigurationKey
+            showConfigSheet = true
+        }
+    }
     var retryWithSession by remember { mutableStateOf(false) }
 
     LaunchedEffect(useBrowserSessions, retryWithSession) {
@@ -212,6 +221,8 @@ fun DownloaderScreen(
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
+                is DownloaderEvent.DownloadsSkipped -> Toast.makeText(context,
+                    resources.getString(R.string.archive_skipped_count, event.count), Toast.LENGTH_SHORT).show()
                 DownloaderEvent.ResolutionComplete -> context.performHaptic(HapticSignal.CLICK)
                 is DownloaderEvent.DownloadComplete -> {
                     context.performHaptic(HapticSignal.COMPLETE)
@@ -248,12 +259,16 @@ fun DownloaderScreen(
             onResolve = { viewModel.resolve(useBrowserSessions, browserRequestRevision, resolveInBrowser) },
             onEngineChange = viewModel::setDownloadEngine,
             onContentTypeChange = viewModel::setDownloadContentType,
-            onVideoHeightChange = viewModel::setMaximumVideoHeight,
-            onAudioFormatChange = viewModel::setAudioFormat,
-            onEmbedMetadataChange = viewModel::setEmbedMetadata,
-            onEmbedThumbnailChange = viewModel::setEmbedThumbnail,
-            onCropArtworkChange = viewModel::setCropArtwork,
-            onOriginalMetadataChange = viewModel::setPreserveOriginalMetadata
+            onConfigurationChange = viewModel::applyDownloadConfiguration,
+            onPlaylistSelection = viewModel::applyPlaylistSelection,
+            onContentSelection = viewModel::applyContentConfiguration,
+            onInspectEntry = { viewModel.inspectCollectionEntry(it, useBrowserSessions, resolveInBrowser) },
+            showSource = initialConfigurationKey != null,
+            onDownload = {
+                requestDownloadAccess(true) {
+                    viewModel.downloadAll(useBrowserSessions, resolveInBrowser)
+                }
+            }
         )
     }
 
@@ -382,44 +397,49 @@ fun DownloaderScreen(
                         .verticalScroll(contentScrollState),
                     contentAlignment = if (state.media != null) Alignment.TopCenter else Alignment.Center
                 ) {
-                    when {
-                        state.validity == LinkValidity.EMPTY -> EmptyState(
-                            variant = EmptyStateVariant.ReadyToDownload,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(boxMaxHeight)
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                        state.validity == LinkValidity.INVALID -> EmptyState(
-                            variant = EmptyStateVariant.InvalidLink,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(boxMaxHeight)
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                        else -> MediaContentSection(
-                            state = state,
-                            previewCache = previewCache,
-                            onMediaDimensions = viewModel::updateMediaDimensions,
-                            onDownloadOne = { item, index, width, height ->
-                                requestDownloadAccess(true) { viewModel.downloadOne(item, index, width, height) }
-                            },
-                            onDismissError = viewModel::dismissError,
-                            onCopyError = { error ->
-                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                                    .setPrimaryClip(ClipData.newPlainText("AcquaError", error))
-                            },
-                            onOpenBrowser = { onOpenBrowser(state.url) },
-                            useBrowserSessions = useBrowserSessions,
-                            previewMaxHeight = (boxMaxHeight - 112.dp).coerceAtLeast(128.dp),
-                            onUseBrowserSessionsChange = onUseBrowserSessionsChange?.let { change ->
-                                { enabled ->
-                                    retryWithSession = enabled
-                                    change(enabled)
-                                }
-                            },
-                            onRename = viewModel::renameMedia
-                        )
+                    Column(Modifier.fillMaxWidth()) {
+                        when {
+                            WebLink.extractAll(state.url).size > 1 -> Unit
+                            state.validity == LinkValidity.EMPTY -> EmptyState(
+                                variant = EmptyStateVariant.ReadyToDownload,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(boxMaxHeight)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                            state.validity == LinkValidity.INVALID -> EmptyState(
+                                variant = EmptyStateVariant.InvalidLink,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(boxMaxHeight)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                            else -> MediaContentSection(
+                                state = state,
+                                previewCache = previewCache,
+                                onMediaDimensions = viewModel::updateMediaDimensions,
+                                onDownloadOne = { item, index, width, height ->
+                                    requestDownloadAccess(true) { viewModel.downloadOne(item, index, width, height) }
+                                },
+                                onDismissError = viewModel::dismissError,
+                                onCopyError = { error ->
+                                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                        .setPrimaryClip(ClipData.newPlainText("AcquaError", error))
+                                },
+                                onOpenBrowser = { onOpenBrowser(state.url) },
+                                useBrowserSessions = useBrowserSessions,
+                                previewMaxHeight = (boxMaxHeight - 112.dp).coerceAtLeast(128.dp),
+                                onUseBrowserSessionsChange = onUseBrowserSessionsChange?.let { change ->
+                                    { enabled ->
+                                        retryWithSession = enabled
+                                        change(enabled)
+                                    }
+                                },
+                                onRename = viewModel::renameMedia,
+                                onSelectPreviewItem = viewModel::selectPreviewItem,
+                                onRetryDiagnostic = viewModel::retryDiagnostic
+                            )
+                        }
                     }
                 }
             }
@@ -445,7 +465,8 @@ fun DownloaderScreen(
                         viewModel.downloadAll(useBrowserSessions, resolveInBrowser)
                     }
                 },
-                contentPadding = contentPadding
+                contentPadding = contentPadding,
+                onSelectPreviewItems = viewModel::selectPreviewItems
             )
         }
     }
@@ -454,12 +475,12 @@ fun DownloaderScreen(
 internal fun DownloaderProblem.messageResource(): Int = when (this) {
     is DownloaderProblem.Resolution -> when (failure) {
         MediaResolutionFailure.INVALID_LINK -> R.string.invalid_link
-        MediaResolutionFailure.SESSION_REQUIRED,
+        MediaResolutionFailure.SESSION_REQUIRED -> R.string.restricted_media_message
         MediaResolutionFailure.SESSION_EXPIRED -> R.string.browser_session_needed
         MediaResolutionFailure.NETWORK -> R.string.network_error
         MediaResolutionFailure.ENGINE_REQUIRED,
         MediaResolutionFailure.RUNTIME_UNAVAILABLE -> R.string.download_engine_error
-        MediaResolutionFailure.UNSUPPORTED_MEDIA -> R.string.could_not_resolve_media
+        MediaResolutionFailure.UNSUPPORTED_MEDIA -> R.string.unsupported_media_message
         MediaResolutionFailure.UNKNOWN -> R.string.could_not_resolve_media
     }
     is DownloaderProblem.Download -> failure.messageResource()

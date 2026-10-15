@@ -156,7 +156,11 @@ fun SettingsScreen(
     onOpenNotices: () -> Unit = {},
     onOpenLicense: () -> Unit = {},
     onOpenAbout: () -> Unit = {},
-    contentPadding: PaddingValues = PaddingValues()
+    contentPadding: PaddingValues = PaddingValues(),
+    initialDiagnosticTaskId: String? = null,
+    onDiagnosticConsumed: () -> Unit = {},
+    onRetryDiagnostic: ((String) -> Boolean)? = null,
+    downloadOptionsContent: @Composable () -> Unit = {}
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -165,7 +169,7 @@ fun SettingsScreen(
     val webViewProvider = remember { WebViewUpdateManager.currentProvider(context) }
     val settingsState by viewModel.state.collectAsState()
 
-    LaunchedEffect(viewModel) { viewModel.loadYtDlpStatus() }
+    LaunchedEffect(viewModel) { viewModel.reload(); viewModel.loadYtDlpStatus() }
 
     val buildInfo = remember {
         AboutBuildInfo(
@@ -388,6 +392,8 @@ fun SettingsScreen(
                             )
                         }
 
+                        YtDlpUpdatePreferences(settingsState, viewModel)
+
                         // Last Checked & Feedback status
                         if (settingsState.lastYtDlpUpdate > 0L) {
                             val checkedAt = remember(settingsState.lastYtDlpUpdate) {
@@ -591,6 +597,14 @@ fun SettingsScreen(
             contentAlpha = contentAlphaState.value,
             contentOffset = contentOffsetState.value
         )
+
+        downloadOptionsContent()
+        CommandTemplatesSection()
+        CookieProfilesSection()
+        DownloadFoldersSection()
+
+        DownloadDiagnosticsSection(settingsState.verboseDiagnostics, viewModel::setVerboseDiagnostics,
+            initialDiagnosticTaskId, onDiagnosticConsumed, onRetryDiagnostic)
 
         // 6. Section: Privacy and Security
         Box(

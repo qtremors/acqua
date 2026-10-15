@@ -63,6 +63,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -191,13 +193,14 @@ fun DownloadHubScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Header card (Acqua brand & pull down to open About)
+            val settingsDescription = stringResource(R.string.settings_title)
             Card(
                 onClick = {
                     context.performHaptic(HapticSignal.CLICK)
                     onOpenAbout()
                 },
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .fillMaxWidth().semantics { contentDescription = settingsDescription }
                     .padding(horizontal = 16.dp)
                     .offset(y = (-4).dp)
                     .height(56.dp + statusBarPadding + cardExpansion + 4.dp),

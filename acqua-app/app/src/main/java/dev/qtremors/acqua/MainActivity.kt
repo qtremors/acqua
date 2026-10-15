@@ -50,6 +50,7 @@ import dev.qtremors.acqua.feature.browser.BrowserDownloadRequest
 import dev.qtremors.acqua.feature.downloader.DownloadActivity
 import dev.qtremors.acqua.feature.downloader.BrowserResolutionCoordinator
 import dev.qtremors.acqua.feature.downloader.DownloaderViewModel
+import dev.qtremors.acqua.feature.downloader.requiresLegacyStorage
 import dev.qtremors.acqua.feature.downloader.PendingBrowserResolution
 import dev.qtremors.acqua.feature.downloader.history.HistoryViewModel
 import dev.qtremors.acqua.feature.settings.SettingsViewModel
@@ -73,8 +74,10 @@ import kotlin.system.exitProcess
 @SuppressLint("InlinedApi")
 class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
     private val dependencies by lazy { (application as AcquaApp).dependencies }
+    private val pendingDiagnosticTask = androidx.compose.runtime.mutableStateOf<String?>(null)
     private val browserResolutionCoordinator by viewModels<BrowserResolutionCoordinator>()
     private val downloadPermissionGate by viewModels<DownloadPermissionGate>()
+    private var legacyStorageRequired: () -> Boolean = { true }
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) {
@@ -142,6 +145,10 @@ class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
         }
         traceStartupSection("Acqua.activityOnCreate") {
             super.onCreate(savedInstanceState)
+            pendingDiagnosticTask.value = (if (savedInstanceState?.containsKey("diagnostic.task") == true)
+                savedInstanceState.getString("diagnostic.task")
+            else intent.getStringExtra(dev.qtremors.acqua.downloader.DownloadDiagnosticsStore.EXTRA_TASK_ID))
+                ?.takeIf(dev.qtremors.acqua.downloader.DownloadDiagnosticsStore::isRecordId)
         }
 
         enableEdgeToEdge()
@@ -264,6 +271,7 @@ class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
                                     }
                                 }
                             )
+                            legacyStorageRequired = { downloader.state.value.requiresLegacyStorage(dependencies.settings.downloadSettings().destinations) }
                             val browser: BrowserViewModel = viewModel(
                                 factory = remember {
                                     ViewModelFactory { extras ->
@@ -321,7 +329,8 @@ class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
                                     browserResolutionCoordinator.urlHandoff,
                                     browserResolutionCoordinator.browserRevision,
                                     browserResolutionCoordinator.downloadRequestRevision,
-                                    themeState
+                                    themeState,
+                                    pendingDiagnosticTask.value
                                 ),
                                 actions = DashboardActions(
                                     onThemeChange = { newState ->
@@ -333,7 +342,11 @@ class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
                                     resolveInBrowser = ::resolveInBrowser,
                                     requestDownloadAccess = ::runWithDownloadPermissions,
                                     openBrowser = ::openBrowser,
-                                    onBrowserDownloadRequest = ::openBrowserDownload
+                                    onBrowserDownloadRequest = ::openBrowserDownload,
+                                    onDiagnosticConsumed = {
+                                        pendingDiagnosticTask.value = null
+                                        intent.removeExtra(dev.qtremors.acqua.downloader.DownloadDiagnosticsStore.EXTRA_TASK_ID)
+                                    }
                                 )
                             )
                         }
@@ -346,14 +359,23 @@ class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        intent.getStringExtra(dev.qtremors.acqua.downloader.DownloadDiagnosticsStore.EXTRA_TASK_ID)
+            ?.takeIf(dev.qtremors.acqua.downloader.DownloadDiagnosticsStore::isRecordId)
+            ?.let { pendingDiagnosticTask.value = it }
         incomingUrl(intent).takeIf(String::isNotBlank)?.let {
             browserResolutionCoordinator.acceptExternalUrl(it)
+            pendingDiagnosticTask.value = null
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("diagnostic.task", pendingDiagnosticTask.value)
+        super.onSaveInstanceState(outState)
     }
 
     private fun incomingUrl(intent: Intent): String =
         if (intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            WebLink.extractFirst(intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()).orEmpty()
+            WebLink.extractAll(intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()).joinToString("\n")
         } else ""
 
     private fun openBrowser(initialUrl: String?, addWebsite: Boolean, name: String?) {
@@ -419,7 +441,7 @@ class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
 
     private fun runWithDownloadPermissions(needsNotification: Boolean, action: () -> Unit) {
         downloadPermissionGate.hold(needsNotification, action)
-        val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+        val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && legacyStorageRequired() &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {

@@ -15,11 +15,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import java.util.TimeZone
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,7 +71,11 @@ fun HistoryScreen(
     var statistics by remember { mutableStateOf(false) }
     var detailsId by rememberSaveable { mutableStateOf<String?>(null) }
     var selecting by rememberSaveable { mutableStateOf(false) }
-    var selected by remember { mutableStateOf(emptySet<String>()) }
+    var selected by rememberSaveable(stateSaver = Saver<Set<String>, ArrayList<String>>(
+        save = { ArrayList(it) }, restore = { it.toSet() })) { mutableStateOf(emptySet<String>()) }
+    val selectionQuery = "${state.query}\u0000${state.filter}\u0000${state.sort}\u0000${state.sourceHost}"
+    var previousSelectionQuery by rememberSaveable { mutableStateOf(selectionQuery) }
+    var deleteFileIds by rememberSaveable { mutableStateOf<ArrayList<String>?>(null) }
     var currentTime by remember { mutableLongStateOf(System.currentTimeMillis()) }
     val zone = TimeZone.getDefault()
     val displayItems = remember(visible, state.sort, currentTime, zone) {
@@ -107,13 +113,17 @@ fun HistoryScreen(
             if (!state.isLoading) viewModel.refresh()
         }
     }
-    LaunchedEffect(state.query, state.filter, state.sort) {
-        listState.scrollToItem(0)
-        selected = emptySet()
-        selecting = false
+    LaunchedEffect(selectionQuery) {
+        if (selectionQuery != previousSelectionQuery) {
+            listState.scrollToItem(0)
+            selected = emptySet()
+            selecting = false
+            previousSelectionQuery = selectionQuery
+        }
     }
     LaunchedEffect(state.entries) { if (detailsId != null && state.entries.none { it.id == detailsId }) detailsId = null }
-    LaunchedEffect(visible) {
+    LaunchedEffect(visible, state.isLoading) {
+        if (state.isLoading) return@LaunchedEffect
         selected = selected.intersect(visible.mapTo(mutableSetOf(), HistoryEntry::id))
         if (visible.isEmpty()) selecting = false
     }
@@ -135,6 +145,16 @@ fun HistoryScreen(
     }
     BackHandler(enabled = active && showSearchInput) { onDismissSearch() }
     BackHandler(enabled = active && !showSearchInput && selecting) { selecting = false; selected = emptySet() }
+
+    deleteFileIds?.let { ids ->
+        HistoryDeleteFilesConfirmation(ids.size, onDismiss = { deleteFileIds = null }, onConfirm = {
+            deleteFileIds = null
+            viewModel.deleteFiles(ids.toSet())
+            selecting = false
+            selected = emptySet()
+        })
+    }
+    HistoryDeletionResults(viewModel.fileDeletion)
 
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
@@ -174,6 +194,11 @@ fun HistoryScreen(
                     IconButton(onClick = { viewModel.remove(selected); selected = emptySet(); selecting = false }, enabled = selected.isNotEmpty()) {
                         Icon(Icons.Default.DeleteOutline, stringResource(R.string.hist_remove))
                     }
+                    IconButton(onClick = {
+                        deleteFileIds = ArrayList(selectedEntries.filter(HistoryEntry::isDownloaded).map { it.id }.take(HistoryDeletionController.MAX_FILES))
+                    }, enabled = selectedEntries.any(HistoryEntry::isDownloaded)) {
+                        Icon(Icons.Default.DeleteForever, stringResource(R.string.hist_delete_files))
+                    }
                 }
                 TextButton(onClick = { selected = visible.mapTo(mutableSetOf(), HistoryEntry::id) }) { Text(stringResource(R.string.hist_select_all)) }
                 if (selectedEntries.isNotEmpty() && !canShare) Text(stringResource(R.string.hist_share_hint), Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.bodySmall)
@@ -186,9 +211,11 @@ fun HistoryScreen(
                     onStatistics = { statistics = true },
                     onRefresh = { viewModel.refresh() },
                     onClear = { confirmClear = true },
-                    onOpenSearch = onOpenSearch
+                    onOpenSearch = onOpenSearch,
+                    onSourceChange = viewModel::selectSource
                 )
             }
+            HistoryTransferSection(viewModel.transfer, if (selecting) selected else null, selectedEntries.singleOrNull())
             if (state.isLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (state.loadFailed) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -207,26 +234,8 @@ fun HistoryScreen(
                         }
                     }
                     if (visible.isEmpty() && !state.isLoading && !state.loadFailed) item("empty") {
-                        val title = when {
-                            state.entries.isEmpty() -> R.string.no_history
-                            state.activeQuery.isSearching -> R.string.hist_no_matches
-                            else -> when (state.filter) {
-                                HistoryFilter.MEDIA -> R.string.hist_no_downloads
-                                HistoryFilter.PHOTOS -> R.string.hist_no_photos
-                                HistoryFilter.VIDEOS -> R.string.hist_no_videos
-                                HistoryFilter.AUDIO -> R.string.hist_no_audio
-                                HistoryFilter.LINKS -> R.string.hist_no_links
-                                HistoryFilter.UNAVAILABLE -> R.string.hist_no_unavailable
-                            }
-                        }
-                        Column(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(stringResource(title), style = MaterialTheme.typography.titleMedium)
-                            Text(stringResource(if (state.entries.isEmpty()) R.string.hist_empty_help else if (state.activeQuery.isSearching) R.string.hist_search_help else R.string.hist_category_help), Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium)
-                            if (state.entries.isNotEmpty()) {
-                                TextButton(onClick = viewModel::resetFilters) { Text(stringResource(R.string.hist_reset)) }
-                                if (state.summary.links > 0 && state.filter != HistoryFilter.LINKS) TextButton(onClick = { viewModel.setQuery(""); viewModel.selectFilter(HistoryFilter.LINKS) }) { Text(stringResource(R.string.hist_show_links)) }
-                            }
-                        }
+                        HistoryEmptyState(state, onResetFilters = viewModel::resetFilters,
+                            onShowLinks = { viewModel.setQuery(""); viewModel.selectFilter(HistoryFilter.LINKS) })
                     }
                     items(displayItems, key = { it.key }) { item ->
                         when (item) {
@@ -244,7 +253,8 @@ fun HistoryScreen(
                                     onShare = { fileActions.share(entry.fileUri, entry.mimeType) },
                                     onRemove = { viewModel.delete(entry.id) }, onDetails = { detailsId = entry.id },
                                     onSource = { fileActions.openSource(entry.url) }, onRefetch = { onRefetch(entry.url) },
-                                    onRetry = { viewModel.refresh() })
+                                    onRetry = { viewModel.refresh() },
+                                    onDeleteFile = { deleteFileIds = arrayListOf(entry.id) })
                             }
                         }
                     }

@@ -2,6 +2,63 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.6] - 2026-10-15
+
+### Added
+
+- Search History by saved titles, authors, and source IDs, and filter by website.
+- Choose whether new links and saved files are added to History, by default or for one download.
+- Review, copy, and retry recent download failures, with optional extended diagnostics and notifications that open the relevant report.
+- Delete selected downloaded files from History with confirmation, storage permission where needed, and individual results while keeping their records.
+- Set transfer speed limits, HTTP or SOCKS5 proxies, IPv4-only connections, and yt-dlp fragment counts by default or for one download.
+- Open website and remote media links from other apps in Quick download, with configuration review and the usual download permissions.
+- Choose which SponsorBlock categories to remove from YouTube audio or video, by default or for one download, with clear failures when no usable cuts are available.
+- Choose source codecs, compatibility or device decoder policies, lowest quality, and validated custom format sorting by default or for one download.
+- Save captions with audio downloads, export ASS and LRC files, embed compatible captions in M4A audio, and identify automatic translations in the language picker.
+- Save multiple audio tracks in MKV or video without audio, and recover expired stream selections only when equivalent source streams remain available.
+- Apply saved command templates before reviewing download choices.
+- Import or export selected or all History as JSON or link lists, preview duplicates and unavailable files, and relink records to files you choose.
+- Save multiple named clips with matching captions and adjusted chapters, and shift or stretch caption timing to correct sync drift.
+- Choose a saved browser session for a download and keep retries tied to that session.
+- Select carousel media with a long press and corner circle checkboxes. Holding Download opens a Material 3 Expressive menu for Select all, Invert selection, and Cancel selection; empty selections restore Download all.
+- Save thumbnails and audio artwork as separate images alongside downloads from a new Thumbnail/Artwork chip.
+- Select collection entries individually or by number ranges, paste or share multiple links, and save every produced media file.
+- Choose exact video and audio streams, video containers, and conversion bitrates.
+- Save clips with precise boundaries or save each chapter as a named file, and skip duplicate downloads already saved by Acqua.
+- Select caption languages, include automatic captions, embed captions, or save separate files in original, SRT, or VTT format.
+
+### Changed
+
+- Keep engine and Download controls side by side, with selected counts shown as Download · N.
+- Use Material 3 Expressive engine and media selections, paired quality/container and stream chips, and grouped selection dialogs with Done and Cancel.
+- Offer Best quality for audio and video, with quality and stream choices ordered from highest to lowest.
+- Change Fetch to Download once media has been fetched, with the action always visible.
+- Open playlist, caption, clip, and chapter options from a final row of chips, with changes applied on Done.
+- Show playlist thumbnails and durations, select entries individually or by range, and choose the current video or playlist.
+- Preview playlists with the existing post carousel, with entry and range selection in the Playlist dialog.
+- Use expressive text fields for playlist ranges and clip times, with clear input validation.
+- Keep metadata, embedded artwork, original dates, and duplicate skipping in Settings.
+- Keep the link box on one line with horizontal scrolling for long links.
+
+### Fixed
+
+- Fit carousel thumbnails inside the preview container while preserving their original aspect ratios.
+- Match playlist download counts and actions to the selected available entries.
+- Refresh Unavailable to discover files deleted outside Acqua and recognize restored file access.
+- Show accurate History messages for empty searches and categories, with filter recovery actions.
+- Reflect saved video quality in Settings, including 360p and other inspected resolutions.
+- Preserve cancelled and finished downloads when late progress or platform callbacks arrive.
+- Show artwork embedding and square cropping only for supported audio downloads.
+- Restore open download format dialogs and History selections after screen recreation.
+- Keep expanded navigation from covering content.
+- Announce the selected main navigation destination and identify the header that opens Settings.
+- Keep unrelated queued downloads running after another task fails or is cancelled.
+- Preserve accepted filenames, folders, metadata options, and format choices across background execution and retries.
+- Retain accepted work when other items cannot be queued and avoid repeating successful outputs during recovery.
+- Allow healthy direct transfers to continue beyond the inspection timeout.
+- Show caption files correctly in History.
+- Report already saved downloads as skipped without announcing newly saved files.
+
 ## [0.3.5] - 2026-10-14
 
 ### Added

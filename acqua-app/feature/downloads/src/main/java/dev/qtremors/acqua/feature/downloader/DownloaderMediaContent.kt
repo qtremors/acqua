@@ -132,6 +132,7 @@ import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.MediaResolutionFailure
 import dev.qtremors.acqua.downloader.DownloadFailure
 import dev.qtremors.acqua.domain.ResolvedMedia
+import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.downloader.DownloadQueueState
@@ -153,7 +154,9 @@ internal fun MediaContentSection(
     previewMaxHeight: Dp,
     modifier: Modifier = Modifier,
     onUseBrowserSessionsChange: ((Boolean) -> Unit)? = null,
-    onRename: (Int, String) -> Unit = { _, _ -> }
+    onRename: (Int, String) -> Unit = { _, _ -> },
+    onSelectPreviewItem: (Int, Boolean) -> Unit = { _, _ -> },
+    onRetryDiagnostic: (suspend (String) -> Boolean)? = null
 ) {
     val colors = MaterialTheme.colorScheme
 
@@ -183,7 +186,10 @@ internal fun MediaContentSection(
                     onBitmapDimensions = { index, width, height ->
                         loadedDimensions[index] = width to height
                         onMediaDimensions(index, width, height)
-                    }
+                    },
+                    selection = state.selectedCollectionItems,
+                    selectionEnabled = !state.isResolving && !state.isSaving && state.savingItemIndex == null && !state.isBatchRunning,
+                    onSelect = onSelectPreviewItem
                 )
                 Spacer(Modifier.height(8.dp))
 
@@ -200,7 +206,7 @@ internal fun MediaContentSection(
                     status = MediaMetadataStatus(
                         isSaving = state.savingItemIndex == activeIndex,
                         isSaved = state.savedItemIndex == activeIndex,
-                        downloadsEnabled = !state.isSaving && state.savingItemIndex == null
+                        downloadsEnabled = !state.isSaving && state.savingItemIndex == null && activeItem.unavailableReason == null
                     ),
                     onRename = { name -> onRename(activeIndex, name) },
                     onDownload = {
@@ -219,6 +225,9 @@ internal fun MediaContentSection(
                         .testTag("media-metadata")
                         .padding(horizontal = 16.dp)
                 )
+                if (activeItem.unavailableReason != null) Text(stringResource(if (activeItem.unavailableReason?.startsWith("Inspect") == true)
+                    R.string.collection_nested else R.string.collection_unavailable), Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
             }
 
             if (state.media == null && state.error == null) {
@@ -229,6 +238,11 @@ internal fun MediaContentSection(
             }
 
             state.error?.let { error ->
+                var showDiagnostic by remember(error) { mutableStateOf(false) }
+                val diagnostic = (error as? DownloaderProblem.Download)?.diagnostic
+                if (showDiagnostic && diagnostic != null) dev.qtremors.acqua.ui.components.DownloadDiagnosticDialog(
+                    diagnostic, onDismiss = { showDiagnostic = false },
+                    onRetry = onRetryDiagnostic?.let { retry -> { retry(diagnostic.id) } })
                 val errorText = stringResource(error.messageResource())
                 ElevatedCard(
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
@@ -265,6 +279,9 @@ internal fun MediaContentSection(
                         }
                         SelectionContainer {
                             Text(errorText, style = MaterialTheme.typography.bodySmall, color = colors.onErrorContainer)
+                        }
+                        if (diagnostic != null) TextButton(onClick = { showDiagnostic = true }) {
+                            Text(stringResource(R.string.download_diagnostics))
                         }
                         if (state.showBrowserAction && onUseBrowserSessionsChange != null) {
                             if (!useBrowserSessions) {
@@ -311,7 +328,8 @@ internal fun BottomControlsSection(
     onResolve: () -> Unit,
     onDownloadAll: () -> Unit,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues()
+    contentPadding: PaddingValues = PaddingValues(),
+    onSelectPreviewItems: (Set<Int>?) -> Unit = {}
 ) {
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -366,9 +384,8 @@ internal fun BottomControlsSection(
                     } else null,
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     singleLine = true,
-                    maxLines = 1,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
-                    enabled = !state.isSaving,
+                    enabled = !state.isSaving && !state.isBatchRunning,
                     shape = RoundedCornerShape(24.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = colors.primary,
@@ -379,10 +396,7 @@ internal fun BottomControlsSection(
                 )
             }
 
-            ContentSizedRow(
-                Modifier.fillMaxWidth(),
-                stackWhenNeeded = true
-            ) {
+            ContentSizedRow(Modifier.fillMaxWidth()) {
                 FilterChip(
                     selected = state.downloadEngine == DownloadEngine.YT_DLP,
                     onClick = onOpenConfig,
@@ -416,7 +430,20 @@ internal fun BottomControlsSection(
                     enabled = !state.isSaving && state.savingItemIndex == null
                 )
 
-                if (state.media == null) {
+                if (WebLink.extractAll(state.url).size > 1) {
+                    Button(
+                        onClick = onDownloadAll,
+                        enabled = canResolve && !state.isBatchRunning,
+                        modifier = Modifier.heightIn(min = 48.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Filled.Download, null, Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(if (state.isBatchRunning) R.string.batch_queueing else R.string.download_pending_selected),
+                            fontWeight = FontWeight.Bold)
+                    }
+                } else if (state.media == null) {
                     Button(
                         onClick = onResolve,
                         enabled = state.validity == LinkValidity.VALID && canResolve && !state.isResolving,
@@ -437,13 +464,13 @@ internal fun BottomControlsSection(
                         )
                     }
                 } else {
-                    Button(
-                        onClick = onDownloadAll,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-                        enabled = !state.isResolving && !state.isSaving && !state.saved && state.savingItemIndex == null,
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
+                    PreviewDownloadButton(
+                        onDownload = onDownloadAll,
+                        enabled = state.configurationActionEnabled() && !state.saved,
+                        selection = state.selectedCollectionItems,
+                        available = state.availableCollectionIndices(),
+                        menuEnabled = !state.isResolving && !state.isSaving && state.savingItemIndex == null && !state.isBatchRunning,
+                        onSelection = onSelectPreviewItems
                     ) {
                         when {
                             state.isSaving -> {
@@ -472,7 +499,8 @@ internal fun BottomControlsSection(
                                 Icon(Icons.Filled.Download, null, Modifier.size(18.dp))
                                 Spacer(Modifier.size(8.dp))
                                 val label = when {
-                                    state.media.size > 1 -> stringResource(R.string.download_all_count, state.media.size)
+                                    state.selectedCollectionItems != null -> stringResource(R.string.download_selected_count, state.selectedIndices().size)
+                                    state.media.size > 1 -> stringResource(R.string.download_all_count, state.availableCollectionIndices().size)
                                     ytDlpMedia != null && state.downloadContentType == DownloadContentType.AUDIO -> stringResource(R.string.download_audio)
                                     state.media.firstOrNull()?.kind == MediaKind.AUDIO -> stringResource(R.string.download_audio)
                                     state.media.firstOrNull()?.isVideo == true -> stringResource(R.string.download_video)

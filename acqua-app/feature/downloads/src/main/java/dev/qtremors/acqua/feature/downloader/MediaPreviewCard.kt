@@ -245,7 +245,8 @@ fun MediaPreviewCard(
     cardWidth: Dp,
     cardHeight: Dp,
     modifier: Modifier = Modifier,
-    onBitmapDimensions: (width: Int, height: Int) -> Unit = { _, _ -> }
+    onBitmapDimensions: (width: Int, height: Int) -> Unit = { _, _ -> },
+    selection: Boolean? = null
 ) {
     val audioPreview = item.isAudioPreview(contentType)
     val cropPreview = audioPreview && cropArtwork
@@ -346,6 +347,8 @@ fun MediaPreviewCard(
                     }
                 }
             }
+            if (selection != null) PreviewSelectionIndicator(selection, index,
+                Modifier.align(Alignment.TopEnd).padding(10.dp))
         }
     }
 }

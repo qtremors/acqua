@@ -22,11 +22,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.data.network.MediaPreviewCache
 import dev.qtremors.acqua.domain.ResolvedMedia
 import dev.qtremors.acqua.downloader.DownloadContentType
+import dev.qtremors.acqua.core.data.R
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlin.math.abs
 
@@ -40,7 +42,10 @@ internal fun MediaPreviewCarousel(
     useBrowserSessions: Boolean,
     side: Dp,
     onActiveIndex: (Int) -> Unit,
-    onBitmapDimensions: (Int, Int, Int) -> Unit
+    onBitmapDimensions: (Int, Int, Int) -> Unit,
+    selection: Set<Int>? = null,
+    selectionEnabled: Boolean = true,
+    onSelect: (Int, Boolean) -> Unit = { _, _ -> }
 ) {
     val mediaKey = media.map { it.url }
     // Start in the middle of the repeated list so swipes wrap in either direction.
@@ -61,7 +66,7 @@ internal fun MediaPreviewCarousel(
             item.isVideo -> 16f / 9f
             else -> 1f
         }
-        return if (media.size > 1) side * aspect to side else computeCardDimensions(aspect, side, side)
+        return computeCardDimensions(aspect, side, side)
     }
 
     BoxWithConstraints(Modifier.fillMaxWidth().height(side).testTag("media-preview-container")) {
@@ -88,7 +93,15 @@ internal fun MediaPreviewCarousel(
             val index = page % media.size
             val (width, height) = cardSize(index)
             MediaPreviewCard(media[index], index, useBrowserSessions, previewCache, contentType, cropArtwork,
-                width, height, onBitmapDimensions = { sourceWidth, sourceHeight ->
+                width, height, modifier = Modifier.previewSelection(
+                    selected = selection?.contains(index) == true,
+                    selecting = selection != null,
+                    enabled = selectionEnabled && media[index].unavailableReason == null,
+                    selectLabel = stringResource(R.string.preview_select_item, index + 1),
+                    deselectLabel = stringResource(R.string.preview_deselect_item, index + 1),
+                    onSelect = { onSelect(index, it) }
+                ), selection = selection?.takeIf { media[index].unavailableReason == null }?.contains(index),
+                onBitmapDimensions = { sourceWidth, sourceHeight ->
                     val source = sourceWidth to sourceHeight
                     if (media.size > 1 && source != dimensions[index] && !listState.isScrollInProgress) {
                         // A neighboring card changing width must not move the selected item.

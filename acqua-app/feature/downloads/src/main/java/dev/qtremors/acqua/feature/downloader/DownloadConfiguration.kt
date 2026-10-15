@@ -1,146 +1,73 @@
 package dev.qtremors.acqua.feature.downloader
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
 import android.text.format.Formatter
-import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PageSize
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.progressBarRangeInfo
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.MusicNote
-import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
+import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.graphics.graphicsLayer
-import dev.qtremors.acqua.ui.components.EmptyState
-import dev.qtremors.acqua.ui.components.EmptyStateVariant
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
-import dev.qtremors.acqua.ui.components.ExpressiveSegmentedButtonRow
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.SheetValue
+import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.qtremors.acqua.core.data.R
-import dev.qtremors.acqua.data.network.HttpMediaClient
-import dev.qtremors.acqua.data.network.MediaPreviewCache
 import dev.qtremors.acqua.domain.DownloadEngine
-import dev.qtremors.acqua.domain.MediaBackend
-import dev.qtremors.acqua.domain.MediaKind
-import dev.qtremors.acqua.domain.MediaResolutionFailure
-import dev.qtremors.acqua.downloader.DownloadFailure
-import dev.qtremors.acqua.domain.ResolvedMedia
-import dev.qtremors.acqua.downloader.AudioOutputFormat
+import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.downloader.DownloadQueueState
-import dev.qtremors.acqua.downloader.YtDlpFormatSelector.qualityDimension
-import dev.qtremors.acqua.platform.HapticSignal
-import dev.qtremors.acqua.platform.performHaptic
+import dev.qtremors.acqua.downloader.YtDlpDownloadOptions
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun DownloadConfigBottomSheet(
     state: DownloaderUiState,
@@ -149,22 +76,15 @@ internal fun DownloadConfigBottomSheet(
     onResolve: () -> Unit,
     onEngineChange: (DownloadEngine) -> Unit,
     onContentTypeChange: (DownloadContentType) -> Unit,
-    onVideoHeightChange: (Int) -> Unit,
-    onAudioFormatChange: (AudioOutputFormat) -> Unit,
-    onEmbedMetadataChange: (Boolean) -> Unit,
-    onEmbedThumbnailChange: (Boolean) -> Unit,
-    onCropArtworkChange: (Boolean) -> Unit,
-    onOriginalMetadataChange: (Boolean) -> Unit
+    onConfigurationChange: (YtDlpDownloadOptions) -> Unit,
+    onDownload: () -> Unit,
+    onPlaylistSelection: (Boolean, Set<Int>?) -> Unit = { _, _ -> },
+    onContentSelection: (YtDlpDownloadOptions, Set<Int>?) -> Unit = { _, _ -> },
+    onInspectEntry: (Int) -> Unit = {},
+    showSource: Boolean = false
 ) {
     val colors = MaterialTheme.colorScheme
-    val ytDlpMedia = state.media?.singleOrNull()?.takeIf { it.backend == MediaBackend.YT_DLP }
-    val availableHeights = ytDlpMedia?.formats.orEmpty().asSequence()
-        .filter { it.hasVideo && it.qualityDimension > 0 }
-        .map { it.qualityDimension }
-        .distinct()
-        .sortedDescending()
-        .toList()
-        .ifEmpty { listOf(2160, 1440, 1080, 720, 480, 360) }
+    val readyToDownload = state.media != null || WebLink.extractAll(state.url).size > 1
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -172,199 +92,124 @@ internal fun DownloadConfigBottomSheet(
             initialValue = SheetValue.Hidden,
             enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
         ),
-        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = colors.surfaceContainerLow
     ) {
-        Column(
-            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp).padding(bottom = 24.dp)
-        ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Column(Modifier.fillMaxWidth().heightIn(max = 640.dp).imePadding().testTag("download-config-sheet")) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.download_options),
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier.weight(1f))
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, stringResource(R.string.close)) }
+            }
+            Column(
+                Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp, vertical = 8.dp).testTag("download-config-controls"),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text(
-                    stringResource(R.string.download_options),
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                )
-                IconButton(onClick = onDismiss) {
-                    Icon(Icons.Filled.Close, stringResource(R.string.close))
+                if (showSource) Text(state.url, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall)
+                DownloadOptionChips(stringResource(R.string.download_engine), state.downloadEngine,
+                    DownloadEngine.entries.map { it to stringResource(
+                        if (it == DownloadEngine.ACQUA) R.string.acqua_engine else R.string.ytdlp_engine) }, onEngineChange)
+                if (state.downloadEngine == DownloadEngine.YT_DLP) {
+                    DownloadOptionChips(stringResource(R.string.download_type), state.downloadContentType,
+                        listOf(DownloadContentType.AUDIO to stringResource(R.string.audio),
+                            DownloadContentType.VIDEO to stringResource(R.string.video)), onContentTypeChange)
+                    DownloadPickerControls(state, onConfigurationChange)
+                }
+                DownloadExtraControls(state, onResolve, onInspectEntry, onPlaylistSelection, onContentSelection)
+                dev.qtremors.acqua.ui.components.CookieProfileSelector(state.configurationOptions(), onApply = onConfigurationChange)
+                if (state.downloadEngine == DownloadEngine.YT_DLP) dev.qtremors.acqua.ui.components.CommandTemplateSelector(state.configurationOptions()) {
+                    if (it.contentType != state.downloadContentType) onContentTypeChange(it.contentType)
+                    onConfigurationChange(it)
+                }
+                if (state.downloadEngine == DownloadEngine.YT_DLP) dev.qtremors.acqua.ui.components.FormatPolicyButton(state.advancedOptions.formatPolicy) {
+                    onConfigurationChange(state.configurationOptions().copy(formatPolicy = it, formatSelectorOverride = null, templateAudioMultistreams = false))
+                }
+                dev.qtremors.acqua.ui.components.SettingsSwitchRow(index = 0, count = 1,
+                    title = stringResource(R.string.record_download_history),
+                    description = stringResource(R.string.record_download_history_hint),
+                    checked = state.advancedOptions.recordHistory,
+                    onCheckedChange = { onConfigurationChange(state.configurationOptions().copy(recordHistory = it)) })
+                dev.qtremors.acqua.ui.components.TransferNetworkOptionsButton(state.advancedOptions.network) {
+                    onConfigurationChange(state.configurationOptions().copy(network = it))
+                }
+                if (state.downloadEngine == DownloadEngine.YT_DLP) dev.qtremors.acqua.ui.components.SegmentRemovalButton(state.advancedOptions.removeSegments) {
+                    onConfigurationChange(state.configurationOptions().copy(removeSegments = it))
                 }
             }
-
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.download_engine),
-                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-            )
-            Spacer(Modifier.height(8.dp))
-            ExpressiveSegmentedButtonRow(
-                items = listOf(DownloadEngine.ACQUA, DownloadEngine.YT_DLP),
-                selectedIndex = if (state.downloadEngine == DownloadEngine.ACQUA) 0 else 1,
-                onSelect = { index ->
-                    onEngineChange(if (index == 0) DownloadEngine.ACQUA else DownloadEngine.YT_DLP)
-                },
-                label = { engine ->
-                    when (engine) {
-                        DownloadEngine.ACQUA -> stringResource(R.string.acqua_engine)
-                        DownloadEngine.YT_DLP -> stringResource(R.string.ytdlp_engine)
-                    }
-                },
-                leadingIcon = { engine, _ ->
-                    when (engine) {
-                        DownloadEngine.ACQUA -> Icon(Icons.Filled.Download, null, Modifier.size(16.dp))
-                        DownloadEngine.YT_DLP -> Icon(Icons.Filled.Tune, null, Modifier.size(16.dp))
-                    }
-                }
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            if (state.downloadEngine == DownloadEngine.ACQUA) {
-                Text(
-                    stringResource(R.string.acqua_engine_explanation),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
-                )
-            } else {
-                Text(
-                    stringResource(R.string.ytdlp_engine_explanation),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
-                )
-
-                Text(
-                    stringResource(R.string.video) + " / " + stringResource(R.string.audio),
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
-                )
-                Spacer(Modifier.height(8.dp))
-                ExpressiveSegmentedButtonRow(
-                    items = listOf(DownloadContentType.VIDEO, DownloadContentType.AUDIO),
-                    selectedIndex = if (state.downloadContentType == DownloadContentType.VIDEO) 0 else 1,
-                    onSelect = { index ->
-                        onContentTypeChange(if (index == 0) DownloadContentType.VIDEO else DownloadContentType.AUDIO)
-                    },
-                    label = { type ->
-                        when (type) {
-                            DownloadContentType.VIDEO -> stringResource(R.string.video)
-                            DownloadContentType.AUDIO -> stringResource(R.string.audio)
-                        }
-                    },
-                    leadingIcon = { type, _ ->
-                        when (type) {
-                            DownloadContentType.VIDEO -> Icon(Icons.Filled.Movie, null, Modifier.size(18.dp))
-                            DownloadContentType.AUDIO -> Icon(Icons.Filled.MusicNote, null, Modifier.size(18.dp))
-                        }
-                    }
-                )
-
-            if (state.downloadContentType == DownloadContentType.VIDEO) {
-                Text(
-                    stringResource(R.string.quality),
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                    modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)
-                )
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    FilterChip(
-                        selected = state.maximumVideoHeight == 0,
-                        onClick = { onVideoHeightChange(0) },
-                        label = { Text(stringResource(R.string.best)) }
-                    )
-                    availableHeights.forEach { height ->
-                        FilterChip(
-                            selected = state.maximumVideoHeight == height,
-                            onClick = { onVideoHeightChange(height) },
-                            label = { Text("${height}p") }
-                        )
-                    }
-                }
-            } else {
-                Text(
-                        stringResource(R.string.audio_format),
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)
-                    )
-                    ExpressiveSegmentedButtonRow(
-                        items = AudioOutputFormat.entries,
-                        selectedIndex = AudioOutputFormat.entries.indexOf(state.audioFormat).coerceAtLeast(0),
-                        onSelect = { index ->
-                            onAudioFormatChange(AudioOutputFormat.entries[index])
-                        },
-                        label = { format ->
-                            when (format) {
-                                AudioOutputFormat.ORIGINAL -> stringResource(R.string.original_audio)
-                                AudioOutputFormat.M4A -> "M4A"
-                                AudioOutputFormat.MP3 -> "MP3"
-                            }
-                        }
-                    )
-                }
-
-                HorizontalDivider(Modifier.padding(vertical = 12.dp))
-
-                ListItem(
-                    supportingContent = { Text(stringResource(R.string.embed_metadata_explanation), style = MaterialTheme.typography.bodySmall) },
-                    trailingContent = { Switch(checked = state.embedMetadata, onCheckedChange = null, modifier = Modifier.clearAndSetSemantics { }) },
-                    modifier = Modifier.toggleable(state.embedMetadata, role = Role.Switch, onValueChange = onEmbedMetadataChange)
-                        .semantics(mergeDescendants = true) { },
-                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
-                ) {
-                    Text(stringResource(R.string.embed_metadata), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                }
-                ListItem(
-                    supportingContent = { Text(stringResource(R.string.embed_thumbnail_explanation), style = MaterialTheme.typography.bodySmall) },
-                    trailingContent = { Switch(checked = state.embedThumbnail, onCheckedChange = null, modifier = Modifier.clearAndSetSemantics { }) },
-                    modifier = Modifier.toggleable(state.embedThumbnail, role = Role.Switch, onValueChange = onEmbedThumbnailChange)
-                        .semantics(mergeDescendants = true) { },
-                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
-                ) {
-                    Text(stringResource(R.string.embed_thumbnail), style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                }
-            }
-
-            if (state.downloadEngine == DownloadEngine.YT_DLP && state.downloadContentType == DownloadContentType.AUDIO) {
-                ListItem(
-                    supportingContent = { Text(stringResource(R.string.crop_artwork_description)) },
-                    trailingContent = { Switch(state.cropArtwork, onCheckedChange = null, modifier = Modifier.clearAndSetSemantics { }) },
-                    modifier = Modifier.toggleable(state.cropArtwork, role = Role.Switch, onValueChange = onCropArtworkChange)
-                        .semantics(mergeDescendants = true) { },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-                ) { Text(stringResource(R.string.crop_artwork)) }
-            }
-            ListItem(
-                supportingContent = { Text(stringResource(R.string.original_metadata_description)) },
-                trailingContent = { Switch(state.preserveOriginalMetadata, onCheckedChange = null, modifier = Modifier.clearAndSetSemantics { }) },
-                modifier = Modifier.toggleable(state.preserveOriginalMetadata, role = Role.Switch, onValueChange = onOriginalMetadataChange)
-                    .semantics(mergeDescendants = true) { },
-                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-            ) { Text(stringResource(R.string.original_metadata)) }
-            Spacer(Modifier.height(16.dp))
+            HorizontalDivider()
             Button(
-                onClick = {
-                    onDismiss()
-                    onResolve()
-                },
-                enabled = canResolve && !state.isResolving,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                shape = RoundedCornerShape(14.dp)
+                onClick = { onDismiss(); if (readyToDownload) onDownload() else onResolve() },
+                enabled = canResolve && state.configurationActionEnabled(),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                    .fillMaxWidth().heightIn(min = ButtonDefaults.MediumContainerHeight).testTag("download-config-action"),
+                shapes = ButtonDefaults.shapesFor(ButtonDefaults.MediumContainerHeight),
+                contentPadding = ButtonDefaults.contentPaddingFor(ButtonDefaults.MediumContainerHeight)
             ) {
                 if (state.isResolving) {
                     CircularProgressIndicator(Modifier.size(18.dp), color = colors.onPrimary, strokeWidth = 2.dp)
-                    Spacer(Modifier.size(8.dp))
-                } else {
-                    Icon(Icons.Filled.Download, null, Modifier.size(18.dp))
-                    Spacer(Modifier.size(8.dp))
+                } else Icon(Icons.Filled.Download, null, Modifier.size(18.dp))
+                Spacer(Modifier.size(8.dp))
+                Text(if (readyToDownload && state.selectedCollectionItems != null && !state.isResolving)
+                    stringResource(R.string.download_selected_count, state.selectedIndices().size) else if (
+                    readyToDownload && state.media?.any { it.collectionUrl != null } == true && !state.isResolving
+                ) stringResource(R.string.download_selected_count, state.selectedIndices().size) else stringResource(when {
+                    state.isResolving -> R.string.resolving_media
+                    readyToDownload -> R.string.download
+                    else -> R.string.fetch
+                }),
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+internal fun DownloaderUiState.configurationActionEnabled(): Boolean {
+    if (isResolving || isSaving || savingItemIndex != null || isBatchRunning) return false
+    if (WebLink.extractAll(url).size > 1) return true
+    val items = media ?: return validity == LinkValidity.VALID
+    return items.withIndex().any { (index, item) ->
+        item.unavailableReason == null && (selectedCollectionItems == null || index in selectedCollectionItems)
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun <T> DownloadOptionChips(label: String, selected: T, choices: List<Pair<T, String>>, onSelect: (T) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, style = MaterialTheme.typography.titleSmall, color = colors.onSurfaceVariant)
+        key(label, choices.map { it.first }) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                choices.forEachIndexed { index, (value, text) ->
+                    key(value) {
+                        val isSelected = value == selected
+                        val shapes = when {
+                            choices.size == 1 -> ToggleButtonDefaults.shapesFor(48.dp)
+                            index == 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                            index == choices.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                            else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        }
+                        ToggleButton(
+                            checked = isSelected,
+                            onCheckedChange = { if (!isSelected) onSelect(value) },
+                            modifier = Modifier.heightIn(min = 48.dp).semantics {
+                                role = Role.RadioButton
+                                this.selected = isSelected
+                            },
+                            shapes = shapes,
+                            colors = ToggleButtonDefaults.colors(containerColor = colors.surfaceContainerHigh,
+                                contentColor = colors.onSurface, checkedContainerColor = colors.primary,
+                                checkedContentColor = colors.onPrimary),
+                            icon = if (isSelected) ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) }) else null
+                        ) {
+                            Text(text, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium)
+                        }
+                    }
                 }
-                Text(
-                    stringResource(if (state.isResolving) R.string.resolving_media else R.string.fetch),
-                    fontWeight = FontWeight.Bold
-                )
             }
         }
     }
