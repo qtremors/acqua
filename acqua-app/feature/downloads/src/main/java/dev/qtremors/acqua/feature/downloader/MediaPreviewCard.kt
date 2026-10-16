@@ -255,24 +255,28 @@ fun MediaPreviewCard(
     val previewWidthPixels = with(density) { cardWidth.roundToPx() }
     val previewHeightPixels = with(density) { cardHeight.roundToPx() }
     var failed by remember(previewUrl) { mutableStateOf(false) }
+    val namedSession = item.authorizedSession
+    val previewSession = namedSession.takeIf { useBrowserSessions && item.explicitBrowserSessionAuthorized }
     val cookies = remember(
         previewUrl,
         item.requestCookies,
+        namedSession,
         item.explicitBrowserSessionAuthorized,
         useBrowserSessions
     ) {
         val sessionAccessAllowed = useBrowserSessions && item.explicitBrowserSessionAuthorized
         when {
-            !sessionAccessAllowed || previewUrl == null -> null
+            namedSession != null || !sessionAccessAllowed || previewUrl == null -> null
             WebLink.host(previewUrl) == WebLink.host(item.url) -> item.requestCookies
                 ?: CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
             else -> CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
         }
     }
-    val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies, previewWidthPixels, previewHeightPixels, cropPreview) {
-        val loaded = if (previewUrl == null) null else withContext(Dispatchers.IO) {
+    val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies, previewSession, item.requestUserAgent,
+        previewWidthPixels, previewHeightPixels, cropPreview) {
+        val loaded = if (previewUrl == null || namedSession != null && previewSession == null) null else withContext(Dispatchers.IO) {
             previewCache.loadBitmap(
-                item.copy(url = previewUrl, requestCookies = null),
+                item.copy(url = previewUrl, requestCookies = null, authorizedSession = previewSession),
                 previewWidthPixels,
                 previewHeightPixels,
                 fill = cropPreview

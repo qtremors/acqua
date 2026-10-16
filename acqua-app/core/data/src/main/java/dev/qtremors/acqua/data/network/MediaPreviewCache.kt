@@ -18,7 +18,8 @@ class MediaPreviewCache(
         val cacheFile = File(directory, cacheKey(item))
         runCatching {
             prune()
-            downloader.fetchPreviewToFile(item, cacheFile, MAX_FILE_BYTES)
+            val client = item.authorizedSession?.let(downloader::withSession) ?: downloader
+            client.fetchPreviewToFile(item, cacheFile, MAX_FILE_BYTES)
             cacheFile.setLastModified(System.currentTimeMillis())
             prune()
             decodeSampled(cacheFile, maxWidth.coerceAtLeast(1), maxHeight.coerceAtLeast(1), fill)
@@ -45,7 +46,8 @@ class MediaPreviewCache(
     }
 
     private fun cacheKey(item: ResolvedMedia): String {
-        val identity = listOf(item.url, item.referer.orEmpty(), item.requestCookies.orEmpty()).joinToString("\u0000")
+        val identity = listOf(item.url, item.referer.orEmpty(), item.requestCookies.orEmpty(),
+            item.authorizedSession.orEmpty(), item.requestUserAgent.orEmpty()).joinToString("\u0000")
         return MessageDigest.getInstance("SHA-256")
             .digest(identity.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }

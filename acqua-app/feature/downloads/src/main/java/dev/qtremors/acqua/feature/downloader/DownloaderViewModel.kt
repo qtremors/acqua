@@ -450,7 +450,10 @@ class DownloaderViewModel(
         val snapshot = mutableState.value
         if (snapshot.isSaving || snapshot.savingItemIndex != null) {
             val workId = if (snapshot.savingItemIndex == index) activeWorkIds.singleOrNull()
-                else if (snapshot.isSaving) activeWorkIds.getOrNull(index) else null
+                else if (snapshot.isSaving) snapshot.media?.getOrNull(index)?.let { media ->
+                    val key = "${media.collectionUrl ?: WebLink.mediaAssetIdentity(media.url)}#${media.collectionIndex}"
+                    snapshot.acceptedMediaTasks[key]?.let(UUID::fromString)
+                } else null
             if (workId != null && !ytDlpDownloads.rename(workId, name)) return
         }
         mutableState.value = snapshot.copy(media = snapshot.media?.mapIndexed { position, media ->

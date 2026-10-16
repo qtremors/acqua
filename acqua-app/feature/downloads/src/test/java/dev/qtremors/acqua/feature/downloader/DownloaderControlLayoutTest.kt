@@ -51,6 +51,26 @@ class DownloaderControlLayoutTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
+    fun `pasted batches offer a batch action and disable it while queueing`() {
+        val state = mutableStateOf(DownloaderUiState(url = "https://example.com/one\nhttps://example.com/two"))
+        var clicks = 0
+        compose.setContent {
+            MaterialTheme {
+                Box(Modifier.width(360.dp)) {
+                    BottomControlsSection(state.value, true, true, {}, {},
+                        { error("Unexpected single link inspection") }, { clicks++ })
+                }
+            }
+        }
+        compose.onNodeWithText("Download links").assertIsDisplayed().performClick()
+        assertEquals(1, clicks)
+        compose.runOnIdle { state.value = state.value.copy(isBatchRunning = true) }
+        compose.onNodeWithText("Queueing links…").assertIsDisplayed()
+        compose.onNodeWithText("Queueing links…").performClick()
+        assertEquals(1, clicks)
+    }
+
+    @Test
     fun `tabs fit their labels and changing badges across selection and font sizes`() {
         val selected = mutableStateOf(0)
         val count = mutableStateOf(1)
@@ -140,7 +160,8 @@ class DownloaderControlLayoutTest {
         assertFullText("Download all (2)")
         val engine = compose.onNodeWithText("yt-dlp · Audio (Original)").fetchSemanticsNode().boundsInRoot
         val action = compose.onNodeWithText("Download all (2)").fetchSemanticsNode().boundsInRoot
-        assertTrue(action.top >= engine.bottom)
+        assertEquals(engine.top, action.top, 1f)
+        assertTrue(action.left > engine.right)
         savePreview("acqua-downloader-control-sizing.png")
         compose.runOnIdle { state.value = state.value.copy(isSaving = true, savingIndex = 1) }
         assertFullText("1/2 downloaded")

@@ -68,6 +68,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import kotlin.math.abs
@@ -84,7 +85,7 @@ class DownloaderLayoutTest {
     }
 
     @Test
-    fun `mixed image carousel fills the viewport with small gaps and loops in both directions`() {
+    fun `mixed image carousel fits original aspect ratios with small gaps and loops in both directions`() {
         val items = listOf(
             ResolvedMedia("https://preview.test/portrait", MediaKind.IMAGE, width = 600, height = 1200),
             ResolvedMedia("https://preview.test/landscape", MediaKind.IMAGE, width = 1200, height = 600)
@@ -98,24 +99,28 @@ class DownloaderLayoutTest {
         val portrait = cardBounds(0)
         assertEquals(150f, portrait.width, 1f)
         assertEquals(300f, portrait.height, 1f)
+        assertPreviewFits(0, 0.5f)
         assertSmallHorizontalGaps()
         savePreview("acqua-image-carousel-layout.png")
         moveCarousel(forward = true)
         waitForPreview(1)
         val landscape = compose.onAllNodesWithTag("media-preview-1").fetchSemanticsNodes()
             .minBy { abs(it.boundsInRoot.center.x - square.center.x) }.layoutInfo.coordinates.size
-        assertEquals(600, landscape.width)
-        assertEquals(300, landscape.height)
+        assertEquals(300, landscape.width)
+        assertEquals(150, landscape.height)
+        assertPreviewFits(1, 2f)
         assertSmallHorizontalGaps()
         assertEquals(square, compose.onNodeWithTag("media-preview-container").fetchSemanticsNode().boundsInRoot)
         repeat(4) { turn ->
             moveCarousel(forward = true)
             compose.onNodeWithText("${turn % 2 + 1} / 2").assertIsDisplayed()
+            assertPreviewFits(turn % 2, if (turn % 2 == 0) 0.5f else 2f)
             assertSmallHorizontalGaps()
         }
         repeat(5) { turn ->
             moveCarousel(forward = false)
             compose.onNodeWithText("${turn % 2 + 1} / 2").assertIsDisplayed()
+            assertPreviewFits(turn % 2, if (turn % 2 == 0) 0.5f else 2f)
             assertSmallHorizontalGaps()
         }
     }
@@ -205,6 +210,61 @@ class DownloaderLayoutTest {
         savePreview("acqua-audio-progress-layout.png")
     }
 
+    @Test
+    fun `playlist uses the existing post carousel and modal selection controls its download actions`() {
+        RuntimeEnvironment.setFontScale(1f)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val playlistUrl = "https://www.youtube.com/playlist?list=PL123"
+        val entries = List(3) { index -> ResolvedMedia("https://example.com/video/$index", MediaKind.VIDEO,
+            backend = MediaBackend.YT_DLP, width = 1920, height = 1080,
+            thumbnailUrl = "https://preview.test/${if (index == 1) "portrait" else "landscape"}",
+            title = "Mountain trail ${index + 1}", downloadName = "Walk ${index + 1}",
+            collectionUrl = playlistUrl, collectionTitle = "Weekend walks",
+            collectionIndex = index + 1, collectionSize = 3, unavailableReason = if (index == 2) "Private video" else null) }
+        lateinit var viewModel: DownloaderViewModel
+        compose.setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                Box(Modifier.width(360.dp).height(640.dp).background(MaterialTheme.colorScheme.background)) {
+                    viewModel = androidx.compose.runtime.remember {
+                        DownloaderViewModel(HistoryWriter { 0L }, NoResolution(), AppSettingsRepository(context),
+                            YtDlpCancellation {}, LayoutQueue(), SavedStateHandle()).apply { seedResolvedMedia(playlistUrl, entries) }
+                    }
+                    val client = androidx.compose.runtime.remember { previewClient() }
+                    DownloaderScreen(viewModel, client, false, true, 0, { _, _ -> emptyList() },
+                        { _, action -> action() }, {}, showHeaderCard = false)
+                }
+            }
+        }
+        waitForPreview(0)
+        assertPreviewFits(0, 2f)
+        compose.onNodeWithTag("media-preview-container").assertIsDisplayed()
+        compose.onNodeWithTag("media-metadata").assertIsDisplayed()
+        compose.onNodeWithText("1 / 3").assertIsDisplayed()
+        compose.onNodeWithText("Download all (2)").assertIsDisplayed()
+        compose.onNodeWithText("Inspect").assertDoesNotExist()
+        compose.onNodeWithText("List view").assertDoesNotExist()
+        compose.onNodeWithTag("playlist-range").assertDoesNotExist()
+        compose.onNode(isToggleable()).assertDoesNotExist()
+        savePreview("acqua-playlist-shared-carousel.png")
+        compose.runOnIdle { viewModel.applyPlaylistSelection(true, setOf(1)) }
+        compose.onNodeWithText("Download · 1").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Download item").assertIsEnabled()
+        moveCarousel(forward = true)
+        compose.onNodeWithText("2 / 3").assertIsDisplayed()
+        waitForPreview(1)
+        assertPreviewFits(1, 0.5f)
+        savePreview("acqua-playlist-portrait-carousel.png")
+        compose.onNodeWithContentDescription("Download item").assertIsEnabled()
+        moveCarousel(forward = true)
+        compose.onNodeWithText("3 / 3").assertIsDisplayed()
+        waitForPreview(2)
+        assertPreviewFits(2, 2f)
+        compose.onNodeWithText("Unavailable entry").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Download item").assertIsNotEnabled()
+        compose.runOnIdle { viewModel.applyPlaylistSelection(true, emptySet()) }
+        compose.onNodeWithText("Download · 0").assertIsNotEnabled()
+    }
+
     private fun savePreview(name: String) {
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         File(System.getProperty("java.io.tmpdir"), name).outputStream().use {
@@ -214,7 +274,7 @@ class DownloaderLayoutTest {
 
     private fun waitForPreview(index: Int) {
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag("loaded-media-preview-$index").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag("loaded-media-preview-$index", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
         }
     }
 
@@ -222,6 +282,19 @@ class DownloaderLayoutTest {
         val viewport = compose.onNodeWithTag("media-preview-container").fetchSemanticsNode().boundsInRoot
         return compose.onAllNodesWithTag("media-preview-$index").fetchSemanticsNodes()
             .map { it.boundsInRoot }.minBy { abs(it.center.x - viewport.center.x) }
+    }
+
+    private fun assertPreviewFits(index: Int, aspectRatio: Float) {
+        val viewport = compose.onNodeWithTag("media-preview-container").fetchSemanticsNode().boundsInRoot
+        val card = compose.onAllNodesWithTag("media-preview-$index").fetchSemanticsNodes()
+            .minBy { abs(it.boundsInRoot.center.x - viewport.center.x) }
+        val measured = card.layoutInfo.coordinates.size
+        assertTrue(measured.width <= viewport.width + 1f)
+        assertTrue(measured.height <= viewport.height + 1f)
+        assertEquals(aspectRatio, measured.width.toFloat() / measured.height, 0.02f)
+        assertEquals(viewport.center.x, card.boundsInRoot.center.x, 1f)
+        assertEquals(measured.width.toFloat(), card.boundsInRoot.width, 1f)
+        assertEquals(measured.height.toFloat(), card.boundsInRoot.height, 1f)
     }
 
     private fun assertSmallHorizontalGaps() {
@@ -237,7 +310,7 @@ class DownloaderLayoutTest {
     private fun moveCarousel(forward: Boolean) {
         compose.onNodeWithTag("media-preview-container").performTouchInput {
             down(Offset(if (forward) width * 0.8f else width * 0.2f, centerY))
-            moveBy(Offset(if (forward) -300f else 300f, 0f), delayMillis = 800)
+            moveBy(Offset(if (forward) -300f else 300f, 0f), delayMillis = 100)
             advanceEventTime(200)
             up()
         }

@@ -107,7 +107,7 @@ private fun DownloadPickerList(
             AudioTracksButton(draft, state.streamFormats(), audioTracksExpanded, onAudioTracksExpand, onChange)
         }
         if (included) Text(stringResource(R.string.stream_audio_included_hint), style = MaterialTheme.typography.bodyMedium)
-        else if (!draft.silentVideo) choices.forEach { choice ->
+        else if (field != DownloadPickerField.AUDIO_STREAM || !draft.silentVideo) choices.forEach { choice ->
             val selected = choice.value == draft.pickerValue(field)
             val optionId = if (choice.value == null) "automatic" else choice.value
             Surface(shape = MaterialTheme.shapes.medium,

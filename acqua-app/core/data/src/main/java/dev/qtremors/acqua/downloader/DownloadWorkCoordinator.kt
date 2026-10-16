@@ -174,7 +174,7 @@ class DownloadWorkCoordinator(context: Context, private val profiles: dev.qtremo
     override fun rename(id: UUID, name: String): Boolean {
         if (!DownloadNameOverrides.rename(applicationContext, id.toString(), name)) return false
         requests.input(id)?.let { input -> requests.put(id, androidx.work.Data.Builder().putAll(input)
-            .putString(DownloadWorkData.KEY_DOWNLOAD_NAME, name.trim()).build()) }
+            .putString(DownloadWorkData.KEY_DOWNLOAD_NAME, name.trim()).build(), requests.timeline(id), requests.authorization(id)) }
         requests.changed()
         return true
     }

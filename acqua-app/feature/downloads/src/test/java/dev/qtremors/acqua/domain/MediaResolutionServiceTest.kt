@@ -10,6 +10,13 @@ import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 
 class MediaResolutionServiceTest {
+    @Test fun `collection entries retain identity and are not truncated`() = runBlocking {
+        val items = (1..40).map { ResolvedMedia("https://example.com/list", MediaKind.VIDEO, backend = MediaBackend.YT_DLP,
+            collectionUrl = "https://example.com/list", collectionIndex = it) }
+        val service = MediaResolutionService(MediaResolver { emptyList() }, MediaResolver { items }) { error("No direct inspection") }
+        val resolved = service.resolve("https://example.com/list", false, engine = DownloadEngine.YT_DLP) { _, _ -> emptyList() }
+        assertEquals(items, resolved)
+    }
     @Test
     fun `empty results fail consistently in both engines without opening the browser`() {
         val service = MediaResolutionService(MediaResolver { emptyList() }, MediaResolver { emptyList() }) { it }
@@ -240,7 +247,7 @@ class MediaResolutionServiceTest {
             }
         }
 
-        assertEquals(MediaResolutionFailure.SESSION_REQUIRED, error.failure)
+        assertEquals(MediaResolutionFailure.UNSUPPORTED_MEDIA, error.failure)
         assertEquals(false, browserCalled)
     }
 

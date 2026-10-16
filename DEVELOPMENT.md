@@ -2,7 +2,7 @@
 
 > Architecture, implementation notes, conventions, and verification guidance for Acqua development.
 
-**Version:** 0.3.6 | **Last Updated:** 2026-10-15
+**Version:** 0.3.7 | **Last Updated:** 2026-10-16
 **Scope:** Internal development, media downloader architecture, UI paradigms, testing, and release maintenance.
 
 ---
@@ -292,8 +292,8 @@ Acqua implements **Material 3 Expressive** design tokens and grouped list presen
 | **Compile SDK** | 37 |
 | **Target SDK** | 37 |
 | **Min SDK** | 24 (Android 7.0+) |
-| **Version Code** | 36 |
-| **Version Name** | 0.3.6 |
+| **Version Code** | 37 |
+| **Version Name** | 0.3.7 |
 | **Java Target** | JVM 11 |
 | **Gradle Version** | 9.8.0 |
 | **Gradle JVM** | JDK 21 |

@@ -208,8 +208,8 @@ android {
         applicationId = "dev.qtremors.acqua"
         minSdk = 24
         targetSdk = 37
-        versionCode = 36
-        versionName = "0.3.6"
+        versionCode = 37
+        versionName = "0.3.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -2,6 +2,15 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.7] - 2026-10-16
+
+### Fixed
+
+- Preserve saved sessions and chapter details when renaming queued downloads.
+- Rename the correct download when saving selected carousel items.
+- Authenticate previews with the chosen saved session and keep cached previews separate across accounts.
+- Keep quality, container, and video stream choices available for video without audio.
+
 ## [0.3.6] - 2026-10-15
 
 ### Added
