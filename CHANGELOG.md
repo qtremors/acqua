@@ -2,6 +2,12 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.8] - 2026-10-17
+
+### Changed
+
+- Explain GitHub credentials, feed backups, installed-app matching, and package installation in the privacy policy.
+
 ## [0.3.7] - 2026-10-16
 
 ### Fixed

@@ -132,6 +132,7 @@ class AboutModelsTest {
         assertEquals(
             listOf(
                 "AndroidX, Compose, Kotlin, and coroutines",
+                "Markwon and CommonMark Java",
                 "OkHttp and Okio",
                 "Apache Commons and Jackson",
                 "youtubedl-android",

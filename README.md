@@ -24,7 +24,7 @@
 </p>
 
 > [!NOTE]
-> **Responsible use & privacy:** Only download content you own, have permission to save, or are legally authorized to access. Acqua has no ads, telemetry, or remote user tracking. Media and browser sessions stay on your device.
+> **Responsible use & privacy:** Only download content you own, have permission to save, or are legally authorized to access. Acqua has no ads, telemetry, or remote user tracking. Browser sessions use app-private storage; media is saved to Downloads or folders you choose.
 
 ## Why Acqua
 
@@ -38,15 +38,17 @@ The universal APK bundles all architecture binaries (`arm64-v8a`, `armeabi-v7a`,
 
 ## Features
 
-- **Private by design:** No ads, analytics, accounts, or telemetry. Media and browser cookies stay in app-private storage.
+- **Private by design:** No ads, analytics, telemetry, or Acqua account requirement. Browser cookies stay in app-private storage.
 - **Dual engine processing:** Native direct extraction for fast carousel and direct media, with yt-dlp available for full quality, audio formats, metadata, and artwork.
 - **Supported sources:** Download Instagram posts, reels, and carousels, direct media URLs, and YouTube, YouTube Music, or other compatible pages through yt-dlp or browser-assisted extraction.
 - **Preview before downloading:** Inspect video dimensions, image resolutions, audio formats, and sizes before committing to a download.
-- **Quality and format controls:** Choose the best available video or cap it from 2160p through 360p, and keep original audio or convert it to M4A or MP3.
-- **Background queue:** Background downloads continue reliably when you leave the app, with progress notifications and automatic network retry.
+- **Quality and format controls:** Choose Best quality, a resolution cap, or exact streams; keep original audio or convert it to M4A or MP3.
+- **Collections and editing:** Select collection entries, submit multiple links, save captions, and produce named clips or chapter files.
+- **Background queue:** Follow progress, cancel individual tasks, and retry eligible network failures, with one or two downloads at a time.
 - **In-app browser:** Browse and sign in to websites full-screen with app-private cookies. Downloads open above the live browser without losing your place or page state.
-- **Organized storage:** Save files into categorized subfolders (`Images/`, `Videos/`, `Audio/`) with customizable filename patterns and template chips.
-- **History & recovery:** Search, filter, share, and manage past downloads with missing-file detection and re-download support.
+- **Organized storage:** Choose separate photo, audio, and video folders, organize by website or collection, and customize filename templates.
+- **History & recovery:** Search, filter, share, import, export, and relink download records, with missing-file detection and re-download support.
+- **GitHub release feeds:** Track APK releases, match installed apps, and optionally connect a GitHub account for authorized private repositories.
 - **Modern Material 3 Expressive UI:** Built with dynamic segmented lists, smooth animations, and adaptive light/dark themes.
 
 ## Community and support
@@ -65,7 +67,7 @@ Acqua is built by [Tremors](https://github.com/qtremors) with Kotlin and the And
 - [OkHttp](https://square.github.io/okhttp/)
 - [youtubedl-android](https://github.com/yausername/youtubedl-android), [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org/), and [Python](https://www.python.org/)
 - [QuickJS-Android](https://github.com/cashapp/quickjs-android)
-- [DM Sans](https://fonts.google.com/specimen/DM+Sans), [Manrope](https://fonts.google.com/specimen/Manrope), [Lucide](https://lucide.dev/), and [Simple Icons](https://simpleicons.org/) for the project website and visual presentation
+- [Lucide](https://lucide.dev/) and [Simple Icons](https://simpleicons.org/) for project website icons
 
 The app's **Settings → App information → Open-source notices** screen lists all runtime libraries and their licenses. Each project remains the property of its respective authors and is used under its own license.
 
