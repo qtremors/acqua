@@ -2,6 +2,12 @@
 
 All notable user-visible changes are documented here.
 
+## [0.3.9] - 2026-10-18
+
+### Fixed
+
+- Correct website storage and session details, remove unavailable font requests, and restore the background of website credits.
+
 ## [0.3.8] - 2026-10-17
 
 ### Changed

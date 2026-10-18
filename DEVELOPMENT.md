@@ -2,7 +2,7 @@
 
 > Architecture, implementation notes, conventions, and verification guidance for Acqua development.
 
-**Version:** 0.3.8 | **Last Updated:** 2026-10-17
+**Version:** 0.3.9 | **Last Updated:** 2026-10-18
 **Scope:** Internal development, media downloader architecture, UI paradigms, testing, and release maintenance.
 
 ---
@@ -492,8 +492,8 @@ need human wording, plural, RTL, and screen-reader review on physical devices.
 | **Compile SDK** | 37 |
 | **Target SDK** | 37 |
 | **Min SDK** | 24 (Android 7.0+) |
-| **Version Code** | 38 |
-| **Version Name** | 0.3.8 |
+| **Version Code** | 39 |
+| **Version Name** | 0.3.9 |
 | **Java Target** | JVM 11 |
 | **Gradle Version** | 9.8.0 |
 | **Gradle JVM** | JDK 21 |

@@ -193,7 +193,10 @@ class AcquaAndroidApplicationConventionsPlugin : Plugin<Project> {
 
             val productionKotlin = rootProject.fileTree(rootProject.projectDir) {
                 include("app/src/main/java/**/*.kt")
+                include("app/src/main/kotlin/**/*.kt")
+                include("core/**/src/main/java/**/*.kt")
                 include("core/**/src/main/kotlin/**/*.kt")
+                include("feature/**/src/main/java/**/*.kt")
                 include("feature/**/src/main/kotlin/**/*.kt")
                 exclude("**/build/**")
             }

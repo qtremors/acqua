@@ -164,6 +164,56 @@ class AcquaAndroidApplicationConventionsPluginTest {
     }
 
     @Test
+    fun `production quality checks cover both source roots in every module`() {
+        val projectDir = testProject(validMetadata)
+        val paths = listOf("app", "core/sample", "feature/sample").flatMap { module ->
+            listOf("java", "kotlin").map { root -> "$module/src/main/$root/sample/Sample.kt" }
+        }
+        val excluded = listOf(
+            "feature/sample/src/test/java/sample/Test.kt",
+            "core/sample/src/androidTest/kotlin/sample/Test.kt",
+            "core/sample/build/generated/src/main/java/sample/Generated.kt"
+        )
+        (paths + excluded).forEach { path ->
+            projectDir.resolve(path).also { source ->
+                source.parent.createDirectories()
+                source.writeText("package sample  \nimport example.*\n\tfun sample() = Unit")
+            }
+        }
+        projectDir.resolve("build.gradle.kts").toFile().appendText(
+            """
+
+            tasks.register("verifyProductionInventory") {
+                doLast {
+                    val expected = setOf(${paths.joinToString { "\"$it\"" }})
+                    listOf("checkKotlinFormat", "formatKotlinSources", "analyzeKotlinSources").forEach { name ->
+                        val actual = tasks.getByName(name).inputs.files.files.filter { it.extension == "kt" }
+                            .map { it.relativeTo(projectDir).invariantSeparatorsPath }.toSet()
+                        check(actual == expected) { "Source inventory mismatch for ${'$'}name: ${'$'}actual" }
+                    }
+                }
+            }
+            """.trimIndent()
+        )
+
+        val failed = runner(projectDir, "verifyProductionInventory", "checkKotlinFormat", "analyzeKotlinSources", "--continue")
+            .buildAndFail()
+        assertEquals(TaskOutcome.SUCCESS, failed.task(":verifyProductionInventory")?.outcome)
+        assertTrue(failed.output.contains("wildcardImports grew from an allowed 0 to 6"))
+        paths.forEach { assertTrue(failed.output.contains("$it:1: trailing whitespace")) }
+
+        runner(projectDir, "formatKotlinSources").build()
+        paths.forEach { path ->
+            val source = projectDir.resolve(path).toFile()
+            assertEquals("package sample\nimport example.*\n    fun sample() = Unit\n", source.readText())
+            source.writeText(source.readText().replace("import example.*\n", ""))
+        }
+        excluded.forEach { assertTrue(projectDir.resolve(it).toFile().readText().contains('\t')) }
+        val passed = runner(projectDir, "checkKotlinFormat", "analyzeKotlinSources").build()
+        assertEquals(TaskOutcome.SUCCESS, passed.task(":analyzeKotlinSources")?.outcome)
+    }
+
+    @Test
     fun `static site verification rejects broken assets and invalid CSS`() {
         val projectDir = testProject(validMetadata)
         val docs = projectDir.parent.resolve("docs").createDirectories()

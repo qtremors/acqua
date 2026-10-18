@@ -129,7 +129,7 @@
             <div class="card-copy">
               <span>Start anywhere</span>
               <h3>Share it. Paste it.<br>Acqua takes it from there.</h3>
-              <p>Open Acqua directly or send a link from another app.</p>
+              <p>Paste or share links, select collection entries, or open a link in Quick download.</p>
             </div>
             <div class="link-pills" aria-hidden="true"><i></i><i></i><i></i></div>
           </article>
@@ -139,7 +139,7 @@
             <div class="card-copy">
               <span>Know before saving</span>
               <h3>Preview with confidence.</h3>
-              <p>Inspect dimensions and formats, then choose the best video or a limit from 2160p through 360p.</p>
+              <p>Inspect dimensions and formats, choose Best quality or a resolution cap, and select exact streams.</p>
             </div>
             <div class="preview-tile" aria-hidden="true"><span>1080p</span><i>▶</i></div>
           </article>
@@ -158,7 +158,7 @@
             <div class="card-copy">
               <span>Make it yours</span>
               <h3>Your format. Your folder. Your filename.</h3>
-              <p>Keep original audio or choose M4A or MP3, preview names, and find files in searchable history.</p>
+              <p>Keep original audio or choose M4A or MP3, select folders for each media type, and save captions or named clips.</p>
             </div>
             <div class="choice-row" aria-hidden="true"><i>MP4</i><i class="active">M4A</i><i>MP3</i></div>
           </article>
@@ -170,14 +170,14 @@
       <div class="shell privacy-panel reveal">
         <div class="privacy-copy">
           <span class="kicker">Private by design</span>
-          <h2>Your media journey stays on your device.</h2>
+          <h2>Your media, under your control.</h2>
           <p>Acqua asks for only what it needs, keeps browser sessions in app-private storage, and gives you clear controls to remove saved website data.</p>
           <a class="text-link" href="https://github.com/qtremors/acqua">Read the source <span aria-hidden="true">→</span></a>
         </div>
         <div class="privacy-points">
-          <article><span aria-hidden="true">01</span><div><h3>Private sessions</h3><p>Website sessions stay inside Acqua's app storage.</p></div></article>
-          <article><span aria-hidden="true">02</span><div><h3>Local downloads</h3><p>Your completed files remain on your device.</p></div></article>
-          <article><span aria-hidden="true">03</span><div><h3>Clear controls</h3><p>Remove selected sessions or clear everything at any time.</p></div></article>
+          <article><span aria-hidden="true">01</span><div><h3>Private sessions</h3><p>Browser data uses app-private storage. Saved transfer sessions are encrypted; explicit exports contain sign-in cookies.</p></div></article>
+          <article><span aria-hidden="true">02</span><div><h3>Your chosen folders</h3><p>Save to Downloads or folders you choose. Cloud folder providers may synchronize those files.</p></div></article>
+          <article><span aria-hidden="true">03</span><div><h3>Clear controls</h3><p>Remove website data, saved sessions, or History records. File deletion is a separate confirmed action.</p></div></article>
         </div>
       </div>
     </section>
@@ -189,7 +189,7 @@
           <h2>Modern by nature.</h2>
         </div>
         <div class="tech-row" aria-label="Technology">
-          <span>Kotlin 2.4.10</span><span>Jetpack Compose</span><span>Material 3</span><span>Android Keystore</span><span>yt-dlp</span><span>OkHttp</span>
+          <span>Kotlin 2.4.20</span><span>Jetpack Compose</span><span>Material 3</span><span>Android Keystore</span><span>yt-dlp</span><span>OkHttp</span>
         </div>
       </div>
     </section>
@@ -226,10 +226,8 @@
           <div class="credits-card">
             <h3>Website &amp; design</h3>
             <p>
-              The project website is designed with
-              <a href="https://fonts.google.com/specimen/DM+Sans" target="_blank" rel="noopener noreferrer">DM Sans</a>,
-              <a href="https://fonts.google.com/specimen/Manrope" target="_blank" rel="noopener noreferrer">Manrope</a>,
-              <a href="https://lucide.dev/" target="_blank" rel="noopener noreferrer">Lucide</a>, and
+              The project website uses system fonts and inline SVG icons, with icon designs from
+              <a href="https://lucide.dev/" target="_blank" rel="noopener noreferrer">Lucide</a> and
               <a href="https://simpleicons.org/" target="_blank" rel="noopener noreferrer">Simple Icons</a>.
             </p>
             <p class="credits-subtext">
@@ -255,7 +253,7 @@
           </article>
           <article>
             <button type="button" aria-expanded="false" aria-controls="answer-two" id="question-two"><span>Does Acqua store my password?</span><i aria-hidden="true"></i></button>
-            <div class="answer" id="answer-two" role="region" aria-labelledby="question-two" hidden><p>No. Login happens on the website itself inside Android WebView. Acqua keeps the resulting browser session encrypted in app-private storage.</p></div>
+            <div class="answer" id="answer-two" role="region" aria-labelledby="question-two" hidden><p>Acqua does not capture your website password. Sign-in happens inside Android WebView, which keeps browser data in app-private storage. Named session snapshots are encrypted with Android Keystore; exporting a session writes an unencrypted file containing sign-in cookies.</p></div>
           </article>
           <article>
             <button type="button" aria-expanded="false" aria-controls="answer-three" id="question-three"><span>Is Acqua free and open source?</span><i aria-hidden="true"></i></button>
@@ -264,6 +262,10 @@
           <article>
             <button type="button" aria-expanded="false" aria-controls="answer-four" id="question-four"><span>Which APK should I choose?</span><i aria-hidden="true"></i></button>
             <div class="answer" id="answer-four" role="region" aria-labelledby="question-four" hidden><p>Choose the universal APK when unsure. Smaller builds are available for arm64-v8a, armeabi-v7a, x86_64, and x86 devices.</p></div>
+          </article>
+          <article>
+            <button type="button" aria-expanded="false" aria-controls="answer-five" id="question-five"><span>Can Acqua track app updates?</span><i aria-hidden="true"></i></button>
+            <div class="answer" id="answer-five" role="region" aria-labelledby="question-five" hidden><p>Feeds tracks APK releases from GitHub repositories and can match installed apps. You can optionally connect a GitHub account for private repositories you can access. Downloading and installing an update requires your action.</p></div>
           </article>
         </div>
       </div>
