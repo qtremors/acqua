@@ -73,6 +73,10 @@ class AppSettingsRepository(context: Context) : SettingsStore, ConcurrentDownloa
     private val preferences = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val destinationStore = DownloadDestinationStore(context)
 
+    internal fun hasLegacyUserPreferences(): Boolean {
+        val maintenanceKeys = setOf(KEY_LAST_YT_DLP_UPDATE, KEY_YT_DLP_ATTEMPT, KEY_YT_DLP_VERSION)
+        return preferences.all.keys.any { it !in maintenanceKeys }
+    }
 
     override fun lastDownloadSelection(kind: MediaKind): LastDownloadSelection? = runCatching {
         val encoded = preferences.getString("$KEY_LAST_SELECTION.${kind.name}", null) ?: return null
@@ -101,7 +105,8 @@ class AppSettingsRepository(context: Context) : SettingsStore, ConcurrentDownloa
     }.getOrDefault(YtDlpDownloadOptions())
 
     override fun setDownloadDefaults(options: YtDlpDownloadOptions) {
-        val defaults = YtDlpDownloadOptions(captionMode = options.captionMode, captionFormat = options.captionFormat,
+        val defaults = YtDlpDownloadOptions(videoContainer = options.videoContainer, audioBitrateKbps = options.audioBitrateKbps,
+            captionMode = options.captionMode, captionFormat = options.captionFormat,
             captionLanguages = options.captionLanguages, automaticCaptions = options.automaticCaptions,
             skipArchived = options.skipArchived, recordHistory = options.recordHistory, verboseDiagnostics = options.verboseDiagnostics,
             network = options.network.validated(), removeSegments = options.removeSegments.toSet(), formatPolicy = options.formatPolicy.validated().copy(deviceCodecs = emptySet()))

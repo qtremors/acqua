@@ -1,5 +1,11 @@
 package dev.qtremors.acqua.feature.browser
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
+import androidx.compose.material3.FilledTonalButton
+
+import dev.qtremors.acqua.ui.components.ExpressiveSwitch
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -91,11 +97,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -203,7 +206,7 @@ internal fun BrowserStartPage(
                     tint = colors.onSurfaceVariant,
                     modifier = Modifier.size(22.dp)
                 )
-                OutlinedTextField(
+                ExpressiveTextField(
                     value = query,
                     onValueChange = { query = it },
                     placeholder = {
@@ -214,13 +217,6 @@ internal fun BrowserStartPage(
                         )
                     },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledBorderColor = Color.Transparent,
-                        focusedContainerColor = Color.Transparent,
-                        unfocusedContainerColor = Color.Transparent
-                    ),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = {
                         if (query.isNotBlank()) onSearchOrNavigate(query.trim())
@@ -293,7 +289,7 @@ internal fun BrowserStartPage(
                     )
                 }
                 Spacer(Modifier.width(4.dp))
-                Switch(
+                ExpressiveSwitch(
                     checked = state.useSessions,
                     onCheckedChange = null,
                     modifier = Modifier.clearAndSetSemantics { }
@@ -324,7 +320,10 @@ internal fun BrowserStartPage(
         }
 
         // Speed Dial FlowRow (wraps and shows all shortcuts nicely)
-        FlowRow(
+        if (state.websites.isEmpty()) {
+            EmptyState(variant = EmptyStateVariant.Websites, modifier = Modifier.fillMaxWidth(),
+                action = { FilledTonalButton(onClick = onAddWebsite) { Text(stringResource(R.string.save_website)) } })
+        } else FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)

@@ -2,7 +2,7 @@
 
 > Architecture, implementation notes, conventions, and verification guidance for Acqua development.
 
-**Version:** 0.3.9 | **Last Updated:** 2026-10-18
+**Version:** 0.4.0 | **Last Updated:** 2026-10-19
 **Scope:** Internal development, media downloader architecture, UI paradigms, testing, and release maintenance.
 
 ---
@@ -140,6 +140,12 @@ acqua/
 4. **Queueing & Background Work:** Tapping **Download** sends the request through `DownloadWorkCoordinator` to WorkManager or an Android 14+ user-initiated data-transfer job. Both share one execution slot by default, with an optional second slot, persistent notification progress, and independent cancellation.
 5. **Validation & Finalization:** `DownloadExecutor` verifies and processes the outputs, applies accepted naming rules, and asks `MediaStorage` to publish to default Downloads storage or the chosen media-type folder.
 6. **Notification & History Indexing:** Completion provides file-opening/sharing actions. The provider-visible result is indexed in `HistoryRepository` when Save to History is enabled.
+
+`AcquaApp` reads onboarding state before foreground engine maintenance. Automatic
+checks are skipped while setup is incomplete and resume on subsequent foreground
+entries after completion. First-run migration ignores engine-update timestamps and
+cached versions; user preferences and package upgrade timestamps still identify
+existing installations.
 
 ---
 
@@ -492,8 +498,8 @@ need human wording, plural, RTL, and screen-reader review on physical devices.
 | **Compile SDK** | 37 |
 | **Target SDK** | 37 |
 | **Min SDK** | 24 (Android 7.0+) |
-| **Version Code** | 39 |
-| **Version Name** | 0.3.9 |
+| **Version Code** | 40 |
+| **Version Name** | 0.4.0 |
 | **Java Target** | JVM 11 |
 | **Gradle Version** | 9.8.0 |
 | **Gradle JVM** | JDK 21 |

@@ -44,7 +44,7 @@ class DownloadPersistenceTest {
         val options = YtDlpDownloadOptions(videoFormatId = "137", videoFormatIncludesAudio = false, audioFormatId = "140",
             captionMode = CaptionMode.BOTH, captionLanguages = "en,hi", captionFormat = CaptionFormat.SRT,
             automaticCaptions = true, videoContainer = VideoContainer.MKV, recordHistory = false, verboseDiagnostics = true,
-            network = dev.qtremors.acqua.data.network.TransferNetworkOptions(1024, "http://localhost:8080", true, 3),
+            network = dev.qtremors.acqua.domain.TransferNetworkOptions(1024, "http://localhost:8080", true, 3),
             removeSegments = setOf(SegmentCategory.SPONSOR, SegmentCategory.INTRO), additionalAudioFormatIds = setOf("141"),
             acceptedStreams = listOf(dev.qtremors.acqua.domain.MediaFormatOption("137", "mp4", "avc1", "none", 1920, 1080, 30),
                 dev.qtremors.acqua.domain.MediaFormatOption("140", "m4a", "none", "aac", language = "en", audioChannels = 2),

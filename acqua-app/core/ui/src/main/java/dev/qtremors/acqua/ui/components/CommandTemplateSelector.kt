@@ -52,7 +52,7 @@ fun CommandTemplateSelector(options: YtDlpDownloadOptions, onChange: (YtDlpDownl
                 Text(stringResource(R.string.command_template_precedence))
                 TemplateChoice(stringResource(R.string.command_template_none), draft.isEmpty()) { draft = "" }
                 templates.forEach { item -> TemplateChoice(item.name, draft == item.id) { draft = item.id } }
-                if (templates.isEmpty()) Text(stringResource(R.string.command_templates_empty))
+                if (templates.isEmpty()) EmptyState(variant = EmptyStateVariant.Templates, compact = true)
                 if (template != null) Text(template.command)
                 if (resolved == null) Text(stringResource(R.string.command_template_invalid))
             }

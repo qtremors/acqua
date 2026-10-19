@@ -1,5 +1,8 @@
 package dev.qtremors.acqua.feature.downloader
 
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -131,7 +134,7 @@ private fun ClipRangeControls(start: String, end: String, duration: Double, vali
 @Composable
 private fun ChapterChoices(chapters: List<MediaChapter>, onRange: (MediaChapter) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (chapters.isEmpty()) Text(stringResource(R.string.no_chapters_available))
+        if (chapters.isEmpty()) EmptyState(variant = EmptyStateVariant.Chapters, compact = true)
         else {
             Text(stringResource(R.string.split_download_chapters), style = MaterialTheme.typography.titleSmall)
             Text(stringResource(R.string.chapter_range_hint), style = MaterialTheme.typography.bodySmall)

@@ -61,7 +61,7 @@ class CookieProfileTransferTest {
             server.enqueue(MockResponse().setResponseCode(302).setHeader("Location", server.url("/outside").newBuilder().host("127.0.0.1").build()))
             server.enqueue(response())
             val profile = profile(server.url("/private/start").toString(), "first")
-            val http = HttpMediaClient().withSession(profile.json()).withNetworkOptions(dev.qtremors.acqua.data.network.TransferNetworkOptions(forceIpv4 = true))
+            val http = HttpMediaClient().withSession(profile.json()).withNetworkOptions(dev.qtremors.acqua.domain.TransferNetworkOptions(forceIpv4 = true))
             val output = ByteArrayOutputStream()
             http.downloadToStreamCancellable(ResolvedMedia(profile.captureUrl, MediaKind.IMAGE), output)
             assertEquals(image.size, output.size())

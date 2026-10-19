@@ -1,15 +1,31 @@
 package dev.qtremors.acqua.feature.settings
 
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -21,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.data.session.BrowserCookieCapture
 import dev.qtremors.acqua.data.session.BrowserIdentityStore
@@ -28,6 +45,8 @@ import dev.qtremors.acqua.data.session.CookieProfile
 import dev.qtremors.acqua.data.session.CookieProfileStore
 import dev.qtremors.acqua.ui.components.SettingsActionRow
 import dev.qtremors.acqua.ui.components.SettingsSection
+import dev.qtremors.acqua.ui.components.SettingsEditorDialog
+import dev.qtremors.acqua.ui.components.SettingsEditorInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -50,7 +69,14 @@ internal fun CookieProfilesSection(store: CookieProfileStore? = null, capture: (
     var exportId by rememberSaveable { mutableStateOf<String?>(null) }
     var exportTime by rememberSaveable { mutableStateOf(0L) }
     var exportFingerprint by rememberSaveable { mutableStateOf<String?>(null) }
-    val entries = remember(revision) { runCatching { profiles.all() }.getOrNull() }
+    var loading by remember { mutableStateOf(true) }
+    val entries by produceState<List<CookieProfile>?>(emptyList(), revision, mode) {
+        if (mode == "list") {
+            loading = true
+            value = withContext(Dispatchers.IO) { runCatching { profiles.all() }.getOrNull() }
+            loading = false
+        }
+    }
     fun operation(block: () -> Unit) { scope.launch {
         busy = true; issue = false
         runCatching { withContext(Dispatchers.IO) { block() } }.onSuccess { revision++; mode = "list" }
@@ -65,11 +91,12 @@ internal fun CookieProfilesSection(store: CookieProfileStore? = null, capture: (
         if (uri != null && selected != null) operation { profiles.export(selected, time, uri, fingerprint) }
     }
     SettingsSection(title = stringResource(R.string.cookie_profiles)) {
-        SettingsActionRow(title = stringResource(R.string.cookie_profiles_manage), description = stringResource(R.string.cookie_profiles_hint),
-            onClick = { revision++; issue = false; mode = "list" })
+        SettingsActionRow(title = stringResource(R.string.cookie_profiles_manage), description = stringResource(R.string.settings_sessions_summary),
+            leadingIcon = Icons.Filled.Cookie, trailingIcon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            onClick = { loading = true; revision++; issue = false; mode = "list" })
     }
     when (mode) {
-        "list" -> CookieProfileList(entries.orEmpty(), issue || entries == null, busy, { mode = null }, onNew = {
+        "list" -> CookieProfileList(entries.orEmpty(), issue || entries == null, busy, loading, { mode = null }, onNew = {
             id = null; name = ""; url = BrowserIdentityStore(context).lastUrl().orEmpty(); authorized = false; issue = false; mode = "edit"
         }, onRefresh = { profile -> id = profile.id; name = profile.name; url = profile.captureUrl; authorized = false; issue = false; mode = "edit" },
             onRemove = { profile -> id = profile.id; mode = "remove" }, onExport = { profile ->
@@ -91,26 +118,42 @@ internal fun CookieProfilesSection(store: CookieProfileStore? = null, capture: (
 }
 
 @Composable
-private fun CookieProfileList(entries: List<CookieProfile>, issue: Boolean, busy: Boolean, onDismiss: () -> Unit,
+private fun CookieProfileList(entries: List<CookieProfile>, issue: Boolean, busy: Boolean, loading: Boolean, onDismiss: () -> Unit,
     onNew: () -> Unit, onRefresh: (CookieProfile) -> Unit, onRemove: (CookieProfile) -> Unit, onExport: (CookieProfile) -> Unit, onClear: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.cookie_profiles)) }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            Text(stringResource(R.string.cookie_profiles_hint))
+    SettingsEditorDialog(stringResource(R.string.cookie_profiles), onDismiss, stringResource(R.string.close), onDismiss,
+        confirmEnabled = !busy, dismissEnabled = !busy, showCancel = false, tag = "saved-sessions-dialog") {
+            Text(stringResource(R.string.settings_sessions_brief), style = MaterialTheme.typography.bodyMedium)
             if (issue) Text(stringResource(R.string.cookie_profile_error), color = MaterialTheme.colorScheme.error)
-            TextButton(enabled = !busy && entries.size < 20, onClick = onNew) { Text(stringResource(R.string.cookie_profile_new)) }
+            FilledTonalButton(enabled = !busy && entries.size < 20, onClick = onNew, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cookie_profile_new))
+            }
+            if (loading) CircularProgressIndicator()
+            if (entries.isEmpty() && !issue && !loading) EmptyState(variant = EmptyStateVariant.Sessions, compact = true)
             entries.forEach { profile ->
-                Text(profile.name, style = MaterialTheme.typography.titleSmall)
-                Text(stringResource(R.string.cookie_profile_summary, profile.scope, profile.cookies.size, profile.cookies.count { it.attributesAvailable }))
-                Text(profile.userAgent, style = MaterialTheme.typography.bodySmall)
-                FlowRow {
-                    TextButton(enabled = !busy, onClick = { onRefresh(profile) }) { Text(stringResource(R.string.cookie_profile_refresh)) }
-                    TextButton(enabled = !busy, onClick = { onExport(profile) }) { Text(stringResource(R.string.cookie_profile_export)) }
-                    TextButton(enabled = !busy, onClick = { onRemove(profile) }) { Text(stringResource(R.string.cookie_profile_remove)) }
+                Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(profile.name, style = MaterialTheme.typography.titleMedium)
+                        Text(profile.scope, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FilledTonalButton(enabled = !busy, onClick = { onRefresh(profile) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(stringResource(R.string.cookie_profile_refresh))
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(enabled = !busy, onClick = { onExport(profile) }, contentPadding = PaddingValues(horizontal = 8.dp),
+                                modifier = Modifier.weight(1f)) { Text(stringResource(R.string.cookie_profile_export)) }
+                            TextButton(enabled = !busy, onClick = { onRemove(profile) }, contentPadding = PaddingValues(horizontal = 8.dp), modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.cookie_profile_remove), color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                        SettingsEditorInfo(stringResource(R.string.cookie_profile_summary, profile.scope, profile.cookies.size,
+                            profile.cookies.count { it.attributesAvailable }) + "\n" + profile.userAgent)
+                    }
                 }
             }
-            TextButton(enabled = !busy, onClick = onClear) { Text(stringResource(R.string.cookie_profile_clear)) }
-        }
-    }, confirmButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(stringResource(R.string.close)) } })
+            if (entries.isNotEmpty()) TextButton(enabled = !busy, onClick = onClear, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.cookie_profile_clear), color = MaterialTheme.colorScheme.error)
+            }
+            SettingsEditorInfo(stringResource(R.string.cookie_profiles_hint))
+    }
 }
 
 @Composable

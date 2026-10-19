@@ -131,6 +131,29 @@ class SettingsViewModelTest {
         advanceUntilIdle()
     }
 
+    @Test fun `output defaults survive recreation and update remembered choices without losing other options`() = runTest {
+        val store = FakeSettingsStore()
+        val remembered = dev.qtremors.acqua.data.settings.LastDownloadSelection(DownloadEngine.YT_DLP,
+            dev.qtremors.acqua.downloader.YtDlpDownloadOptions(videoContainer = dev.qtremors.acqua.downloader.VideoContainer.MP4,
+                audioBitrateKbps = 128, skipArchived = true))
+        store.selections[dev.qtremors.acqua.domain.MediaKind.VIDEO] = remembered
+        store.selections[dev.qtremors.acqua.domain.MediaKind.AUDIO] = remembered
+        val model = SettingsViewModel(store, FakeMaintenance(), { _, _ -> })
+        model.setVideoContainer(dev.qtremors.acqua.downloader.VideoContainer.MKV)
+        model.setAudioBitrate(256)
+        model.setCropArtwork(false)
+        model.setPreserveOriginalMetadata(true)
+        val restored = SettingsViewModel(store, FakeMaintenance(), { _, _ -> }).state.value
+        assertEquals(dev.qtremors.acqua.downloader.VideoContainer.MKV, restored.videoContainer)
+        assertEquals(256, restored.audioBitrateKbps)
+        assertFalse(restored.cropArtwork)
+        assertTrue(restored.preserveOriginalMetadata)
+        assertEquals(dev.qtremors.acqua.downloader.VideoContainer.MKV, store.selections.getValue(dev.qtremors.acqua.domain.MediaKind.VIDEO).options.videoContainer)
+        assertEquals(256, store.selections.getValue(dev.qtremors.acqua.domain.MediaKind.AUDIO).options.audioBitrateKbps)
+        assertTrue(store.selections.values.all { it.options.skipArchived })
+        advanceUntilIdle()
+    }
+
     private class FakeMaintenance(
         var result: Result<YtDlpMaintenanceResult> = Result.success(
             YtDlpMaintenanceResult(null, null, 0L)
@@ -144,6 +167,9 @@ class SettingsViewModelTest {
     }
 
     private class FakeSettingsStore : SettingsStore {
+        val selections = mutableMapOf<dev.qtremors.acqua.domain.MediaKind, dev.qtremors.acqua.data.settings.LastDownloadSelection>()
+        override fun lastDownloadSelection(kind: dev.qtremors.acqua.domain.MediaKind) = selections[kind]
+        override fun rememberDownloadSelection(kind: dev.qtremors.acqua.domain.MediaKind, selection: dev.qtremors.acqua.data.settings.LastDownloadSelection) { selections[kind] = selection }
         var defaults = dev.qtremors.acqua.downloader.YtDlpDownloadOptions()
         override fun downloadDefaults() = defaults
         override fun setDownloadDefaults(options: dev.qtremors.acqua.downloader.YtDlpDownloadOptions) { defaults = options }

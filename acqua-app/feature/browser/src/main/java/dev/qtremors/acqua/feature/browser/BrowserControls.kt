@@ -1,5 +1,7 @@
 package dev.qtremors.acqua.feature.browser
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
+import dev.qtremors.acqua.ui.components.ExpressiveSwitch
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -91,11 +93,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -185,15 +184,10 @@ internal fun BrowserTopBar(
                 IconButton(onClick = onCancelEditing, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back), tint = colors.onSurface)
                 }
-                OutlinedTextField(
+                ExpressiveTextField(
                     value = editingText,
                     onValueChange = { editingText = it },
                     singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = colors.outline
-                    ),
-                    shape = RoundedCornerShape(20.dp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = {
                         if (editingText.isNotBlank()) onNavigate(editingText.trim())
@@ -500,7 +494,7 @@ internal fun BrowserExpressiveMenu(
                         onClick = onToggleDesktopSite,
                         checked = isDesktopSite,
                         trailing = {
-                            Switch(
+                            ExpressiveSwitch(
                                 checked = isDesktopSite,
                                 onCheckedChange = null,
                                 modifier = Modifier.clearAndSetSemantics { }
@@ -517,7 +511,7 @@ internal fun BrowserExpressiveMenu(
                         onClick = onToggleSessions,
                         checked = useSessions,
                         trailing = {
-                            Switch(
+                            ExpressiveSwitch(
                                 checked = useSessions,
                                 onCheckedChange = null,
                                 modifier = Modifier.clearAndSetSemantics { }

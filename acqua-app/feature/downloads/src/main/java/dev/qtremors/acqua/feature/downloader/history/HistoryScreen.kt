@@ -1,5 +1,6 @@
 package dev.qtremors.acqua.feature.downloader.history
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -338,13 +339,12 @@ private fun HistorySearchInput(
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedTextField(
+            ExpressiveTextField(
                 value = query,
                 onValueChange = onQueryChange,
                 modifier = Modifier
                     .weight(1f)
                     .focusRequester(focusRequester),
-                shape = RoundedCornerShape(16.dp),
                 singleLine = true,
                 placeholder = {
                     Text(stringResource(R.string.hist_search))

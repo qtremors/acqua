@@ -28,6 +28,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
@@ -136,9 +137,11 @@ class DashboardWorkflowTest {
         nav("Feeds").performClick().assertIsSelected()
         nav("Downloader").performClick().assertIsSelected()
         compose.onNodeWithContentDescription("Settings").performClick()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("Appearance"))
+        compose.onNodeWithText("Appearance").assertIsDisplayed()
         restore.emulateSavedInstanceStateRestore()
-        compose.onNodeWithText("Appearance").assertExists()
+        compose.onNodeWithTag("settings-list").performScrollToNode(hasText("Appearance"))
+        compose.onNodeWithText("Appearance").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.runOnIdle { route.value = route.value.copy(urlHandoff = "https://example.com/handoff", downloadRequestRevision = 1) }
         compose.waitForIdle()
@@ -181,7 +184,7 @@ class DashboardWorkflowTest {
             CompositionLocalProvider(LocalDensity provides Density(1f, font.value), LocalLayoutDirection provides direction.value) {
                 AcquaTheme(route.value.theme) {
                     DashboardScreen(DashboardStateHolders(downloader, browser, history, settings, feeds),
-                        DashboardServices(client, graph.fileActions, null), route.value,
+                        DashboardServices(client, graph.fileActions, null, graph.appUpdater), route.value,
                         DashboardActions({}, { route.value = route.value.copy(urlHandoff = null) },
                             { _, _ -> error("Unexpected real browser resolution") },
                             { notify, action -> permissions.hold(notify, action); permissions.show(DownloadPermissionPrompt.NOTIFICATION_DENIED) },

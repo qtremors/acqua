@@ -7,6 +7,7 @@ import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
@@ -186,9 +187,16 @@ class BrowserActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
                 textSize = 14f
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
                 imeOptions = EditorInfo.IME_ACTION_GO
-                background = GradientDrawable().apply {
-                    setColor(ADDRESS_SURFACE)
-                    cornerRadius = 24.dp.toFloat()
+                background = StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply {
+                        setColor(ADDRESS_SURFACE)
+                        cornerRadius = 16.dp.toFloat()
+                        setStroke(2.dp, PRIMARY)
+                    })
+                    addState(intArrayOf(), GradientDrawable().apply {
+                        setColor(ADDRESS_SURFACE)
+                        cornerRadius = 24.dp.toFloat()
+                    })
                 }
                 setPadding(16.dp, 0, 12.dp, 0)
                 setSelectAllOnFocus(true)

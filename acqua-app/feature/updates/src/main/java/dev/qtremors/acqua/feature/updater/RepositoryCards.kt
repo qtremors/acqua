@@ -1,5 +1,7 @@
 package dev.qtremors.acqua.feature.updater
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
+import dev.qtremors.acqua.ui.components.ExpressiveSwitch
 import android.text.format.DateFormat
 import android.text.format.Formatter
 import androidx.compose.foundation.combinedClickable
@@ -69,10 +71,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -354,7 +353,7 @@ internal fun AddRepositoryInput(
                     Icon(Icons.Filled.Close, stringResource(R.string.cancel), Modifier.size(18.dp))
                 }
             }
-            OutlinedTextField(
+            ExpressiveTextField(
                 value = query,
                 onValueChange = onQueryChange,
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
@@ -380,13 +379,6 @@ internal fun AddRepositoryInput(
                     }
                 },
                 singleLine = true,
-                shape = RoundedCornerShape(24.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = MaterialTheme.colorScheme.primary,
-                    unfocusedBorderColor = Color.Transparent,
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                ),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = {
                     if (query.isNotBlank() && !searching) {
@@ -404,7 +396,7 @@ internal fun AddRepositoryInput(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.weight(1f)
                 )
-                Switch(checked = includePreReleases, onCheckedChange = onIncludePreReleasesChange)
+                ExpressiveSwitch(checked = includePreReleases, onCheckedChange = onIncludePreReleasesChange)
                 Spacer(Modifier.width(8.dp))
                 FilledTonalButton(
                     onClick = {

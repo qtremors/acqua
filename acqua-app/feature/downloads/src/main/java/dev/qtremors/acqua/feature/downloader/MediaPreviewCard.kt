@@ -1,5 +1,6 @@
 package dev.qtremors.acqua.feature.downloader
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
 import androidx.compose.foundation.clickable
 import android.webkit.CookieManager
 import androidx.compose.animation.core.Animatable
@@ -455,7 +456,7 @@ fun MediaMetadataContainer(
             onDismissRequest = { showRename = false },
             title = { Text(stringResource(R.string.rename_download)) },
             text = {
-                androidx.compose.material3.OutlinedTextField(
+                ExpressiveTextField(
                     value = editedName,
                     onValueChange = { editedName = it },
                     singleLine = true,

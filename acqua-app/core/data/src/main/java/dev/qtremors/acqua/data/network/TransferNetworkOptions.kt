@@ -1,5 +1,6 @@
 package dev.qtremors.acqua.data.network
 
+import dev.qtremors.acqua.domain.TransferNetworkOptions
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
@@ -20,73 +21,40 @@ import java.net.UnknownHostException
 import java.util.concurrent.locks.LockSupport
 import javax.net.SocketFactory
 
-data class TransferNetworkOptions(
-    val rateLimitKib: Int = 0,
-    val proxy: String = "",
-    val forceIpv4: Boolean = false,
-    val concurrentFragments: Int = 1
-) {
-    fun validated(): TransferNetworkOptions {
-        require(rateLimitKib in 0..1_048_576) { "Invalid transfer speed limit." }
-        require(concurrentFragments in 1..8) { "Invalid fragment count." }
-        require(proxy.length <= 512 && proxy.none(Char::isWhitespace)) { "Invalid transfer proxy." }
+internal fun TransferNetworkOptions.configure(client: OkHttpClient): OkHttpClient {
+    validated()
+    if (rateLimitKib == 0 && proxy.isEmpty() && !forceIpv4) return client
+    return client.newBuilder().apply {
         if (proxy.isNotEmpty()) {
-            val uri = runCatching { URI(proxy) }.getOrNull()
-            require(uri != null && uri.scheme in setOf("http", "socks5") && !uri.host.isNullOrBlank() &&
-                uri.port in 1..65535 && uri.rawUserInfo == null && uri.rawQuery == null && uri.rawFragment == null &&
-                uri.rawPath.isNullOrEmpty()) { "Use an HTTP or SOCKS5 proxy with a port and no credentials or path." }
-            require(!forceIpv4 || uri.scheme != "socks5") { "IPv4-only mode is unavailable with SOCKS5 remote DNS." }
+            val uri = URI(proxy)
+            proxy(Proxy(if (uri.scheme == "http") Proxy.Type.HTTP else Proxy.Type.SOCKS,
+                InetSocketAddress.createUnresolved(uri.host, uri.port)))
         }
-        return this
-    }
-
-    fun ytDlpArguments(inspection: Boolean = false): List<Pair<String, String?>> {
-        validated()
-        return buildList {
-            if (proxy.isNotEmpty()) add("--proxy" to proxy)
-            if (forceIpv4) add("--force-ipv4" to null)
-            if (!inspection) {
-                if (rateLimitKib > 0) add("--limit-rate" to "${rateLimitKib}K")
-                add("--concurrent-fragments" to concurrentFragments.toString())
-            }
+        if (forceIpv4) {
+            require(proxy.isNotEmpty() || client.proxy?.type() != Proxy.Type.SOCKS) { "IPv4-only mode is unavailable with SOCKS proxies." }
+            dns(ipv4Dns(client.dns))
+            socketFactory(Ipv4SocketFactory())
+            proxySelector(ipv4ProxySelector(client.proxySelector))
         }
-    }
-
-    internal fun configure(client: OkHttpClient): OkHttpClient {
-        validated()
-        if (rateLimitKib == 0 && proxy.isEmpty() && !forceIpv4) return client
-        return client.newBuilder().apply {
-            if (proxy.isNotEmpty()) {
-                val uri = URI(proxy)
-                proxy(Proxy(if (uri.scheme == "http") Proxy.Type.HTTP else Proxy.Type.SOCKS,
-                    InetSocketAddress.createUnresolved(uri.host, uri.port)))
-            }
-            if (forceIpv4) {
-                require(proxy.isNotEmpty() || client.proxy?.type() != Proxy.Type.SOCKS) { "IPv4-only mode is unavailable with SOCKS proxies." }
-                dns(ipv4Dns(client.dns))
-                socketFactory(Ipv4SocketFactory())
-                proxySelector(ipv4ProxySelector(client.proxySelector))
-            }
-            if (rateLimitKib > 0) addNetworkInterceptor { chain ->
-                val response = chain.proceed(chain.request())
-                val body = response.body ?: return@addNetworkInterceptor response
-                val limiter = TransferRateLimiter(rateLimitKib * 1024L)
-                val source = object : ForwardingSource(body.source()) {
-                    override fun read(sink: Buffer, byteCount: Long): Long {
-                        if (chain.call().isCanceled()) throw IOException("Media request cancelled")
-                        val read = super.read(sink, minOf(byteCount, 8192))
-                        if (read > 0) limiter.account(read) { chain.call().isCanceled() }
-                        return read
-                    }
-                }.buffer()
-                response.newBuilder().body(object : ResponseBody() {
-                    override fun contentType() = body.contentType()
-                    override fun contentLength() = body.contentLength()
-                    override fun source(): BufferedSource = source
-                }).build()
-            }
-        }.build()
-    }
+        if (rateLimitKib > 0) addNetworkInterceptor { chain ->
+            val response = chain.proceed(chain.request())
+            val body = response.body ?: return@addNetworkInterceptor response
+            val limiter = TransferRateLimiter(rateLimitKib * 1024L)
+            val source = object : ForwardingSource(body.source()) {
+                override fun read(sink: Buffer, byteCount: Long): Long {
+                    if (chain.call().isCanceled()) throw IOException("Media request cancelled")
+                    val read = super.read(sink, minOf(byteCount, 8192))
+                    if (read > 0) limiter.account(read) { chain.call().isCanceled() }
+                    return read
+                }
+            }.buffer()
+            response.newBuilder().body(object : ResponseBody() {
+                override fun contentType() = body.contentType()
+                override fun contentLength() = body.contentLength()
+                override fun source(): BufferedSource = source
+            }).build()
+        }
+    }.build()
 }
 
 internal fun ipv4Dns(delegate: Dns): Dns = Dns { host ->

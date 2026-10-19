@@ -912,6 +912,28 @@ class DownloaderViewModelTest {
         assertEquals(MediaResolutionFailure.NETWORK, model.state.value.resolutionFailure)
     }
 
+    @Test fun `output defaults reach the active downloader and settings summaries ignore task overrides`() = runTest {
+        val settings = realSettings()
+        val model = createViewModel(settings = settings)
+        runCurrent()
+        model.setAdvancedOptions(model.state.value.advancedOptions.copy(videoFormatId = "137", clipStartSeconds = 1.0, clipEndSeconds = 3.0))
+        settings.setDownloadDefaults(settings.downloadDefaults().copy(videoContainer = VideoContainer.WEBM, audioBitrateKbps = 192,
+            captionMode = CaptionMode.BOTH, captionFormat = CaptionFormat.SRT))
+        runCurrent()
+        val options = model.state.value.advancedOptions
+        assertEquals(VideoContainer.WEBM, options.videoContainer)
+        assertEquals(192, options.audioBitrateKbps)
+        assertEquals(CaptionFormat.VTT, options.captionFormat)
+        assertEquals("137", options.videoFormatId)
+        assertEquals(1.0, options.clipStartSeconds)
+        model.applyDownloadConfiguration(model.state.value.configurationOptions().copy(recordHistory = false))
+        assertFalse(model.state.value.advancedOptions.recordHistory)
+        assertTrue(model.downloadDefaults.value.recordHistory)
+        val restored = createViewModel(settings = settings).state.value.advancedOptions
+        assertEquals(VideoContainer.WEBM, restored.videoContainer)
+        assertEquals(192, restored.audioBitrateKbps)
+    }
+
     private fun realSettings(): AppSettingsRepository {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.getSharedPreferences(AppSettingsRepository.PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
@@ -990,7 +1012,7 @@ class DownloaderViewModelTest {
     @Test fun `network defaults and per-task overrides survive choices recreation and accepted requests on both engines`() = runTest {
         for (backend in MediaBackend.entries) {
             val settings = realSettings()
-            val defaults = dev.qtremors.acqua.data.network.TransferNetworkOptions(rateLimitKib = 128)
+            val defaults = dev.qtremors.acqua.domain.TransferNetworkOptions(rateLimitKib = 128)
             settings.setDownloadDefaults(YtDlpDownloadOptions(network = defaults))
             val saved = SavedStateHandle()
             val queue = FakeQueueGateway()
@@ -1001,7 +1023,7 @@ class DownloaderViewModelTest {
             }
             val model = createViewModel(settings = settings, savedState = saved, queue = queue, resolution = resolution)
             assertEquals(defaults, model.state.value.advancedOptions.network)
-            val accepted = dev.qtremors.acqua.data.network.TransferNetworkOptions(256, "http://localhost:8080", true, 4)
+            val accepted = dev.qtremors.acqua.domain.TransferNetworkOptions(256, "http://localhost:8080", true, 4)
             model.updateUrl("https://example.com/video")
             val categories = setOf(dev.qtremors.acqua.downloader.SegmentCategory.SPONSOR)
             val policy = dev.qtremors.acqua.downloader.DownloadFormatPolicy(dev.qtremors.acqua.downloader.FormatPolicyMode.CUSTOM, customSort = "+size,res")

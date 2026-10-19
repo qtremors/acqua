@@ -1,5 +1,7 @@
 package dev.qtremors.acqua.feature.downloader
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
+import dev.qtremors.acqua.ui.components.ExpressiveSwitch
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -89,12 +91,9 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import dev.qtremors.acqua.ui.components.ExpressiveSegmentedButtonRow
 import dev.qtremors.acqua.ui.components.ContentSizedRow
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -299,7 +298,7 @@ internal fun MediaContentSection(
                             ) {
                                 Text(stringResource(R.string.use_browser_sessions), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
                                     color = colors.onErrorContainer)
-                                Switch(checked = useBrowserSessions, onCheckedChange = null,
+                                ExpressiveSwitch(checked = useBrowserSessions, onCheckedChange = null,
                                     enabled = !state.isSaving && state.savingItemIndex == null && !state.isResolving,
                                     modifier = Modifier.clearAndSetSemantics { })
                             }
@@ -351,7 +350,7 @@ internal fun BottomControlsSection(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (showLinkEditor) {
-                OutlinedTextField(
+                ExpressiveTextField(
                     value = state.url,
                     onValueChange = onUrlChange,
                     placeholder = {
@@ -386,13 +385,6 @@ internal fun BottomControlsSection(
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = colors.onSurface),
                     enabled = !state.isSaving && !state.isBatchRunning,
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = colors.primary,
-                        unfocusedBorderColor = Color.Transparent,
-                        focusedContainerColor = colors.surfaceContainerHigh,
-                        unfocusedContainerColor = colors.surfaceContainerHigh
-                    )
                 )
             }
 

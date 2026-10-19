@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.qtremors.acqua.data.settings.SettingsStore
 import dev.qtremors.acqua.domain.videoQualityChoices
+import dev.qtremors.acqua.downloader.VideoContainer
+import dev.qtremors.acqua.domain.MediaKind
+import dev.qtremors.acqua.downloader.YtDlpDownloadOptions
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.FilenameFormatter
 import dev.qtremors.acqua.downloader.YtDlpMaintenanceGateway
@@ -26,6 +29,10 @@ data class SettingsUiState(
     val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN,
     val maximumVideoHeight: Int = 0,
     val audioFormat: AudioOutputFormat = AudioOutputFormat.ORIGINAL,
+    val videoContainer: VideoContainer = VideoContainer.AUTO,
+    val audioBitrateKbps: Int = 0,
+    val cropArtwork: Boolean = true,
+    val preserveOriginalMetadata: Boolean = false,
     val embedMetadata: Boolean = true,
     val embedThumbnail: Boolean = true,
     val autoUpdateYtDlp: Boolean = true,
@@ -50,6 +57,7 @@ class SettingsViewModel(
         Log.e(TAG, "yt-dlp update failed (${failure.name})", SafeDiagnostics.redact(error))
     }
 ) : ViewModel() {
+    internal val appUpdates = SettingsAppUpdates(viewModelScope)
     private val mutableState = MutableStateFlow(repository.readSettingsUiState())
     val state = mutableState.asStateFlow()
     private var hasLoadedYtDlpStatus = false
@@ -107,21 +115,53 @@ class SettingsViewModel(
 
     fun setMaximumVideoHeight(value: Int) {
         repository.setMaximumVideoHeight(value)
+        updateRemembered(MediaKind.VIDEO) { it.copy(maximumVideoHeight = value, videoFormatId = null, formatSelectorOverride = null) }
         mutableState.value = mutableState.value.copy(maximumVideoHeight = value)
     }
 
     fun setAudioFormat(value: AudioOutputFormat) {
         repository.setAudioFormat(value)
+        updateRemembered(MediaKind.AUDIO) { it.copy(audioFormat = value) }
         mutableState.value = mutableState.value.copy(audioFormat = value)
+    }
+
+    fun setVideoContainer(value: VideoContainer) {
+        repository.setDownloadDefaults(repository.downloadDefaults().copy(videoContainer = value))
+        updateRemembered(MediaKind.VIDEO) { it.copy(videoContainer = value) }
+        reload()
+    }
+
+    fun setAudioBitrate(value: Int) {
+        repository.setDownloadDefaults(repository.downloadDefaults().copy(audioBitrateKbps = value))
+        updateRemembered(MediaKind.AUDIO) { it.copy(audioBitrateKbps = value) }
+        reload()
+    }
+
+    fun setCropArtwork(enabled: Boolean) {
+        repository.setCropArtwork(enabled)
+        updateRemembered(MediaKind.AUDIO) { it.copy(cropArtwork = enabled) }
+        reload()
+    }
+
+    fun setPreserveOriginalMetadata(enabled: Boolean) {
+        repository.setPreserveOriginalMetadata(enabled)
+        MediaKind.entries.forEach { kind -> updateRemembered(kind) { it.copy(preserveOriginalMetadata = enabled) } }
+        reload()
+    }
+
+    private fun updateRemembered(kind: MediaKind, update: (YtDlpDownloadOptions) -> YtDlpDownloadOptions) {
+        repository.lastDownloadSelection(kind)?.let { repository.rememberDownloadSelection(kind, it.copy(options = update(it.options))) }
     }
 
     fun setEmbedMetadata(enabled: Boolean) {
         repository.setEmbedMetadata(enabled)
+        MediaKind.entries.forEach { kind -> updateRemembered(kind) { it.copy(embedMetadata = enabled) } }
         mutableState.value = mutableState.value.copy(embedMetadata = enabled)
     }
 
     fun setEmbedThumbnail(enabled: Boolean) {
         repository.setEmbedThumbnail(enabled)
+        updateRemembered(MediaKind.AUDIO) { it.copy(embedThumbnail = enabled) }
         mutableState.value = mutableState.value.copy(embedThumbnail = enabled)
     }
 
@@ -194,6 +234,7 @@ private fun SettingsStore.readSettingsUiState(
 ): SettingsUiState {
     val downloads = downloadSettings()
     val media = mediaProcessingSettings()
+    val defaults = downloadDefaults()
     return previous.copy(
         baseFolder = downloads.baseFolder,
         categorizeMedia = downloads.categorizeMedia,
@@ -201,6 +242,10 @@ private fun SettingsStore.readSettingsUiState(
         audioFilenamePattern = downloads.audioFilenamePattern,
         maximumVideoHeight = media.maximumVideoHeight,
         audioFormat = media.audioFormat,
+        videoContainer = defaults.videoContainer,
+        audioBitrateKbps = defaults.audioBitrateKbps,
+        cropArtwork = media.cropArtwork,
+        preserveOriginalMetadata = media.preserveOriginalMetadata,
         embedMetadata = media.embedMetadata,
         embedThumbnail = media.embedThumbnail,
         autoUpdateYtDlp = media.autoUpdateYtDlp,
@@ -208,7 +253,7 @@ private fun SettingsStore.readSettingsUiState(
         lastYtDlpUpdate = media.lastYtDlpUpdate,
         ytDlpUpdateChannel = media.ytDlpUpdateChannel,
         ytDlpUpdateInterval = media.ytDlpUpdateInterval,
-        verboseDiagnostics = downloadDefaults().verboseDiagnostics,
+        verboseDiagnostics = defaults.verboseDiagnostics,
         maximumConcurrentDownloads = maximumConcurrentDownloads
     )
 }

@@ -1,5 +1,7 @@
 package dev.qtremors.acqua.feature.updater
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
+import dev.qtremors.acqua.ui.components.ExpressiveSwitch
 import dev.qtremors.acqua.ui.components.MarkdownContent
 import android.content.Intent
 import android.content.ClipboardManager
@@ -62,10 +64,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -193,7 +192,7 @@ internal fun ConfigureRepoBottomSheet(
 internal fun OptionSwitch(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.Medium); Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        ExpressiveSwitch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -205,9 +204,15 @@ internal fun InstalledAppPickerSheet(apps: List<InstalledApp>, onDismiss: () -> 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.8f).padding(horizontal = 20.dp)) {
             Text(stringResource(R.string.link_installed_app), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), label = { Text(stringResource(R.string.search_apps)) }, leadingIcon = { Icon(Icons.Filled.Search, null) }, singleLine = true)
+            ExpressiveTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp), label = { Text(stringResource(R.string.search_apps)) }, leadingIcon = { Icon(Icons.Filled.Search, null) }, singleLine = true)
             TextButton(onClick = { onSelect(null) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.not_installed_track_only)) }
             LazyColumn(Modifier.weight(1f)) {
+                if (filtered.isEmpty()) item {
+                    if (query.isBlank()) EmptyState(variant = EmptyStateVariant.Apps, modifier = Modifier.fillParentMaxHeight())
+                    else EmptyState(variant = EmptyStateVariant.Search, modifier = Modifier.fillParentMaxHeight(),
+                        title = stringResource(R.string.empty_apps_search_title),
+                        description = stringResource(R.string.empty_apps_search_description))
+                }
                 items(filtered, key = InstalledApp::packageName) { app ->
                     TextButton(onClick = { onSelect(app) }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) {
@@ -252,7 +257,7 @@ internal fun TokenDialog(saving: Boolean, onDismiss: () -> Unit, onSave: (String
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(stringResource(R.string.github_token_description))
-                OutlinedTextField(value = token, onValueChange = { token = it }, label = { Text(stringResource(R.string.github_token)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
+                ExpressiveTextField(value = token, onValueChange = { token = it }, label = { Text(stringResource(R.string.github_token)) }, visualTransformation = PasswordVisualTransformation(), singleLine = true)
             }
         },
         confirmButton = { TextButton(onClick = { onSave(token) }, enabled = token.isNotBlank() && !saving) { Text(stringResource(R.string.connect)) } },

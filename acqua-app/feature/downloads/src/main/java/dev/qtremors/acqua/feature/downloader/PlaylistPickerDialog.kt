@@ -1,5 +1,8 @@
 package dev.qtremors.acqua.feature.downloader
 
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -61,6 +64,7 @@ internal fun PlaylistPickerDialog(
                 if (scopeChanged) Text(stringResource(R.string.playlist_scope_fetch_hint))
                 else if (state.media == null) SourceFetchPrompt(state.isResolving, onResolve)
                 else if (!playlist) Text(stringResource(R.string.this_video))
+                else if (entries.isEmpty()) EmptyState(variant = EmptyStateVariant.Playlist, compact = true)
                 else {
                     Text(entries.firstOrNull()?.collectionTitle ?: stringResource(R.string.playlist), style = MaterialTheme.typography.titleSmall)
                     Text(stringResource(R.string.collection_selected, selected.size, entries.size), style = MaterialTheme.typography.bodySmall)
@@ -134,7 +138,9 @@ internal fun PlaylistThumbnail(media: ResolvedMedia, index: Int) {
 
 @Composable
 internal fun SourceFetchPrompt(resolving: Boolean, onFetch: () -> Unit, hint: String = stringResource(R.string.extra_fetch_hint)) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    if (!resolving) EmptyState(variant = EmptyStateVariant.MediaDetails, description = hint, compact = true,
+        action = { TextButton(onClick = onFetch) { Text(stringResource(R.string.fetch)) } })
+    else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(hint, style = MaterialTheme.typography.bodyMedium)
         TextButton(onClick = onFetch, enabled = !resolving) {
             Text(stringResource(if (resolving) R.string.resolving_media else R.string.fetch))

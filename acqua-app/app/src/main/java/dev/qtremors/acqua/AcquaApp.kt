@@ -27,11 +27,14 @@ import dev.qtremors.acqua.platform.storage.PendingMediaStoreRegistry
 import dev.qtremors.acqua.data.session.InstagramSessionStore
 import dev.qtremors.acqua.data.session.SavedWebsiteRepository
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
+import dev.qtremors.acqua.data.onboarding.OnboardingStateStore
+import dev.qtremors.acqua.downloader.YtDlpMaintenanceGateway
 import dev.qtremors.acqua.resolver.web.RenderedPageResolverDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 class AcquaApp : Application(), SingletonImageLoader.Factory, Configuration.Provider,
     DownloadExecutionProvider, RenderedPageResolverDependencies {
@@ -75,7 +78,7 @@ class AcquaApp : Application(), SingletonImageLoader.Factory, Configuration.Prov
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 applicationScope.launch {
-                    runCatching { dependencies.ytDlpMaintenance.update(force = false) }
+                    runCatching { runAutomaticEngineUpdate(dependencies.onboardingPreferences, dependencies.ytDlpMaintenance) }
                         .onFailure { android.util.Log.w("AcquaApp", "Engine update check failed", dev.qtremors.acqua.downloader.SafeDiagnostics.redact(it)) }
                 }
             }
@@ -119,5 +122,14 @@ class AcquaApp : Application(), SingletonImageLoader.Factory, Configuration.Prov
     private companion object {
         const val WORK_MANAGER_JOB_ID_MIN = 0x00001000
         const val WORK_MANAGER_JOB_ID_MAX = 0x0fffffff
+    }
+}
+
+internal suspend fun runAutomaticEngineUpdate(
+    onboarding: OnboardingStateStore,
+    maintenance: YtDlpMaintenanceGateway
+) {
+    if (onboarding.onboardingState.first().isCompleted) {
+        maintenance.update(force = false)
     }
 }

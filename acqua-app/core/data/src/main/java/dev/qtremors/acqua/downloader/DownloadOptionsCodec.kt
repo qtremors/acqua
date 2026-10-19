@@ -85,7 +85,7 @@ object DownloadOptionsCodec {
                 require(categories.length() <= SegmentCategory.entries.size)
                 (0 until categories.length()).map { SegmentCategory.valueOf(categories.getString(it)) }.toSet()
             } else base.removeSegments,
-            network = if (json.has("network")) json.getJSONObject("network").let { network -> dev.qtremors.acqua.data.network.TransferNetworkOptions(
+            network = if (json.has("network")) json.getJSONObject("network").let { network -> dev.qtremors.acqua.domain.TransferNetworkOptions(
                 network.getInt("rateKib"), network.getString("proxy"), network.getBoolean("ipv4"), network.getInt("fragments")
             ).validated() } else base.network,
             cropArtwork = json.optBoolean("crop", base.cropArtwork),

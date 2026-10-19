@@ -1,5 +1,8 @@
 package dev.qtremors.acqua.feature.downloader
 
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,6 +24,7 @@ internal fun AudioTracksButton(options: YtDlpDownloadOptions, formats: List<Medi
     }
     if (expanded && !options.silentVideo) Column {
         Text(stringResource(R.string.multiple_audio_tracks_hint))
+        if (formats.none { it.hasAudio && !it.hasVideo }) EmptyState(variant = EmptyStateVariant.AudioTracks, compact = true)
         formats.filter { it.hasAudio && !it.hasVideo }.forEach { format ->
             ContentChoiceRow(streamTitle(format), format.id in chosen, {
                 val selected = (if (format.id in chosen) chosen - format.id else chosen + format.id).sorted()

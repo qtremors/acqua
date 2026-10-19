@@ -48,7 +48,7 @@ data class YtDlpDownloadOptions(
     val downloadThumbnail: Boolean = false,
     val recordHistory: Boolean = true,
     val verboseDiagnostics: Boolean = false,
-    val network: dev.qtremors.acqua.data.network.TransferNetworkOptions = dev.qtremors.acqua.data.network.TransferNetworkOptions(),
+    val network: dev.qtremors.acqua.domain.TransferNetworkOptions = dev.qtremors.acqua.domain.TransferNetworkOptions(),
     val removeSegments: Set<SegmentCategory> = emptySet(),
     val formatPolicy: DownloadFormatPolicy = DownloadFormatPolicy(),
     val additionalAudioFormatIds: Set<String> = emptySet(),

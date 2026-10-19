@@ -53,7 +53,7 @@ internal fun DownloadExtraControls(
     val enabled = !state.isResolving && !state.isSaving && state.savingItemIndex == null && !state.isBatchRunning &&
         WebLink.extractAll(state.url).size == 1
     val dismiss = { opened = null }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.testTag("download-extra-controls"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (processed) {
                 ExtraChip("playlist", stringResource(R.string.playlist), Icons.AutoMirrored.Outlined.PlaylistPlay,

@@ -1,4 +1,4 @@
-package dev.qtremors.acqua.ui.components
+package dev.qtremors.acqua.feature.downloader
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,19 +28,20 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.data.session.CookieProfileStore
-import dev.qtremors.acqua.data.settings.AppSettingsRepository
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
 import dev.qtremors.acqua.downloader.YtDlpDownloadOptions
 
 @Composable
 fun CookieProfileSelector(options: YtDlpDownloadOptions, store: CookieProfileStore? = null, onApply: (YtDlpDownloadOptions) -> Unit) {
     val context = LocalContext.current
-    val profiles = store ?: remember(context) { CookieProfileStore(context) }
+    val profiles = remember(context, store) { CookieProfileChoices(context, store) }
     var open by rememberSaveable { mutableStateOf(false) }
     var draft by rememberSaveable { mutableStateOf(options.cookieProfileId) }
-    val entries = remember(open, options.cookieProfileId, options.cookieProfileFingerprint) { runCatching { profiles.all() }.getOrNull() }
+    val entries = remember(open, options.cookieProfileId, options.cookieProfileFingerprint) { runCatching { profiles.entries() }.getOrNull() }
     val selected = entries?.firstOrNull { it.id == options.cookieProfileId }
     val missing = options.cookieProfileId != null && (selected == null || options.cookieProfileFingerprint != null && selected.fingerprint != options.cookieProfileFingerprint)
-    val enabled = AppSettingsRepository(context).useBrowserSessions()
+    val enabled = profiles.enabled
     val label = if (missing) stringResource(R.string.cookie_profile_changed) else selected?.name ?: stringResource(R.string.cookie_profile_browser)
     OutlinedButton(onClick = { draft = options.cookieProfileId; open = true }) { Text(stringResource(R.string.cookie_profile_selection, label)) }
     if (open) AlertDialog(onDismissRequest = { open = false }, title = { Text(stringResource(R.string.cookie_profiles)) }, text = {
@@ -49,6 +50,7 @@ fun CookieProfileSelector(options: YtDlpDownloadOptions, store: CookieProfileSto
             if (!enabled) Text(stringResource(R.string.cookie_profile_disabled), color = MaterialTheme.colorScheme.error)
             if (entries == null) Text(stringResource(R.string.cookie_profile_error), color = MaterialTheme.colorScheme.error)
             CookieProfileChoice(stringResource(R.string.cookie_profile_browser), draft == null, true) { draft = null }
+            if (entries?.isEmpty() == true) EmptyState(variant = EmptyStateVariant.Sessions, compact = true)
             entries.orEmpty().forEach { profile ->
                 CookieProfileChoice("${profile.name}\n${profile.scope}", draft == profile.id, enabled) { draft = profile.id }
             }

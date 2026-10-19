@@ -104,7 +104,8 @@ data class DashboardStateHolders(
 data class DashboardServices(
     val mediaDownloader: HttpMediaClient,
     val fileActions: FileActions,
-    val backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager?
+    val backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager?,
+    val appUpdater: dev.qtremors.acqua.data.updater.AppUpdater
 )
 
 data class DashboardRouteState(
@@ -413,12 +414,10 @@ fun DashboardScreen(
                                 AboutDestination.SETTINGS -> SettingsScreen(
                                     viewModel = settingsViewModel,
                                     backupManager = backupManager,
+                                    appUpdateGateway = services.appUpdater,
+                                    checkForAppUpdate = { services.appUpdater.checkForUpdate(forceCheckOnDebug = true) },
                                     themeState = currentThemeState,
                                     onThemeChange = onThemeChange,
-                                    onOpenUpdates = {
-                                        overlay = null
-                                        coroutineScope.launch { pagerState.animateScrollToPage(2) }
-                                    },
                                     onOpenNotices = { overlay = AboutDestination.NOTICES },
                                     onOpenLicense = { overlay = AboutDestination.LICENSE },
                                     onOpenAbout = { overlay = AboutDestination.ABOUT },

@@ -1,5 +1,8 @@
 package dev.qtremors.acqua.feature.downloader
 
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
@@ -89,7 +92,7 @@ private fun LazyListScope.captionPickerItems(tab: Int, draft: YtDlpDownloadOptio
                     { onChange(DownloadCaptions.normalized(draft.copy(captionMode = mode))) }, tag = "caption-mode-${mode.name}")
             }
             1 -> {
-                if (details && tracks.isEmpty()) item { Text(stringResource(R.string.no_captions_available)) }
+                if (details && tracks.isEmpty()) item { EmptyState(variant = EmptyStateVariant.Captions, compact = true) }
                 if (tracks.isNotEmpty()) item {
                     ContentChoiceRow(stringResource(R.string.caption_all_languages), draft.captionLanguages == "all",
                         { onChange(draft.copy(captionLanguages = if (draft.captionLanguages == "all") "" else "all")) },

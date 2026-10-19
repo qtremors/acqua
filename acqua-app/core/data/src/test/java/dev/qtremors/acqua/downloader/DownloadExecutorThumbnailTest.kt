@@ -48,6 +48,7 @@ class DownloadExecutorThumbnailTest {
         ShadowContentResolver.registerProviderInternal("media", provider)
         val settings = AppSettingsRepository(context).apply { setBaseFolder("Acqua"); setCategorizeMedia(true) }
         val history = HistoryRepository(context)
+        history.clear()
         val image = Base64.getDecoder().decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+cK4YAAAAASUVORK5CYII=")
         var transfers = 0

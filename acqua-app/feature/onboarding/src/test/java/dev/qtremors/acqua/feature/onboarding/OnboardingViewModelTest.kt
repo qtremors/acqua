@@ -29,6 +29,19 @@ class OnboardingViewModelTest {
     @get:Rule val mainDispatcherRule = MainDispatcherRule()
 
     @Test
+    fun `completion defaults to the current build version`() = runTest {
+        val store = FakeOnboardingStore()
+        val viewModel = OnboardingViewModel(store, FakeBackupGateway())
+        advanceUntilIdle()
+
+        viewModel.next()
+        viewModel.next()
+        advanceUntilIdle()
+
+        assertEquals(listOf(dev.qtremors.acqua.core.data.BuildConfig.VERSION_CODE to true), store.completions)
+    }
+
+    @Test
     fun `permission completion is idempotent and persists the active version`() = runTest {
         val store = FakeOnboardingStore()
         val viewModel = OnboardingViewModel(store, FakeBackupGateway(), appVersionCode = 24)

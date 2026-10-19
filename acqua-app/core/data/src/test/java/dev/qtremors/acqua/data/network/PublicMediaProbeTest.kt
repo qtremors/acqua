@@ -1,5 +1,6 @@
 package dev.qtremors.acqua.data.network
 
+import dev.qtremors.acqua.domain.TransferNetworkOptions
 import dev.qtremors.acqua.domain.DownloadEngine
 import dev.qtremors.acqua.domain.MediaBackend
 import dev.qtremors.acqua.domain.MediaKind

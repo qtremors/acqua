@@ -7,6 +7,10 @@ import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.ResolvedMedia
 import org.json.JSONObject
 
+// Folder names stay stable across locale changes and retries.
+private const val UNKNOWN_SOURCE_FOLDER = "Unknown source"
+private const val COLLECTION_FOLDER = "Collection"
+
 enum class FolderOrganization { NONE, SOURCE, COLLECTION, SOURCE_COLLECTION }
 
 data class DownloadDestination(
@@ -24,11 +28,11 @@ data class DownloadDestination(
     fun folders(media: ResolvedMedia, sourceUrl: String): List<String> = buildList {
         if (hidden) add("Acqua hidden")
         if (organization == FolderOrganization.SOURCE || organization == FolderOrganization.SOURCE_COLLECTION) {
-            add(segment(Uri.parse(sourceUrl).host ?: "Unknown source"))
+            add(segment(Uri.parse(sourceUrl).host ?: UNKNOWN_SOURCE_FOLDER))
         }
         if (organization == FolderOrganization.COLLECTION || organization == FolderOrganization.SOURCE_COLLECTION) {
             media.collectionTitle?.takeIf(String::isNotBlank)?.let { add(segment(it)) }
-                ?: media.collectionUrl?.let { add(segment(Uri.parse(it).lastPathSegment ?: "Collection")) }
+                ?: media.collectionUrl?.let { add(segment(Uri.parse(it).lastPathSegment ?: COLLECTION_FOLDER)) }
         }
     }
 
@@ -41,7 +45,7 @@ data class DownloadDestination(
             val size = text.toByteArray(Charsets.UTF_8).size
             if (bytes + size <= 80) { result.append(text); bytes += size }
         }
-        return result.toString().ifBlank { "Collection" }
+        return result.toString().ifBlank { COLLECTION_FOLDER }
     }
 }
 

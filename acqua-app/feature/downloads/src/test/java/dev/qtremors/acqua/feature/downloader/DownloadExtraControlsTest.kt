@@ -112,7 +112,7 @@ class DownloadExtraControlsTest {
         compose.onNodeWithText("This video").assertDoesNotExist()
     }
 
-    @Test fun `caption popup selects actual languages and conversion while Cancel keeps clips`() {
+    @Test fun `caption popup selects actual languages and conversion while preserving clips`() {
         state.value = state.value.copy(media = listOf(video), advancedOptions = state.value.advancedOptions.copy(
             clipStartSeconds = 10.0, clipEndSeconds = 30.0))
         content()
@@ -133,7 +133,8 @@ class DownloadExtraControlsTest {
         assertEquals(CaptionFormat.SRT, state.value.advancedOptions.captionFormat)
         assertEquals(setOf("en", "hi"), state.value.advancedOptions.captionLanguages.split(',').toSet())
         assertTrue(state.value.advancedOptions.automaticCaptions)
-        assertNull(state.value.advancedOptions.clipStartSeconds)
+        assertEquals(10.0, state.value.advancedOptions.clipStartSeconds!!, 0.0)
+        assertEquals(30.0, state.value.advancedOptions.clipEndSeconds!!, 0.0)
         compose.runOnIdle { state.value = state.value.copy(advancedOptions = state.value.advancedOptions.copy(videoContainer = VideoContainer.WEBM)) }
         open("captions")
         compose.onNodeWithText("Format").performScrollTo().performClick()
@@ -168,14 +169,18 @@ class DownloadExtraControlsTest {
         assertNull(state.value.selectedCollectionItems)
         done("clip")
         assertEquals(setOf(1), state.value.selectedCollectionItems)
-        assertEquals(90.0, state.value.advancedOptions.clipStartSeconds!!, 0.0)
-        assertEquals(CaptionMode.NONE, state.value.advancedOptions.captionMode)
+        val range = state.value.advancedOptions.clipRanges.single()
+        assertEquals(90.0, range.startSeconds, 0.0)
+        assertEquals(120.0, range.endSeconds, 0.0)
+        assertEquals(CaptionMode.BOTH, state.value.advancedOptions.captionMode)
         open("clip")
         compose.onNodeWithText("Chapters").performScrollTo().performClick()
         preview("download-clip-dialog", "acqua-chapter-picker.png")
         done("clip")
         assertTrue(state.value.advancedOptions.splitChapters)
         assertNull(state.value.advancedOptions.clipStartSeconds)
+        assertTrue(state.value.advancedOptions.clipRanges.isEmpty())
+        assertEquals(CaptionMode.BOTH, state.value.advancedOptions.captionMode)
     }
 
     @Test @Config(qualifiers = "w320dp-h640dp-mdpi")
@@ -187,7 +192,10 @@ class DownloadExtraControlsTest {
             preview("download-$kind-dialog", "acqua-$kind-picker-large-text.png")
             compose.onNodeWithTag("download-$kind-dialog-cancel").assertIsDisplayed()
             compose.onNodeWithTag("download-$kind-dialog-done").assertIsDisplayed()
-            if (kind == "captions") compose.onNodeWithTag("caption-mode-NONE").performScrollTo().assertIsDisplayed()
+            if (kind == "captions") {
+                compose.onNodeWithTag("caption-picker-list").performScrollToNode(hasTestTag("caption-mode-NONE"))
+                compose.onNodeWithTag("caption-mode-NONE").assertIsDisplayed()
+            }
             compose.onNodeWithTag("download-$kind-dialog-cancel").performClick()
         }
         preview("download-config-sheet", "acqua-extra-row-large-text.png")
@@ -208,7 +216,7 @@ class DownloadExtraControlsTest {
         } }
     }
     private fun open(kind: String) {
-        compose.onNodeWithTag("download-config-controls").performTouchInput { swipeUp() }
+        compose.onNodeWithTag("download-extra-controls").performScrollTo()
         compose.onNodeWithTag("download-extra-$kind").performScrollTo().assertIsDisplayed().performClick()
     }
     private fun done(kind: String) { compose.onNodeWithTag("download-$kind-dialog-done").performClick() }

@@ -2,6 +2,28 @@
 
 All notable user-visible changes are documented here.
 
+## [0.4.0] - 2026-10-19
+
+### Added
+
+- Set default video containers and audio conversion bitrates directly in Settings.
+- Check for Acqua updates, download an update, and open the installer from Settings.
+
+### Changed
+
+- Reorganize Settings with shorter descriptions and paired selectors for engine updates, video, and audio.
+- Group download destinations under Downloads & filenames with a clearer folder editor.
+- Edit filename formats in a bottom sheet with expandable video and audio groups, live previews, and variable toggles.
+- Redesign advanced download, command template, and saved-session dialogs with grouped controls and fixed actions.
+- Use expressive switches, rounded text fields, and the downloader’s animated empty-state design throughout the app.
+- Keep video, audio, metadata, and artwork defaults available regardless of the current download selection.
+- Replace the Settings shortcut to Feeds with Check for updates.
+
+### Fixed
+
+- Show onboarding reliably on fresh installs and defer automatic engine checks until setup is complete.
+- Reduce Settings opening work by loading sections as needed and reading saved sessions and templates only when opened.
+
 ## [0.3.9] - 2026-10-18
 
 ### Fixed

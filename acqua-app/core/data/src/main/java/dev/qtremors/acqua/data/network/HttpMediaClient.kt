@@ -1,5 +1,7 @@
 package dev.qtremors.acqua.data.network
 
+import dev.qtremors.acqua.domain.TransferNetworkOptions
+
 import android.graphics.BitmapFactory
 import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.MediaResolutionException

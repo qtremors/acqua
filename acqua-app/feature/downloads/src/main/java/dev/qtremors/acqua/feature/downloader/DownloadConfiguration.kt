@@ -119,7 +119,7 @@ internal fun DownloadConfigBottomSheet(
                     DownloadPickerControls(state, onConfigurationChange)
                 }
                 DownloadExtraControls(state, onResolve, onInspectEntry, onPlaylistSelection, onContentSelection)
-                dev.qtremors.acqua.ui.components.CookieProfileSelector(state.configurationOptions(), onApply = onConfigurationChange)
+                dev.qtremors.acqua.feature.downloader.CookieProfileSelector(state.configurationOptions(), onApply = onConfigurationChange)
                 if (state.downloadEngine == DownloadEngine.YT_DLP) dev.qtremors.acqua.ui.components.CommandTemplateSelector(state.configurationOptions()) {
                     if (it.contentType != state.downloadContentType) onContentTypeChange(it.contentType)
                     onConfigurationChange(it)

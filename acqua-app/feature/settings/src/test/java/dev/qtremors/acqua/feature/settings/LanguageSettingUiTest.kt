@@ -49,8 +49,8 @@ class LanguageSettingUiTest {
             }
         }
         compose.runOnIdle { inputMode.requestInputMode(InputMode.Keyboard) }
-        compose.onNodeWithText("App language: System default").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
-        compose.onNodeWithText("App language: System default").assertIsFocused().performKeyInput { keyDown(Key.Enter); keyUp(Key.Enter) }
+        compose.onNodeWithText("System default").performSemanticsAction(SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithText("System default").assertIsFocused().performKeyInput { keyDown(Key.Enter); keyUp(Key.Enter) }
         compose.onNodeWithText("Español").performClick()
         compose.onNodeWithText("Español").assertIsSelected()
         restore.emulateSavedInstanceStateRestore()
@@ -62,11 +62,11 @@ class LanguageSettingUiTest {
     @Test fun `cancel preserves selection and system default remains available`() {
         var accepted: String? = null
         compose.setContent { MaterialTheme { AppLanguageButton("hi") { accepted = it } } }
-        compose.onNodeWithText("App language: हिन्दी").performClick()
+        compose.onNodeWithText("हिन्दी").performClick()
         compose.onNodeWithText("العربية").performClick()
         compose.onNodeWithText("Cancel").performClick()
         assertNull(accepted)
-        compose.onNodeWithText("App language: हिन्दी").performClick()
+        compose.onNodeWithText("हिन्दी").performClick()
         compose.onNodeWithText("System default").performClick()
         compose.onNodeWithText("Done").performClick()
         assertEquals("", accepted)

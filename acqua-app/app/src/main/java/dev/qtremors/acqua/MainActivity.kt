@@ -322,7 +322,8 @@ class MainActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
                                 services = DashboardServices(
                                     dependencies.mediaDownloader,
                                     dependencies.fileActions,
-                                    dependencies.backupManager
+                                    dependencies.backupManager,
+                                    dependencies.appUpdater
                                 ),
                                 routeState = DashboardRouteState(
                                     initialUrl,

@@ -1,16 +1,15 @@
 package dev.qtremors.acqua.ui.components
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,9 +25,23 @@ import dev.qtremors.acqua.downloader.FormatPolicyMode
 import dev.qtremors.acqua.downloader.VideoCodecPreference
 
 @Composable
-fun FormatPolicyButton(policy: DownloadFormatPolicy, onChange: (DownloadFormatPolicy) -> Unit) {
+fun FormatPolicyButton(policy: DownloadFormatPolicy, onChange: (DownloadFormatPolicy) -> Unit) =
+    FormatPolicyButton(policy, onChange, settingsRow = false)
+
+@Composable
+fun FormatPolicyButton(policy: DownloadFormatPolicy, onChange: (DownloadFormatPolicy) -> Unit, settingsRow: Boolean, index: Int = 0, count: Int = 1,
+    trigger: (@Composable (onClick: () -> Unit, summary: String) -> Unit)? = null) {
     var open by rememberSaveable { mutableStateOf(false) }
-    TextButton(onClick = { open = true }) { Text(stringResource(R.string.format_policy_summary,
+    if (trigger != null) {
+        val summary = buildList {
+            add(stringResource(policy.mode.label()))
+            if (policy.videoCodec != VideoCodecPreference.AUTO) add(policy.videoCodec.label())
+            if (policy.audioCodec != AudioCodecPreference.AUTO) add(policy.audioCodec.name)
+        }.joinToString(" · ")
+        trigger({ open = true }, summary)
+    } else if (settingsRow) SettingsActionRow(stringResource(R.string.format_policy), { open = true }, index = index, count = count,
+        description = stringResource(policy.mode.label()), leadingIcon = Icons.Filled.Tune, trailingIcon = Icons.AutoMirrored.Filled.KeyboardArrowRight)
+    else TextButton(onClick = { open = true }) { Text(stringResource(R.string.format_policy_summary,
         stringResource(policy.mode.label()), policy.videoCodec.label(), policy.audioCodec.name)) }
     if (open) FormatPolicyDialog(policy, onDismiss = { open = false }, onSave = { onChange(it); open = false })
 }
@@ -41,29 +54,36 @@ private fun FormatPolicyDialog(policy: DownloadFormatPolicy, onDismiss: () -> Un
     var sort by rememberSaveable { mutableStateOf(policy.customSort) }
     val parsed = runCatching { DownloadFormatPolicy(FormatPolicyMode.valueOf(mode), VideoCodecPreference.valueOf(video),
         AudioCodecPreference.valueOf(audio), sort).validated() }.getOrNull()
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.format_policy)) }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.format_policy_hint))
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
-                FormatPolicyMode.entries.forEach { choice -> FilterChip(mode == choice.name, { mode = choice.name }, label = { Text(stringResource(choice.label())) }) }
+    SettingsEditorDialog(stringResource(R.string.format_policy), onDismiss, stringResource(R.string.done),
+        { parsed?.let(onSave) }, confirmEnabled = parsed != null, tag = "format-policy-dialog") {
+            SettingsSection(stringResource(R.string.settings_format_selection)) {
+                SettingsEditorOptions(FormatPolicyMode.entries.map { stringResource(it.label()) },
+                    FormatPolicyMode.entries.indexOf(FormatPolicyMode.valueOf(mode)), { mode = FormatPolicyMode.entries[it].name })
+                Text(stringResource(when (FormatPolicyMode.valueOf(mode)) {
+                    FormatPolicyMode.AUTO -> R.string.settings_format_auto_hint
+                    FormatPolicyMode.COMPATIBLE -> R.string.settings_format_compatible_hint
+                    FormatPolicyMode.DEVICE -> R.string.settings_format_device_hint
+                    FormatPolicyMode.LOWEST -> R.string.settings_format_lowest_hint
+                    FormatPolicyMode.CUSTOM -> R.string.settings_format_custom_hint
+                }), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(stringResource(R.string.video_codec))
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
-                VideoCodecPreference.entries.forEach { choice -> FilterChip(video == choice.name, { video = choice.name }, label = { Text(choice.label()) }) }
-            }
-            Text(stringResource(R.string.audio_codec))
-            Row(Modifier.horizontalScroll(rememberScrollState())) {
-                AudioCodecPreference.entries.forEach { choice -> FilterChip(audio == choice.name, { audio = choice.name }, label = { Text(choice.name) }) }
-            }
+            SettingsEditorChoicePair(
+                SettingsChoice(stringResource(R.string.video_codec), VideoCodecPreference.entries.map {
+                    if (it == VideoCodecPreference.AUTO) stringResource(R.string.format_automatic) else it.label()
+                }, VideoCodecPreference.entries.indexOf(VideoCodecPreference.valueOf(video)), { video = VideoCodecPreference.entries[it].name }),
+                SettingsChoice(stringResource(R.string.audio_codec), AudioCodecPreference.entries.map {
+                    if (it == AudioCodecPreference.AUTO) stringResource(R.string.format_automatic) else it.name
+                }, AudioCodecPreference.entries.indexOf(AudioCodecPreference.valueOf(audio)), { audio = AudioCodecPreference.entries[it].name })
+            )
+            Text(stringResource(R.string.settings_codecs_hint), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (mode == FormatPolicyMode.CUSTOM.name) {
-                OutlinedTextField(sort, { sort = it.take(161) }, singleLine = true, isError = parsed == null,
-                    label = { Text(stringResource(R.string.format_sort)) })
-                Text(stringResource(R.string.format_sort_hint))
-                if (parsed == null) Text(stringResource(R.string.format_sort_invalid))
+                ExpressiveTextField(sort, { sort = it.take(161) }, singleLine = true, isError = parsed == null, modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(R.string.format_sort)) },
+                    supportingText = { if (parsed == null) Text(stringResource(R.string.format_sort_invalid)) })
             }
-        }
-    }, confirmButton = { TextButton(onClick = { parsed?.let(onSave) }, enabled = parsed != null) { Text(stringResource(R.string.done)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } })
+            SettingsEditorInfo(stringResource(R.string.format_policy_hint) + if (mode == FormatPolicyMode.CUSTOM.name) "\n\n" + stringResource(R.string.format_sort_hint) else "")
+    }
 }
 
 private fun FormatPolicyMode.label(): Int = when (this) {

@@ -1,68 +1,109 @@
 package dev.qtremors.acqua.feature.downloader
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import dev.qtremors.acqua.core.data.R
-import dev.qtremors.acqua.domain.DownloadEngine
-import dev.qtremors.acqua.domain.MediaBackend
-import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.ui.components.SettingsSection
 import dev.qtremors.acqua.ui.components.SettingsSwitchRow
+import dev.qtremors.acqua.ui.components.TransferNetworkOptionsButton
+import dev.qtremors.acqua.ui.components.SegmentRemovalButton
+import dev.qtremors.acqua.ui.components.FormatPolicyButton
 
 @Composable
 fun DownloaderExtraSettings(viewModel: DownloaderViewModel) {
-    val state by viewModel.state.collectAsState()
-    DownloaderExtraSettingsContent(state, viewModel::setEmbedMetadata, viewModel::setEmbedThumbnail, viewModel::setCropArtwork,
-        viewModel::setPreserveOriginalMetadata, onRecordHistory = { enabled ->
-            viewModel.setDefaultDownloadOptions(state.advancedOptions.copy(recordHistory = enabled))
-        }, onNetworkChange = { network -> viewModel.updateDownloadDefaults { it.copy(network = network) } },
+    val defaults by viewModel.downloadDefaults.collectAsState()
+    DownloaderExtraSettingsContent(defaults,
+        onRecordHistory = { enabled -> viewModel.updateDownloadDefaults { it.copy(recordHistory = enabled) } },
+        onSkipArchived = { enabled -> viewModel.updateDownloadDefaults { it.copy(skipArchived = enabled) } },
+        onNetworkChange = { network -> viewModel.updateDownloadDefaults { it.copy(network = network) } },
         onSegmentsChange = { categories -> viewModel.updateDownloadDefaults { it.copy(removeSegments = categories) } },
-        onFormatPolicyChange = { policy -> viewModel.updateDownloadDefaults { it.copy(formatPolicy = policy) } }) { enabled ->
-        viewModel.setDefaultDownloadOptions(state.advancedOptions.copy(skipArchived = enabled))
+        onFormatPolicyChange = { policy -> viewModel.updateDownloadDefaults { it.copy(formatPolicy = policy) } })
+}
+
+@Composable
+internal fun DownloaderExtraSettingsContent(defaults: dev.qtremors.acqua.downloader.YtDlpDownloadOptions,
+    onRecordHistory: (Boolean) -> Unit = {}, onSkipArchived: (Boolean) -> Unit = {},
+    onNetworkChange: (dev.qtremors.acqua.domain.TransferNetworkOptions) -> Unit = {},
+    onSegmentsChange: (Set<dev.qtremors.acqua.downloader.SegmentCategory>) -> Unit = {},
+    onFormatPolicyChange: (dev.qtremors.acqua.downloader.DownloadFormatPolicy) -> Unit = {}) {
+    Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        SettingsSection(stringResource(R.string.settings_download_behavior)) {
+            SettingsSwitchRow(stringResource(R.string.record_download_history), defaults.recordHistory, onRecordHistory,
+                index = 0, count = 2, description = stringResource(R.string.settings_history_summary), leadingIcon = Icons.Filled.History)
+            SettingsSwitchRow(stringResource(R.string.skip_archived_downloads), defaults.skipArchived, onSkipArchived,
+                index = 1, count = 2)
+        }
+        SettingsSection(stringResource(R.string.settings_advanced_downloads)) {
+            Surface(Modifier.fillMaxWidth().testTag("advanced-downloads-card"), shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer) {
+                Column {
+                    TransferNetworkOptionsButton(defaults.network, onNetworkChange, settingsRow = true, trigger = { open, summary ->
+                        AdvancedDownloadRow(stringResource(R.string.transfer_network_options), summary, Icons.Filled.Wifi, open)
+                    })
+                    AdvancedDownloadDivider()
+                    FormatPolicyButton(defaults.formatPolicy, onFormatPolicyChange, settingsRow = true, trigger = { open, summary ->
+                        AdvancedDownloadRow(stringResource(R.string.format_policy), summary, Icons.Filled.Tune, open)
+                    })
+                    AdvancedDownloadDivider()
+                    SegmentRemovalButton(defaults.removeSegments, onSegmentsChange, settingsRow = true, trigger = { open, summary ->
+                        AdvancedDownloadRow(stringResource(R.string.segment_removal), summary, Icons.Filled.ContentCut, open)
+                    })
+                }
+            }
+        }
     }
 }
 
 @Composable
-internal fun DownloaderExtraSettingsContent(state: DownloaderUiState, onEmbedMetadata: (Boolean) -> Unit,
-    onEmbedThumbnail: (Boolean) -> Unit, onCropArtwork: (Boolean) -> Unit,
-    onPreserveOriginalMetadata: (Boolean) -> Unit, onRecordHistory: (Boolean) -> Unit = {},
-    onNetworkChange: (dev.qtremors.acqua.data.network.TransferNetworkOptions) -> Unit = {},
-    onSegmentsChange: (Set<dev.qtremors.acqua.downloader.SegmentCategory>) -> Unit = {},
-    onFormatPolicyChange: (dev.qtremors.acqua.downloader.DownloadFormatPolicy) -> Unit = {}, onSkipArchived: (Boolean) -> Unit) {
-    val kind = state.selectionKind()
-    val supportsArtwork = kind == MediaKind.AUDIO && state.downloadEngine == DownloadEngine.YT_DLP &&
-        state.media.orEmpty().all { it.backend == MediaBackend.YT_DLP }
-    val count = if (supportsArtwork) 6 else 4
-    val mediaLabel = stringResource(when (kind) {
-        MediaKind.IMAGE -> R.string.photo
-        MediaKind.AUDIO -> R.string.audio
-        else -> R.string.video
-    })
-    SettingsSection(title = stringResource(R.string.download_options_for_media, mediaLabel)) {
-        SettingsSwitchRow(index = 0, count = count, title = stringResource(R.string.embed_metadata),
-            description = stringResource(R.string.embed_metadata_explanation), checked = state.embedMetadata,
-            onCheckedChange = onEmbedMetadata)
-        if (supportsArtwork) {
-            SettingsSwitchRow(index = 1, count = count, title = stringResource(R.string.embed_thumbnail),
-                description = stringResource(R.string.embed_thumbnail_explanation), checked = state.embedThumbnail,
-                onCheckedChange = onEmbedThumbnail)
-            SettingsSwitchRow(index = 2, count = count, title = stringResource(R.string.crop_artwork),
-                description = stringResource(R.string.crop_artwork_description), checked = state.cropArtwork,
-                enabled = state.embedThumbnail, onCheckedChange = onCropArtwork)
+private fun AdvancedDownloadRow(title: String, summary: String, icon: ImageVector, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 88.dp).clickable(role = Role.Button, onClick = onClick)
+        .semantics(mergeDescendants = true) { }.padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+            Box(Modifier.size(42.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
         }
-        SettingsSwitchRow(index = count - 3, count = count, title = stringResource(R.string.original_metadata),
-            description = stringResource(R.string.original_metadata_description), checked = state.preserveOriginalMetadata,
-            onCheckedChange = onPreserveOriginalMetadata)
-        SettingsSwitchRow(index = count - 2, count = count, title = stringResource(R.string.skip_archived_downloads),
-            checked = state.advancedOptions.skipArchived,
-            onCheckedChange = onSkipArchived)
-        SettingsSwitchRow(index = count - 1, count = count, title = stringResource(R.string.record_download_history),
-            description = stringResource(R.string.record_download_history_hint), checked = state.advancedOptions.recordHistory,
-            onCheckedChange = onRecordHistory)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text(summary, Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    dev.qtremors.acqua.ui.components.TransferNetworkOptionsButton(state.advancedOptions.network, onNetworkChange)
-    if (state.downloadEngine == DownloadEngine.YT_DLP) dev.qtremors.acqua.ui.components.SegmentRemovalButton(state.advancedOptions.removeSegments, onSegmentsChange)
-    if (state.downloadEngine == DownloadEngine.YT_DLP) dev.qtremors.acqua.ui.components.FormatPolicyButton(state.advancedOptions.formatPolicy, onFormatPolicyChange)
+}
+
+@Composable
+private fun AdvancedDownloadDivider() {
+    HorizontalDivider(Modifier.padding(start = 72.dp, end = 16.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 }

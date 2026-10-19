@@ -13,7 +13,7 @@ import dev.qtremors.acqua.data.session.CookieProfileStore
 import dev.qtremors.acqua.data.session.SessionCookie
 import dev.qtremors.acqua.data.settings.AppSettingsRepository
 import dev.qtremors.acqua.downloader.YtDlpDownloadOptions
-import dev.qtremors.acqua.ui.components.CookieProfileSelector
+import dev.qtremors.acqua.feature.downloader.CookieProfileSelector
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Before

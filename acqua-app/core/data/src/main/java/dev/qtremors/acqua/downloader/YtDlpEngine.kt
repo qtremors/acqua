@@ -52,7 +52,7 @@ class YtDlpEngine(context: Context) : DownloadProcessingEngine {
     }
 
     private fun inspectDocument(url: String, allowBrowserSession: Boolean, entryIndex: Int? = null, detailed: Boolean = false,
-        network: dev.qtremors.acqua.data.network.TransferNetworkOptions? = null, sessionSnapshot: String? = null): Pair<String, Boolean> {
+        network: dev.qtremors.acqua.domain.TransferNetworkOptions? = null, sessionSnapshot: String? = null): Pair<String, Boolean> {
         val processId = "inspect-${UUID.randomUUID()}"
         val session = dev.qtremors.acqua.data.session.BrowserSessionTransfer(appContext).create(url, allowBrowserSession, sessionSnapshot)
         val cookieFile = session?.file

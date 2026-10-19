@@ -49,12 +49,18 @@ class ConcurrentDownloadsSettingTest {
                     } } }
                 }
             }
-            compose.onNodeWithText("One download").assertIsSelected()
+            compose.onNodeWithText("One download").performClick()
             compose.onNodeWithText("Two downloads").performClick().assertIsSelected()
-            assertEquals(2, AppSettingsRepository(context).maximumConcurrentDownloads)
+            assertEquals(1, AppSettingsRepository(context).maximumConcurrentDownloads)
             restore.emulateSavedInstanceStateRestore()
             compose.onNodeWithText("Two downloads").assertIsSelected()
+            compose.onNodeWithText("Done").performClick()
+            assertEquals(2, AppSettingsRepository(context).maximumConcurrentDownloads)
+            restore.emulateSavedInstanceStateRestore()
+            compose.onNodeWithText("Two downloads").performClick()
             compose.onNodeWithText("One download").performClick().assertIsSelected()
+            compose.onNodeWithText("Done").performClick()
+            assertEquals(1, AppSettingsRepository(context).maximumConcurrentDownloads)
         } finally { settings.setMaximumConcurrentDownloads(1) }
     }
 

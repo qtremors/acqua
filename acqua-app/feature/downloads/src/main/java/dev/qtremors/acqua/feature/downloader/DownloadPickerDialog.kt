@@ -1,5 +1,8 @@
 package dev.qtremors.acqua.feature.downloader
 
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
+
 import android.text.format.Formatter
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -126,8 +129,8 @@ private fun DownloadPickerList(
             }
         }
         if (field.isStream && !included && state.streamFormats().isEmpty()) {
-            Text(stringResource(if (state.media == null) R.string.stream_fetch_hint else R.string.exact_format_inspect_hint),
-                Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            EmptyState(variant = EmptyStateVariant.Streams, compact = true,
+                description = stringResource(if (state.media == null) R.string.stream_fetch_hint else R.string.exact_format_inspect_hint))
         }
     }
 }
