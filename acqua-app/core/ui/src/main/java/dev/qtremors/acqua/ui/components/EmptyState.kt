@@ -25,6 +25,17 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.SearchOff
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Inbox
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Audiotrack
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -59,7 +70,18 @@ enum class EmptyStateVariant {
     ReadyToDownload,
     InvalidLink,
     History,
-    Search
+    Search,
+    Websites,
+    Templates,
+    Sessions,
+    Diagnostics,
+    Captions,
+    Chapters,
+    Apps,
+    Playlist,
+    MediaDetails,
+    Streams,
+    AudioTracks
 }
 
 private fun createMorphingShape(progress: Float): Shape {
@@ -117,6 +139,7 @@ fun EmptyState(
     icon: ImageVector? = null,
     title: String? = null,
     description: String? = null,
+    compact: Boolean = false,
     action: (@Composable () -> Unit)? = null
 ) {
     val reduceMotion = LocalReducedMotionEnabled.current
@@ -137,12 +160,12 @@ fun EmptyState(
         modifier = modifier,
         contentAlignment = Alignment.Center
     ) {
-        EmptyStateBlobs()
+        EmptyStateBlobs(Modifier.matchParentSize())
 
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp),
+                .padding(horizontal = if (compact) 0.dp else 24.dp),
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.45f),
             border = BorderStroke(
@@ -153,23 +176,23 @@ fun EmptyState(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 32.dp),
+                    .padding(horizontal = if (compact) 16.dp else 24.dp, vertical = if (compact) 20.dp else 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
                 if (reduceMotion) {
-                    EmptyStateIcon(icon ?: visuals.icon, visuals.containerColor, visuals.iconTint)
+                    EmptyStateIcon(icon ?: visuals.icon, visuals.containerColor, visuals.iconTint, compact)
                 } else {
                     AnimatedVisibility(visible = true, enter = fadeIn(tween(durationMillis = 180))) {
-                        EmptyStateIcon(icon ?: visuals.icon, visuals.containerColor, visuals.iconTint)
+                        EmptyStateIcon(icon ?: visuals.icon, visuals.containerColor, visuals.iconTint, compact)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(if (compact) 12.dp else 24.dp))
 
                 Text(
                     text = resolvedTitle,
-                    style = MaterialTheme.typography.titleLarge.copy(
+                    style = (if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge).copy(
                         fontWeight = FontWeight.Bold,
                         brush = titleBrush
                     ),
@@ -180,15 +203,15 @@ fun EmptyState(
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = resolvedDescription,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 16.dp)
+                        modifier = Modifier.padding(horizontal = if (compact) 0.dp else 16.dp)
                     )
                 }
 
                 if (action != null) {
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(if (compact) 12.dp else 24.dp))
                     action()
                 }
             }
@@ -200,7 +223,8 @@ fun EmptyState(
 private fun EmptyStateIcon(
     icon: ImageVector,
     containerColor: Color,
-    iconTint: Color
+    iconTint: Color,
+    compact: Boolean
 ) {
     val reduceMotion = LocalReducedMotionEnabled.current
 
@@ -265,7 +289,7 @@ private fun EmptyStateIcon(
         color = containerColor.copy(alpha = 0.25f),
         border = BorderStroke(1.5.dp, borderBrush),
         modifier = Modifier
-            .size(96.dp)
+            .size(if (compact) 64.dp else 96.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -276,7 +300,7 @@ private fun EmptyStateIcon(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(38.dp),
+                modifier = Modifier.size(if (compact) 28.dp else 38.dp),
                 tint = iconTint
             )
         }
@@ -300,6 +324,17 @@ private fun emptyStateVisuals(variant: EmptyStateVariant): EmptyStateVisuals {
         EmptyStateVariant.InvalidLink -> EmptyStateVisuals(Icons.Default.Warning, colors.errorContainer, colors.error)
         EmptyStateVariant.History -> EmptyStateVisuals(Icons.Default.History, quietContainer, colors.primary)
         EmptyStateVariant.Search -> EmptyStateVisuals(Icons.Default.SearchOff, quietContainer, colors.secondary)
+        EmptyStateVariant.Websites -> EmptyStateVisuals(Icons.Default.Public, quietContainer, colors.primary)
+        EmptyStateVariant.Templates -> EmptyStateVisuals(Icons.Default.Terminal, quietContainer, colors.primary)
+        EmptyStateVariant.Sessions -> EmptyStateVisuals(Icons.Default.Cookie, quietContainer, colors.primary)
+        EmptyStateVariant.Diagnostics -> EmptyStateVisuals(Icons.Default.BugReport, quietContainer, colors.primary)
+        EmptyStateVariant.Captions -> EmptyStateVisuals(Icons.Default.Subtitles, quietContainer, colors.primary)
+        EmptyStateVariant.Chapters -> EmptyStateVisuals(Icons.Default.ViewList, quietContainer, colors.primary)
+        EmptyStateVariant.Apps -> EmptyStateVisuals(Icons.Default.Apps, quietContainer, colors.primary)
+        EmptyStateVariant.Playlist -> EmptyStateVisuals(Icons.Default.VideoLibrary, quietContainer, colors.primary)
+        EmptyStateVariant.MediaDetails -> EmptyStateVisuals(Icons.Default.Search, quietContainer, colors.primary)
+        EmptyStateVariant.Streams -> EmptyStateVisuals(Icons.Default.Tune, quietContainer, colors.primary)
+        EmptyStateVariant.AudioTracks -> EmptyStateVisuals(Icons.Default.Audiotrack, quietContainer, colors.primary)
     }
 }
 
@@ -311,6 +346,17 @@ private fun emptyStateTitle(variant: EmptyStateVariant): String =
         EmptyStateVariant.InvalidLink -> stringResource(R.string.invalid_link)
         EmptyStateVariant.History -> stringResource(R.string.no_history)
         EmptyStateVariant.Search -> stringResource(R.string.no_history_search_results)
+        EmptyStateVariant.Websites -> stringResource(R.string.empty_websites_title)
+        EmptyStateVariant.Templates -> stringResource(R.string.empty_templates_title)
+        EmptyStateVariant.Sessions -> stringResource(R.string.empty_sessions_title)
+        EmptyStateVariant.Diagnostics -> stringResource(R.string.empty_diagnostics_title)
+        EmptyStateVariant.Captions -> stringResource(R.string.empty_captions_title)
+        EmptyStateVariant.Chapters -> stringResource(R.string.empty_chapters_title)
+        EmptyStateVariant.Apps -> stringResource(R.string.empty_apps_title)
+        EmptyStateVariant.Playlist -> stringResource(R.string.empty_playlist_title)
+        EmptyStateVariant.MediaDetails -> stringResource(R.string.empty_media_details_title)
+        EmptyStateVariant.Streams -> stringResource(R.string.empty_streams_title)
+        EmptyStateVariant.AudioTracks -> stringResource(R.string.empty_audio_tracks_title)
     }
 
 @Composable
@@ -321,4 +367,13 @@ private fun emptyStateDescription(variant: EmptyStateVariant): String? =
         EmptyStateVariant.InvalidLink -> stringResource(R.string.valid_link_guidance)
         EmptyStateVariant.History -> "Media and links you download will appear here."
         EmptyStateVariant.Search -> "Try searching with different keywords or clearing filters."
+        EmptyStateVariant.Websites -> stringResource(R.string.empty_websites_description)
+        EmptyStateVariant.Templates -> stringResource(R.string.command_templates_empty)
+        EmptyStateVariant.Sessions -> stringResource(R.string.empty_sessions_description)
+        EmptyStateVariant.Diagnostics -> stringResource(R.string.diagnostics_empty)
+        EmptyStateVariant.Captions -> stringResource(R.string.no_captions_available)
+        EmptyStateVariant.Chapters -> stringResource(R.string.no_chapters_available)
+        EmptyStateVariant.Apps -> stringResource(R.string.empty_apps_description)
+        EmptyStateVariant.Playlist -> stringResource(R.string.empty_playlist_description)
+        EmptyStateVariant.MediaDetails, EmptyStateVariant.Streams, EmptyStateVariant.AudioTracks -> null
     }

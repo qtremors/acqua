@@ -7,6 +7,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Assert.assertThrows
 
 class InstagramResolverDiagnosticsTest {
     @Test
@@ -72,12 +73,31 @@ class InstagramResolverDiagnosticsTest {
             val resolver = InstagramResolver(server.url("/"))
             resolver.setSessionCookies("sessionid=private-session; csrftoken=private-csrf", "Acqua test")
 
-            val media = resolver.resolve("https://www.instagram.com/p/privatePost/")
+            val media = resolver.resolve("https://www.instagram.com/p/privatePost/", true)
 
             assertEquals("https://cdn.test/private.jpg", media.single().url)
             assertNull(server.takeRequest().getHeader("Cookie"))
             assertTrue(server.takeRequest().getHeader("Cookie").orEmpty().contains("sessionid=private-session"))
             assertEquals(2, server.requestCount)
+            assertTrue(media.single().explicitBrowserSessionAuthorized)
+        }
+    }
+
+    @Test
+    fun `disabled sessions ignore a loaded login and its user agent`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody("<a href=\"/accounts/login/\">Log in</a>"))
+            val resolver = InstagramResolver(server.url("/"))
+            resolver.setSessionCookies("sessionid=private-session", "Private browser agent")
+
+            assertThrows(AgeGateException::class.java) {
+                resolver.resolve("https://www.instagram.com/p/privatePost/", false)
+            }
+
+            val request = server.takeRequest()
+            assertNull(request.getHeader("Cookie"))
+            assertFalse(request.getHeader("User-Agent").orEmpty().contains("Private browser agent"))
+            assertEquals(1, server.requestCount)
         }
     }
 

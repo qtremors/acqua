@@ -58,9 +58,11 @@ internal fun HistorySearchAndFilters(
     onStatistics: () -> Unit,
     onRefresh: () -> Unit,
     onClear: () -> Unit,
-    onOpenSearch: () -> Unit = {}
+    onOpenSearch: () -> Unit = {},
+    onSourceChange: (String?) -> Unit = {}
 ) {
     var sortMenu by remember { mutableStateOf(false) }
+    var sourceMenu by remember { mutableStateOf(false) }
     val focus = LocalFocusManager.current
     val summary = state.summary
     val colors = MaterialTheme.colorScheme
@@ -93,6 +95,17 @@ internal fun HistorySearchAndFilters(
                         }
                     }
                 )
+            }
+            Box {
+                FilterChip(selected = state.sourceHost != null, onClick = { sourceMenu = true },
+                    label = { Text(state.sourceHost ?: stringResource(R.string.history_all_sources)) })
+                DropdownMenu(expanded = sourceMenu, onDismissRequest = { sourceMenu = false }) {
+                    DropdownMenuItem(text = { Text(stringResource(R.string.history_all_sources)) },
+                        onClick = { onSourceChange(null); sourceMenu = false })
+                    state.sources.forEach { source ->
+                        DropdownMenuItem(text = { Text(source) }, onClick = { onSourceChange(source); sourceMenu = false })
+                    }
+                }
             }
             HistoryFilter.entries.forEach { filter ->
                 FilterChip(

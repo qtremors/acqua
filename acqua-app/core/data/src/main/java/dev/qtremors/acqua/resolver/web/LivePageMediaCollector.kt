@@ -22,6 +22,8 @@ class LivePageMediaCollector(
     private val maximumAttempts: Int = 30,
     private val requiredStablePasses: Int = 4
 ) {
+    @Volatile var generation: Long = 0L
+        private set
     private var attempts = 0
     private var stablePasses = 0
     private var lastItemCount = 0
@@ -33,7 +35,9 @@ class LivePageMediaCollector(
     private val media = linkedMapOf<String, ResolvedMedia>()
     private val capturedNetworkVideos = linkedMapOf<String, String>()
 
-    fun reset() {
+    @Synchronized
+    fun reset(): Long {
+        generation++
         attempts = 0
         stablePasses = 0
         lastItemCount = 0
@@ -44,9 +48,12 @@ class LivePageMediaCollector(
         videoHeight = 0
         media.clear()
         capturedNetworkVideos.clear()
+        return generation
     }
 
-    fun captureNetworkVideo(url: String) {
+    @Synchronized
+    fun captureNetworkVideo(url: String, expectedGeneration: Long = generation) {
+        if (expectedGeneration != generation) return
         if (!url.startsWith("https://") && !url.startsWith("http://")) return
         val identity = WebLink.mediaAssetIdentity(url)
         capturedNetworkVideos.remove(identity)
@@ -56,7 +63,9 @@ class LivePageMediaCollector(
         }
     }
 
-    fun consume(payload: JSONObject?, sourceUrl: String): LivePageExtractionOutcome {
+    @Synchronized
+    fun consume(payload: JSONObject?, sourceUrl: String, expectedGeneration: Long = generation): LivePageExtractionOutcome {
+        if (expectedGeneration != generation) return LivePageExtractionOutcome.Continue
         attempts++
         if (payload == null) return continueOrFail()
         if (payload.optBoolean("loginPage")) {

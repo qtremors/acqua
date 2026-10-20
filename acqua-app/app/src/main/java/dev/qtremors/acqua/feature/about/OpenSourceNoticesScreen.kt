@@ -1,5 +1,6 @@
 package dev.qtremors.acqua.feature.about
 
+import dev.qtremors.acqua.ui.components.MarkdownContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -169,11 +170,11 @@ fun LegalDocumentScreen(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
             ) {
-                Text(
-                    document ?: stringResource(R.string.legal_document_unavailable),
-                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.padding(16.dp)
-                )
+                if (assetName.endsWith(".md")) {
+                    MarkdownContent(document ?: stringResource(R.string.legal_document_unavailable), Modifier.padding(16.dp))
+                } else {
+                    Text(document ?: stringResource(R.string.legal_document_unavailable), style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.padding(16.dp))
+                }
             }
         }
     }
@@ -196,12 +197,12 @@ private fun LegalDocumentDialog(
                 SelectionContainer(
                     Modifier.weight(1f).padding(vertical = 14.dp)
                 ) {
-                    Text(
-                        rememberLegalDocument(assetName)
-                            ?: stringResource(R.string.legal_document_unavailable),
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                    )
+                    val document = rememberLegalDocument(assetName) ?: stringResource(R.string.legal_document_unavailable)
+                    if (assetName.endsWith(".md")) {
+                        MarkdownContent(document, Modifier.fillMaxWidth().verticalScroll(rememberScrollState()))
+                    } else {
+                        Text(document, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()))
+                    }
                 }
                 TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
                     Text(stringResource(R.string.close))

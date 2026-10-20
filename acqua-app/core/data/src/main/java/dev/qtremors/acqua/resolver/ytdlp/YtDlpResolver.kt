@@ -6,5 +6,5 @@ import dev.qtremors.acqua.downloader.YtDlpEngine
 
 class YtDlpResolver(private val engine: YtDlpEngine) : SessionAwareMediaResolver {
     override fun resolve(url: String, allowBrowserSession: Boolean): List<ResolvedMedia> =
-        listOf(engine.inspect(url, allowBrowserSession))
+        engine.inspectItems(url, allowBrowserSession)
 }

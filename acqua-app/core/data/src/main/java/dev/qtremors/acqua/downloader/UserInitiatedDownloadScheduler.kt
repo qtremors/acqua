@@ -15,8 +15,7 @@ internal class UserInitiatedDownloadScheduler(context: Context) {
     private val scheduler = applicationContext.getSystemService(JobScheduler::class.java)
 
     @RequiresApi(34)
-    fun schedule(input: Data): UUID? {
-        val id = UUID.randomUUID()
+    fun schedule(input: Data, id: UUID = UUID.randomUUID()): UUID? {
         val extras = DownloadWorkData.toPersistableBundle(input).apply {
             putString(KEY_TASK_ID, id.toString())
         }
@@ -36,16 +35,26 @@ internal class UserInitiatedDownloadScheduler(context: Context) {
             applicationContext,
             DownloadQueueItem(id.toString(), DownloadQueueState.QUEUED)
         )
-        return if (scheduler.schedule(info) == JobScheduler.RESULT_SUCCESS) {
+        DownloadNameOverrides.register(applicationContext, id.toString())
+        val scheduled = try {
+            scheduler.schedule(info)
+        } catch (error: Exception) {
+            DownloadNameOverrides.finish(applicationContext, id.toString())
+            UserInitiatedDownloadRegistry.remove(applicationContext, id)
+            throw error
+        }
+        return if (scheduled == JobScheduler.RESULT_SUCCESS) {
             id
         } else {
             UserInitiatedDownloadRegistry.remove(applicationContext, id)
+            DownloadNameOverrides.finish(applicationContext, id.toString())
             null
         }
     }
 
     @RequiresApi(34)
     fun cancel(id: UUID) {
+        DownloadNameOverrides.finish(applicationContext, id.toString())
         scheduler.cancel(jobId(id))
         UserInitiatedDownloadRegistry.update(
             applicationContext,

@@ -1,35 +1,28 @@
-@file:OptIn(ExperimentalMaterial3ExpressiveApi::class)
-
 package dev.qtremors.acqua.ui.components
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.OpenInNew
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import dev.qtremors.acqua.ui.theme.expressiveSegmentedShapes
 
 @Composable
 fun SettingsSwitchRow(
@@ -43,63 +36,14 @@ fun SettingsSwitchRow(
     leadingIcon: ImageVector? = null,
     enabled: Boolean = true
 ) {
-    val shapes = expressiveSegmentedShapes(index = index, count = count)
-    SegmentedListItem(
-        checked = checked,
-        onCheckedChange = onCheckedChange,
-        enabled = enabled,
-        shapes = shapes,
-        leadingContent = if (leadingIcon != null) {
-            {
-                Box(
-                    modifier = Modifier.fillMaxHeight(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = leadingIcon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        } else null,
-        content = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
-            )
-        },
-        supportingContent = if (description != null) {
-            {
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else null,
-        trailingContent = {
-            Box(
-                modifier = Modifier.fillMaxHeight(),
-                contentAlignment = Alignment.Center
-            ) {
-                Switch(
-                    checked = checked,
-                    onCheckedChange = null,
-                    enabled = enabled,
-                    modifier = Modifier.clearAndSetSemantics { }
-                )
-            }
-        },
-        colors = ListItemDefaults.segmentedColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        modifier = modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-            .semantics(mergeDescendants = true) { }
-    )
+    SettingsCardContainer(modifier.heightIn(min = 56.dp).toggleable(checked, enabled = enabled,
+        role = Role.Switch, onValueChange = onCheckedChange).semantics(mergeDescendants = true) { }, index, count) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            leadingIcon?.let { Icon(it, null, tint = MaterialTheme.colorScheme.primary) }
+            SettingsRowText(title, description, enabled, Modifier.weight(1f))
+            ExpressiveSwitch(checked, onCheckedChange = null, enabled = enabled, modifier = Modifier.clearAndSetSemantics { })
+        }
+    }
 }
 
 @Composable
@@ -114,63 +58,24 @@ fun SettingsActionRow(
     trailingIcon: ImageVector? = null,
     enabled: Boolean = true
 ) {
-    val shapes = expressiveSegmentedShapes(index = index, count = count)
-    SegmentedListItem(
-        onClick = onClick,
-        enabled = enabled,
-        shapes = shapes,
-        leadingContent = if (leadingIcon != null) {
-            {
-                Box(
-                    modifier = Modifier.fillMaxHeight(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = leadingIcon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        } else null,
-        content = {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium
-            )
-        },
-        supportingContent = if (description != null) {
-            {
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        } else null,
-        trailingContent = if (trailingIcon != null) {
-            {
-                Box(
-                    modifier = Modifier.fillMaxHeight(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = trailingIcon,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        } else null,
-        colors = ListItemDefaults.segmentedColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainer
-        ),
-        modifier = modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
-    )
+    SettingsCardContainer(modifier.heightIn(min = 56.dp).clickable(enabled = enabled, role = Role.Button,
+        onClick = onClick).semantics(mergeDescendants = true) { }, index, count) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            leadingIcon?.let { Icon(it, null, tint = MaterialTheme.colorScheme.primary) }
+            SettingsRowText(title, description, enabled, Modifier.weight(1f))
+            trailingIcon?.let { Icon(it, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
+@Composable
+private fun SettingsRowText(title: String, description: String?, enabled: Boolean, modifier: Modifier) {
+    Column(modifier) {
+        Text(title, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else 0.38f))
+        if (description != null) Text(description, modifier = Modifier.fillMaxWidth(), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f))
+    }
 }
 
 @Composable

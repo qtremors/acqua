@@ -2,6 +2,190 @@
 
 All notable user-visible changes are documented here.
 
+## [0.4.0] - 2026-10-19
+
+### Added
+
+- Set default video containers and audio conversion bitrates directly in Settings.
+- Check for Acqua updates, download an update, and open the installer from Settings.
+
+### Changed
+
+- Reorganize Settings with shorter descriptions and paired selectors for engine updates, video, and audio.
+- Group download destinations under Downloads & filenames with a clearer folder editor.
+- Edit filename formats in a bottom sheet with expandable video and audio groups, live previews, and variable toggles.
+- Redesign advanced download, command template, and saved-session dialogs with grouped controls and fixed actions.
+- Use expressive switches, rounded text fields, and the downloader’s animated empty-state design throughout the app.
+- Keep video, audio, metadata, and artwork defaults available regardless of the current download selection.
+- Replace the Settings shortcut to Feeds with Check for updates.
+
+### Fixed
+
+- Show onboarding reliably on fresh installs and defer automatic engine checks until setup is complete.
+- Reduce Settings opening work by loading sections as needed and reading saved sessions and templates only when opened.
+
+## [0.3.9] - 2026-10-18
+
+### Fixed
+
+- Correct website storage and session details, remove unavailable font requests, and restore the background of website credits.
+
+## [0.3.8] - 2026-10-17
+
+### Changed
+
+- Explain GitHub credentials, feed backups, installed-app matching, and package installation in the privacy policy.
+
+## [0.3.7] - 2026-10-16
+
+### Fixed
+
+- Preserve saved sessions and chapter details when renaming queued downloads.
+- Rename the correct download when saving selected carousel items.
+- Authenticate previews with the chosen saved session and keep cached previews separate across accounts.
+- Keep quality, container, and video stream choices available for video without audio.
+
+## [0.3.6] - 2026-10-15
+
+### Added
+
+- Search History by saved titles, authors, and source IDs, and filter by website.
+- Choose whether new links and saved files are added to History, by default or for one download.
+- Review, copy, and retry recent download failures, with optional extended diagnostics and notifications that open the relevant report.
+- Delete selected downloaded files from History with confirmation, storage permission where needed, and individual results while keeping their records.
+- Set transfer speed limits, HTTP or SOCKS5 proxies, IPv4-only connections, and yt-dlp fragment counts by default or for one download.
+- Open website and remote media links from other apps in Quick download, with configuration review and the usual download permissions.
+- Choose which SponsorBlock categories to remove from YouTube audio or video, by default or for one download, with clear failures when no usable cuts are available.
+- Choose source codecs, compatibility or device decoder policies, lowest quality, and validated custom format sorting by default or for one download.
+- Save captions with audio downloads, export ASS and LRC files, embed compatible captions in M4A audio, and identify automatic translations in the language picker.
+- Save multiple audio tracks in MKV or video without audio, and recover expired stream selections only when equivalent source streams remain available.
+- Apply saved command templates before reviewing download choices.
+- Import or export selected or all History as JSON or link lists, preview duplicates and unavailable files, and relink records to files you choose.
+- Save multiple named clips with matching captions and adjusted chapters, and shift or stretch caption timing to correct sync drift.
+- Choose a saved browser session for a download and keep retries tied to that session.
+- Select carousel media with a long press and corner circle checkboxes. Holding Download opens a Material 3 Expressive menu for Select all, Invert selection, and Cancel selection; empty selections restore Download all.
+- Save thumbnails and audio artwork as separate images alongside downloads from a new Thumbnail/Artwork chip.
+- Select collection entries individually or by number ranges, paste or share multiple links, and save every produced media file.
+- Choose exact video and audio streams, video containers, and conversion bitrates.
+- Save clips with precise boundaries or save each chapter as a named file, and skip duplicate downloads already saved by Acqua.
+- Select caption languages, include automatic captions, embed captions, or save separate files in original, SRT, or VTT format.
+
+### Changed
+
+- Keep engine and Download controls side by side, with selected counts shown as Download · N.
+- Use Material 3 Expressive engine and media selections, paired quality/container and stream chips, and grouped selection dialogs with Done and Cancel.
+- Offer Best quality for audio and video, with quality and stream choices ordered from highest to lowest.
+- Change Fetch to Download once media has been fetched, with the action always visible.
+- Open playlist, caption, clip, and chapter options from a final row of chips, with changes applied on Done.
+- Show playlist thumbnails and durations, select entries individually or by range, and choose the current video or playlist.
+- Preview playlists with the existing post carousel, with entry and range selection in the Playlist dialog.
+- Use expressive text fields for playlist ranges and clip times, with clear input validation.
+- Keep metadata, embedded artwork, original dates, and duplicate skipping in Settings.
+- Keep the link box on one line with horizontal scrolling for long links.
+
+### Fixed
+
+- Fit carousel thumbnails inside the preview container while preserving their original aspect ratios.
+- Match playlist download counts and actions to the selected available entries.
+- Refresh Unavailable to discover files deleted outside Acqua and recognize restored file access.
+- Show accurate History messages for empty searches and categories, with filter recovery actions.
+- Reflect saved video quality in Settings, including 360p and other inspected resolutions.
+- Preserve cancelled and finished downloads when late progress or platform callbacks arrive.
+- Show artwork embedding and square cropping only for supported audio downloads.
+- Restore open download format dialogs and History selections after screen recreation.
+- Keep expanded navigation from covering content.
+- Announce the selected main navigation destination and identify the header that opens Settings.
+- Keep unrelated queued downloads running after another task fails or is cancelled.
+- Preserve accepted filenames, folders, metadata options, and format choices across background execution and retries.
+- Retain accepted work when other items cannot be queued and avoid repeating successful outputs during recovery.
+- Allow healthy direct transfers to continue beyond the inspection timeout.
+- Show caption files correctly in History.
+- Report already saved downloads as skipped without announcing newly saved files.
+
+## [0.3.5] - 2026-10-14
+
+### Added
+
+- Choose the yt-dlp update channel and check interval, with automatic checks when opening Acqua.
+- Enable high contrast with stronger app colors and outlines while retaining the chosen theme for when the option is off.
+- Choose an app language, with starter Spanish, Hindi, and Arabic translations for review and English fallback for untranslated text.
+- Optionally run two downloads together, with independent cancellation and notifications, while keeping one download at a time as the default.
+- Save validated command templates and import or export them through files or the clipboard.
+- Save named browser sessions with their user agents, and refresh or export them.
+- Choose separate photo, audio, and video folders, organize by website or collection, and optionally hide new files from compatible galleries.
+
+### Fixed
+
+- Keep browser media detection consistent across page changes and ignore stale extraction callbacks.
+- Clear complete website data on supported WebViews and explain the all-cookie fallback on older versions.
+- Wrap Settings descriptions at large font sizes.
+
+## [0.3.4] - 2026-10-13
+
+### Fixed
+
+- Preserve package choices changed during installed-app refreshes in Feeds.
+
+## [0.3.3] - 2026-10-12
+
+### Added
+
+- Fetch public direct image, video, and audio links without enabling browser sessions.
+- Use source, collection, chapter, and upload-date filename variables, with fallbacks for missing values.
+- Inspect nested collections in one list while keeping unavailable entries visible and retaining each item's source and collection context.
+
+### Fixed
+
+- Keep long filenames within safe byte limits, including captions, artwork, and collision numbers.
+- Retry temporary HTTP 429 and server failures within the existing automatic retry limit.
+- Fix metadata embedding for direct video and audio downloads.
+- Refresh asset metadata before downloading updates and restrict saved credentials to trusted asset endpoints, including redirects.
+
+## [0.3.2] - 2026-10-11
+
+### Changed
+
+- Show the session toggle beside the browser action only when media resolution or a download fails.
+
+### Fixed
+
+- Fit downloader tabs, engine selectors, and action buttons to their content, including larger text and changing download counts.
+- Preserve artwork quality and reliably crop embedded audio covers to an exact square, including fallback thumbnails.
+- Fix audio downloads with square artwork enabled and show download errors without misleading update messages.
+- Keep artwork previews sharp, prefer embedded audio covers, and show the selected square crop in the downloader.
+- Show previews in a full-width looping carousel with consistent card heights, original aspect ratios, and small gaps.
+- Remove extra header spacing and keep download progress below previews.
+- Prevent WebView renderer crashes or memory reclamation from crashing Acqua by safely closing the affected browser.
+- Refresh failed links when enabling sessions and clear old errors when retrying individual downloads in either engine.
+- Validate yt-dlp results and correctly handle multiple items.
+- Keep download options reachable on small screens.
+
+## [0.3.1] - 2026-10-10
+
+### Added
+
+- Rename downloads by tapping the metadata card, including while a transfer is running.
+- Choose original source dates instead of download timestamps in download options.
+
+### Changed
+
+- Update Android build tooling and app libraries, including Coil 3 image loading and OkHttp 5 networking.
+- Try public access before saved cookies in both engines, expose the session toggle in Downloader, and offer an enable-session action when public access fails.
+- Render Markdown in release notes, repository READMEs, and legal documents.
+- Replace feed overflow buttons with long-press actions, show release and check times plus APK size, and put the latest releases first.
+- Fit media inside square preview containers and size tabs and controls to avoid crowded labels.
+- Improve audio conversion quality and embed higher-quality album artwork with an optional square crop.
+
+### Fixed
+
+- Respect the cookie toggle in previews and every download entry point, including media captured from the browser.
+- Recover stalled Instagram carousel navigation and find carousel data after unrelated page scripts.
+- Refresh installed app versions and update availability when returning from an installation.
+- Keep renamed or transferred feeds refreshing and preserve APK choices made during refresh.
+- Identify yt-dlp sign-in failures as browser-session errors.
+- Embed the download date and time and source URL in supported media metadata.
+- Remove newly created legacy download files when saving fails, while preserving existing files.
+
 ## [0.3.0] - 2026-09-15
 
 ### Changed

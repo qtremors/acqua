@@ -1,6 +1,7 @@
 package dev.qtremors.acqua.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -10,7 +11,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -98,10 +98,10 @@ fun EmptyStateBlobs(
 
     LaunchedEffect(size) {
         if (size.width <= 0 || size.height <= 0) return@LaunchedEffect
-        var lastTime = withFrameNanos { it }
+        var lastTime = withInfiniteAnimationFrameNanos { it }
 
         while (true) {
-            withFrameNanos { frameTime ->
+            withInfiniteAnimationFrameNanos { frameTime ->
                 val dt = ((frameTime - lastTime) / 1_000_000_000f).coerceIn(0f, 0.05f)
                 lastTime = frameTime
 

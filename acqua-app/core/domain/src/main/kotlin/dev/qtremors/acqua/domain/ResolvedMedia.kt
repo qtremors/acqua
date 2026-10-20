@@ -6,6 +6,9 @@ enum class MediaBackend { DIRECT, YT_DLP }
 
 enum class DownloadEngine { ACQUA, YT_DLP }
 
+data class CaptionTrack(val language: String, val name: String?, val automatic: Boolean, val translated: Boolean = false)
+data class MediaChapter(val title: String, val startSeconds: Double, val endSeconds: Double)
+
 data class MediaFormatOption(
     val id: String,
     val extension: String,
@@ -16,7 +19,9 @@ data class MediaFormatOption(
     val fps: Int = 0,
     val audioBitrateKbps: Int = 0,
     val totalBitrateKbps: Int = 0,
-    val fileSize: Long? = null
+    val fileSize: Long? = null,
+    val language: String? = null,
+    val audioChannels: Int = 0
 ) {
     val hasVideo: Boolean get() = !videoCodec.isNullOrBlank() && videoCodec != "none"
     val hasAudio: Boolean get() = !audioCodec.isNullOrBlank() && audioCodec != "none"
@@ -41,7 +46,19 @@ data class ResolvedMedia(
     val album: String? = null,
     val durationSeconds: Int = 0,
     val formats: List<MediaFormatOption> = emptyList(),
-    val sourceTimestampMillis: Long? = null
+    val sourceTimestampMillis: Long? = null,
+    val downloadName: String? = null,
+    val collectionUrl: String? = null,
+    val collectionTitle: String? = null,
+    val collectionIndex: Int = 0,
+    val collectionSize: Int = 0,
+    val captions: List<CaptionTrack> = emptyList(),
+    val sourceIdentity: String? = null,
+    val unavailableReason: String? = null,
+    val chapters: List<MediaChapter> = emptyList(),
+    val preciseDurationSeconds: Double? = null,
+    val requestUserAgent: String? = null,
+    val authorizedSession: String? = null
 ) {
     val isVideo: Boolean get() = kind == MediaKind.VIDEO
     val isAudio: Boolean get() = kind == MediaKind.AUDIO

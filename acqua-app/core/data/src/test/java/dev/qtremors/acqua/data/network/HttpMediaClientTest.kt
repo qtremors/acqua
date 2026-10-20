@@ -13,6 +13,30 @@ import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 
 class HttpMediaClientTest {
+    @Test fun `idle transfer still times out after removing the whole call deadline`() {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setHeader("Content-Type", "image/jpeg")
+                .setBody(okio.Buffer().write(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()) + ByteArray(100)))
+                .setBodyDelay(250, java.util.concurrent.TimeUnit.MILLISECONDS))
+            val client = okhttp3.OkHttpClient.Builder().readTimeout(50, java.util.concurrent.TimeUnit.MILLISECONDS).build()
+            assertThrows(java.io.IOException::class.java) {
+                HttpMediaClient(client).downloadToStream(ResolvedMedia(server.url("photo.jpg").toString(), MediaKind.IMAGE), ByteArrayOutputStream())
+            }
+        }
+    }
+    @Test fun `a healthy transfer outlives the inspection call deadline`() {
+        MockWebServer().use { server ->
+            val jpeg = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()) + ByteArray(100)
+            server.enqueue(MockResponse().setHeader("Content-Type", "image/jpeg")
+                .setBody(okio.Buffer().write(jpeg)).setHeadersDelay(200, java.util.concurrent.TimeUnit.MILLISECONDS))
+            val client = okhttp3.OkHttpClient.Builder().callTimeout(50, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .readTimeout(2, java.util.concurrent.TimeUnit.SECONDS).build()
+            val output = ByteArrayOutputStream()
+            val bytes = HttpMediaClient(client).downloadToStream(ResolvedMedia(server.url("photo.jpg").toString(), MediaKind.IMAGE), output)
+            assertEquals(jpeg.size.toLong(), bytes)
+            assertArrayEquals(jpeg, output.toByteArray())
+        }
+    }
     @Test
     fun `partial HTTP response is rejected`() {
         MockWebServer().use { server ->

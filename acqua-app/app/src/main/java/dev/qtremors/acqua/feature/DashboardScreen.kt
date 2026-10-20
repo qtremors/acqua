@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -57,6 +58,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -73,6 +76,7 @@ import dev.qtremors.acqua.feature.browser.BrowserViewModel
 import dev.qtremors.acqua.feature.browser.BrowserDownloadRequest
 import dev.qtremors.acqua.feature.downloader.DownloadHubScreen
 import dev.qtremors.acqua.feature.downloader.DownloaderScreen
+import dev.qtremors.acqua.feature.downloader.DownloaderExtraSettings
 import dev.qtremors.acqua.feature.downloader.DownloaderViewModel
 import dev.qtremors.acqua.feature.downloader.history.HistoryScreen
 import dev.qtremors.acqua.feature.downloader.history.HistoryViewModel
@@ -100,7 +104,8 @@ data class DashboardStateHolders(
 data class DashboardServices(
     val mediaDownloader: HttpMediaClient,
     val fileActions: FileActions,
-    val backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager?
+    val backupManager: dev.qtremors.acqua.data.backup.PreferencesBackupManager?,
+    val appUpdater: dev.qtremors.acqua.data.updater.AppUpdater
 )
 
 data class DashboardRouteState(
@@ -108,7 +113,8 @@ data class DashboardRouteState(
     val urlHandoff: String?,
     val browserRevision: Int,
     val downloadRequestRevision: Int,
-    val theme: dev.qtremors.acqua.ui.theme.ThemeState
+    val theme: dev.qtremors.acqua.ui.theme.ThemeState,
+    val diagnosticTaskId: String? = null
 )
 
 data class DashboardActions(
@@ -117,7 +123,8 @@ data class DashboardActions(
     val resolveInBrowser: suspend (String, Boolean) -> List<ResolvedMedia>,
     val requestDownloadAccess: (needsNotification: Boolean, action: () -> Unit) -> Unit,
     val openBrowser: (String?, Boolean, String?) -> Unit,
-    val onBrowserDownloadRequest: (BrowserDownloadRequest) -> Unit
+    val onBrowserDownloadRequest: (BrowserDownloadRequest) -> Unit,
+    val onDiagnosticConsumed: () -> Unit = {}
 )
 
 @Composable
@@ -136,6 +143,9 @@ fun DashboardScreen(
     var savedTab by rememberSaveable { mutableIntStateOf(0) }
     val pagerState = rememberPagerState(initialPage = savedTab, pageCount = { 3 })
     var overlay by rememberSaveable { mutableStateOf<AboutDestination?>(null) }
+    LaunchedEffect(routeState.diagnosticTaskId) {
+        if (routeState.diagnosticTaskId != null) overlay = AboutDestination.SETTINGS
+    }
     var showAddWebsiteDialog by rememberSaveable { mutableStateOf(false) }
     var showManageWebsiteDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -147,6 +157,7 @@ fun DashboardScreen(
     val useNavigationRail = adaptiveInfo.windowSizeClass.isWidthAtLeastBreakpoint(
         WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND
     )
+    val navigationRailWidth = (80 * LocalDensity.current.fontScale.coerceIn(1f, 2f)).dp
 
     BackHandler(enabled = overlay != null || pagerState.currentPage != 0) {
         if (overlay == AboutDestination.NOTICES || overlay == AboutDestination.LICENSE) {
@@ -303,7 +314,7 @@ fun DashboardScreen(
             HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize().padding(
-                    start = if (useNavigationRail && overlay == null && !isBrowsingWebsite) 80.dp else 0.dp
+                    start = if (useNavigationRail && overlay == null && !isBrowsingWebsite) navigationRailWidth else 0.dp
                 ),
                 userScrollEnabled = !isBrowsingWebsite && overlay == null
             ) { page ->
@@ -314,6 +325,7 @@ fun DashboardScreen(
                         mediaDownloader = mediaDownloader,
                         fileActions = fileActions,
                         useBrowserSessions = browserState.useSessions,
+                        onUseBrowserSessionsChange = browserViewModel::setUseSessions,
                         sessionsInitialized = browserState.initialized,
                         browserRequestRevision = downloadRequestRevision,
                         resolveInBrowser = resolveInBrowser,
@@ -402,17 +414,19 @@ fun DashboardScreen(
                                 AboutDestination.SETTINGS -> SettingsScreen(
                                     viewModel = settingsViewModel,
                                     backupManager = backupManager,
+                                    appUpdateGateway = services.appUpdater,
+                                    checkForAppUpdate = { services.appUpdater.checkForUpdate(forceCheckOnDebug = true) },
                                     themeState = currentThemeState,
                                     onThemeChange = onThemeChange,
-                                    onOpenUpdates = {
-                                        overlay = null
-                                        coroutineScope.launch { pagerState.animateScrollToPage(2) }
-                                    },
                                     onOpenNotices = { overlay = AboutDestination.NOTICES },
                                     onOpenLicense = { overlay = AboutDestination.LICENSE },
                                     onOpenAbout = { overlay = AboutDestination.ABOUT },
                                     contentPadding = screenPadding,
-                                    modifier = Modifier.fillMaxSize()
+                                    initialDiagnosticTaskId = routeState.diagnosticTaskId,
+                                    onDiagnosticConsumed = actions.onDiagnosticConsumed,
+                                    onRetryDiagnostic = fileActions::retryDownload,
+                                    modifier = Modifier.fillMaxSize(),
+                                    downloadOptionsContent = { DownloaderExtraSettings(downloaderViewModel) }
                                 )
                                 AboutDestination.ABOUT -> AboutScreen(
                                     onOpenNotices = { overlay = AboutDestination.NOTICES },
@@ -466,6 +480,7 @@ fun DashboardScreen(
                 AcquaFloatingToolbar(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
+                        .testTag("dashboard-navigation")
                         .zIndex(1f),
                     items = navItems,
                     selectedIndex = pagerState.currentPage,
@@ -476,7 +491,7 @@ fun DashboardScreen(
                     items = navItems,
                     selectedIndex = pagerState.currentPage,
                     fabAction = currentFabAction,
-                    modifier = Modifier.align(Alignment.CenterStart).fillMaxHeight().zIndex(1f)
+                    modifier = Modifier.align(Alignment.CenterStart).width(navigationRailWidth).fillMaxHeight().testTag("dashboard-navigation").zIndex(1f)
                 )
             }
         }

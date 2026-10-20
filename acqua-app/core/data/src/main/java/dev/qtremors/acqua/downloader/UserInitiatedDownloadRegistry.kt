@@ -26,19 +26,32 @@ internal object UserInitiatedDownloadRegistry {
         return id in state.value
     }
 
-    fun update(context: Context, item: DownloadQueueItem) {
+    fun update(context: Context, item: DownloadQueueItem, starting: Boolean = false): Unit = synchronized(this) {
         ensureInitialized(context)
         val id = UUID.fromString(item.id)
+        val existing = state.value[id]
+        if (existing != null && !existing.isActive) return@synchronized
+        if (!starting && existing?.state == DownloadQueueState.RETRYING && item.state == DownloadQueueState.RUNNING) return@synchronized
         state.value = state.value + (id to item)
+        checkpointDownloadTask(context, item)
         preferences(context).edit(commit = true) {
             putString(item.id, item.toJson().toString())
         }
     }
 
-    fun remove(context: Context, id: UUID) {
+    fun remove(context: Context, id: UUID) = synchronized(this) {
         ensureInitialized(context)
         state.value = state.value - id
         preferences(context).edit(commit = true) { remove(id.toString()) }
+    }
+
+    fun removeTerminals(context: Context, ids: List<String>) = synchronized(this) {
+        ensureInitialized(context)
+        val removed = state.value.filter { (id, item) -> id.toString() in ids && !item.isActive }.keys
+        if (removed.isNotEmpty()) {
+            state.value = state.value - removed
+            preferences(context).edit(commit = true) { removed.forEach { remove(it.toString()) } }
+        }
     }
 
     private fun ensureInitialized(context: Context) {
@@ -48,6 +61,15 @@ internal object UserInitiatedDownloadRegistry {
             state.value = readStoredState(context)
             initialized = true
         }
+    }
+
+    @androidx.annotation.RequiresApi(34)
+    fun reconcile(context: Context) = synchronized(this) {
+        ensureInitialized(context)
+        val pending = context.getSystemService(android.app.job.JobScheduler::class.java).allPendingJobs.map { it.id }.toSet()
+        state.value.values.filter { it.isActive && UserInitiatedDownloadScheduler.jobId(UUID.fromString(it.id)) !in pending }
+            .forEach { update(context, it.copy(state = DownloadQueueState.FAILED,
+                error = DownloadFailure.PLATFORM_LIMIT.code, phase = DownloadPhase.COMPLETE)) }
     }
 
     private fun readStoredState(context: Context): Map<UUID, DownloadQueueItem> =
@@ -71,6 +93,7 @@ internal object UserInitiatedDownloadRegistry {
         .put("total", totalBytes)
         .put("error", error)
         .put("phase", phase.name)
+        .put("artifacts", artifactCount)
 
     private fun JSONObject.toQueueItem(id: UUID) = DownloadQueueItem(
         id = id.toString(),
@@ -80,7 +103,8 @@ internal object UserInitiatedDownloadRegistry {
         downloadedBytes = optLong("downloaded", 0L).coerceAtLeast(0L),
         totalBytes = optLong("total", 0L).coerceAtLeast(0L),
         error = optString("error").takeIf { it.isNotBlank() && it != "null" },
-        phase = enumValueOrDefault(optString("phase"), DownloadPhase.QUEUED)
+        phase = enumValueOrDefault(optString("phase"), DownloadPhase.QUEUED),
+        artifactCount = optInt("artifacts")
     )
 
     private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String, fallback: T): T =

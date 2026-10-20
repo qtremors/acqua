@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Link
@@ -27,6 +28,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import dev.qtremors.acqua.ui.theme.expressiveSegmentedShapes
@@ -44,7 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import coil.compose.AsyncImage
+import coil3.compose.AsyncImage
 import dev.qtremors.acqua.core.data.R
 import dev.qtremors.acqua.data.history.HistoryEntry
 import dev.qtremors.acqua.data.history.HistoryFileStatus
@@ -67,7 +69,8 @@ internal fun HistoryRow(
     entry: HistoryEntry, status: HistoryFileStatus?, selecting: Boolean, isSelected: Boolean,
     onClick: () -> Unit, onLongClick: () -> Unit, onToggle: () -> Unit,
     onShare: () -> Unit, onRemove: () -> Unit, onDetails: () -> Unit,
-    onSource: () -> Unit, onRefetch: () -> Unit, onRetry: () -> Unit
+    onSource: () -> Unit, onRefetch: () -> Unit, onRetry: () -> Unit,
+    onDeleteFile: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val locale = LocalConfiguration.current.locales[0]
@@ -76,6 +79,7 @@ internal fun HistoryRow(
     val title = entry.fileName.ifBlank { WebLink.host(entry.url) ?: stringResource(R.string.media_link_title) }
     val type = stringResource(when {
         !entry.isDownloaded -> R.string.links
+        entry.isCaption -> R.string.caption_file
         entry.isAudio -> R.string.audio
         entry.isVideo -> R.string.video
         else -> R.string.photo
@@ -83,7 +87,7 @@ internal fun HistoryRow(
     var menu by remember { mutableStateOf(false) }
     val thumbnail = remember(entry, status) {
         when {
-            !available -> null
+            !available || entry.isCaption -> null
             entry.isVideo || entry.isAudio -> ThumbnailKey("", entry.fileName.substringAfterLast('.', ""), entry.sizeBytes, entry.timestamp, entry.fileUri)
             else -> entry.fileUri.toUri()
         }
@@ -102,6 +106,7 @@ internal fun HistoryRow(
             Box(Modifier.size(60.dp).clip(RoundedCornerShape(12.dp)).background(colors.surfaceContainerHigh), contentAlignment = Alignment.Center) {
                 Icon(when {
                     !entry.isDownloaded -> Icons.Default.Link
+                    entry.isCaption -> Icons.Default.Subtitles
                     entry.isAudio -> Icons.Default.MusicNote
                     entry.isVideo -> Icons.Default.Movie
                     else -> Icons.Default.Image
@@ -131,6 +136,9 @@ internal fun HistoryRow(
                     }
                     add(HistoryRowAction(stringResource(R.string.hist_select), Icons.Default.Check) { onLongClick() })
                     add(HistoryRowAction(stringResource(R.string.hist_remove), Icons.Default.DeleteOutline, isDestructive = true) { onRemove() })
+                    if (entry.isDownloaded && onDeleteFile != null) {
+                        add(HistoryRowAction(stringResource(R.string.hist_delete_files), Icons.Default.DeleteForever, isDestructive = true, onClick = onDeleteFile))
+                    }
                 }
                 DropdownMenu(
                     expanded = menu,
@@ -211,6 +219,9 @@ internal fun HistoryDetailsSheet(
                 }))
             }
             HistoryDetail(R.string.hist_source, entry.url)
+            entry.title?.let { HistoryDetail(R.string.history_media_title, it) }
+            entry.author?.let { HistoryDetail(R.string.history_media_author, it) }
+            entry.sourceIdentity?.let { HistoryDetail(R.string.history_source_identity, it) }
             HistoryDetail(R.string.hist_date, DateFormat.getDateTimeInstance(DateFormat.LONG, DateFormat.SHORT, locale).format(Date(entry.timestamp)))
             HorizontalDivider()
             if (entry.isDownloaded && status == HistoryFileStatus.AVAILABLE) {

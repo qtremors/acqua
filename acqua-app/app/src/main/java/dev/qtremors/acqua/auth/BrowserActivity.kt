@@ -7,6 +7,7 @@ import android.content.res.ColorStateList
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.net.http.SslError
 import android.os.Build
 import android.os.Bundle
@@ -16,6 +17,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -51,11 +53,11 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
-class BrowserActivity : ComponentActivity() {
+class BrowserActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
     private val dependencies by lazy { (application as AcquaApp).dependencies }
     private val savedWebsites by lazy { dependencies.savedWebsites }
     private val instagramSessions by lazy { dependencies.instagramSessions }
-    private lateinit var webView: WebView
+    private var webView: WebView? = null
     private lateinit var addressBar: EditText
     private lateinit var progressBar: ProgressBar
     private lateinit var backButton: ImageButton
@@ -102,7 +104,7 @@ class BrowserActivity : ComponentActivity() {
         content.addView(progressBar, LinearLayout.LayoutParams.MATCH_PARENT, 3.dp)
 
         val container = FrameLayout(this)
-        webView = WebView(this).apply {
+        val browser = WebView(this).apply {
             setBackgroundColor(BACKGROUND)
             settings.apply {
                 javaScriptEnabled = true
@@ -117,43 +119,47 @@ class BrowserActivity : ComponentActivity() {
             }
             webChromeClient = object : WebChromeClient() {
                 override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    if (view == null || view !== webView) return
                     progressBar.progress = newProgress
                     progressBar.visibility = if (newProgress >= 100) View.GONE else View.VISIBLE
                     pageLoading = newProgress < 100
                     updateNavigationControls()
-                    view?.url?.takeIf(::isBrowsablePage)?.let { currentUrl = it }
+                    view.url?.takeIf(::isBrowsablePage)?.let { currentUrl = it }
                 }
 
                 override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
+                    if (view == null || view !== webView) return
                     super.onReceivedIcon(view, icon)
-                    if (icon != null) view?.url?.let {
+                    if (icon != null) view.url?.let {
                         savedWebsites.updateIcon(it, icon)
                     }
                 }
             }
-            webViewClient = browserClient()
+            webViewClient = BrowserClient()
         }
+        webView = browser
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
-            setAcceptThirdPartyCookies(webView, false)
+            setAcceptThirdPartyCookies(browser, false)
         }
-        container.addView(webView, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        container.addView(browser, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         content.addView(container, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(content, FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         setContentView(root)
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (webView.canGoBack()) webView.goBack() else closeBrowser()
+                val view = webView
+                if (view?.canGoBack() == true) view.goBack() else closeBrowser()
             }
         })
 
-        val restored = savedInstanceState?.let(webView::restoreState) != null
+        val restored = savedInstanceState?.let(browser::restoreState) != null
         if (restored) {
             currentUrl = savedInstanceState.getString(STATE_CURRENT_URL)
-                ?: webView.url?.takeIf(::isBrowsablePage)
+                ?: browser.url?.takeIf(::isBrowsablePage)
             addressBar.setText(currentUrl.orEmpty())
-            webView.post(::updateNavigationControls)
+            browser.post(::updateNavigationControls)
         } else if (requested != null) {
             addressBar.setText(requested)
             loadInitialPage(requested)
@@ -181,9 +187,16 @@ class BrowserActivity : ComponentActivity() {
                 textSize = 14f
                 inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
                 imeOptions = EditorInfo.IME_ACTION_GO
-                background = GradientDrawable().apply {
-                    setColor(ADDRESS_SURFACE)
-                    cornerRadius = 24.dp.toFloat()
+                background = StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply {
+                        setColor(ADDRESS_SURFACE)
+                        cornerRadius = 16.dp.toFloat()
+                        setStroke(2.dp, PRIMARY)
+                    })
+                    addState(intArrayOf(), GradientDrawable().apply {
+                        setColor(ADDRESS_SURFACE)
+                        cornerRadius = 24.dp.toFloat()
+                    })
                 }
                 setPadding(16.dp, 0, 12.dp, 0)
                 setSelectAllOnFocus(true)
@@ -199,9 +212,10 @@ class BrowserActivity : ComponentActivity() {
             }
             addView(addressBar, LinearLayout.LayoutParams(0, 48.dp, 1f))
             reloadButton = iconButton(R.drawable.browser_refresh, getString(R.string.refresh)) {
-                if (pageLoading) webView.stopLoading()
+                val view = webView ?: return@iconButton
+                if (pageLoading) view.stopLoading()
                 else if (currentUrl == null) showStartPage()
-                else webView.reload()
+                else view.reload()
             }
             addView(reloadButton, LinearLayout.LayoutParams(48.dp, 52.dp))
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 58.dp))
@@ -209,10 +223,10 @@ class BrowserActivity : ComponentActivity() {
         addView(LinearLayout(context).apply {
             gravity = Gravity.CENTER
             backButton = navigationButton(R.drawable.browser_back, getString(R.string.back)) {
-                if (webView.canGoBack()) webView.goBack()
+                webView?.let { if (it.canGoBack()) it.goBack() }
             }
             forwardButton = navigationButton(R.drawable.browser_forward, getString(R.string.forward)) {
-                if (webView.canGoForward()) webView.goForward()
+                webView?.let { if (it.canGoForward()) it.goForward() }
             }
             addView(backButton, weightedNavigationParams())
             addView(forwardButton, weightedNavigationParams())
@@ -245,10 +259,11 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun updateNavigationControls() {
-        if (!::webView.isInitialized || !::backButton.isInitialized) return
-        backButton.isEnabled = webView.canGoBack()
+        val view = webView ?: return
+        if (!::backButton.isInitialized) return
+        backButton.isEnabled = view.canGoBack()
         backButton.alpha = if (backButton.isEnabled) 1f else 0.35f
-        forwardButton.isEnabled = webView.canGoForward()
+        forwardButton.isEnabled = view.canGoForward()
         forwardButton.alpha = if (forwardButton.isEnabled) 1f else 0.35f
         reloadButton.setImageResource(
             if (pageLoading) android.R.drawable.ic_menu_close_clear_cancel else R.drawable.browser_refresh
@@ -257,6 +272,7 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun loadInitialPage(url: String) {
+        val view = webView ?: return
         val cookieManager = CookieManager.getInstance()
         val saved = instagramSessions.load()
             ?.takeIf {
@@ -264,7 +280,7 @@ class BrowserActivity : ComponentActivity() {
                     !cookieManager.getCookie(INSTAGRAM_ORIGIN).orEmpty().contains("sessionid=")
             }
         if (saved == null) {
-            webView.loadUrl(url)
+            view.loadUrl(url)
             return
         }
 
@@ -275,7 +291,7 @@ class BrowserActivity : ComponentActivity() {
             } else null
         }
         if (cookies.isEmpty()) {
-            webView.loadUrl(url)
+            view.loadUrl(url)
             return
         }
 
@@ -285,16 +301,29 @@ class BrowserActivity : ComponentActivity() {
             cookieManager.setCookie(INSTAGRAM_ORIGIN, cookie) {
                 runOnUiThread {
                     remaining--
-                    if (remaining == 0 && !isFinishing) {
+                    if (remaining == 0 && !isFinishing && webView === view) {
                         cookieManager.flush()
-                        webView.loadUrl(url)
+                        view.loadUrl(url)
                     }
                 }
             }
         }
     }
 
-    private fun browserClient() = object : WebViewClient() {
+    // WebKit 1.17.1 flags superclass constructor calls even when the subclass
+    // implements onRenderProcessGone. Keep this workaround local to the handled client.
+    @SuppressLint("MissingOnRenderProcessGone")
+    private inner class BrowserClient : WebViewClient() {
+        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+            val wasActive = webView === view
+            destroyWebView(view, rendererGone = true)
+            if (wasActive && !isFinishing && !isDestroyed) {
+                Toast.makeText(this@BrowserActivity, R.string.browser_renderer_stopped, Toast.LENGTH_LONG).show()
+                finishBrowser()
+            }
+            return true
+        }
+
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             val scheme = request.url.scheme?.lowercase()
             if (scheme == "http" || scheme == "https") return false
@@ -305,6 +334,7 @@ class BrowserActivity : ComponentActivity() {
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            if (view !== webView) return
             super.onPageStarted(view, url, favicon)
             if (favicon != null) url?.let {
                 savedWebsites.updateIcon(it, favicon)
@@ -318,6 +348,7 @@ class BrowserActivity : ComponentActivity() {
         }
 
         override fun onPageFinished(view: WebView, url: String?) {
+            if (view !== webView) return
             super.onPageFinished(view, url)
             progressBar.visibility = View.GONE
             pageLoading = false
@@ -334,6 +365,7 @@ class BrowserActivity : ComponentActivity() {
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+            if (view !== webView) return
             super.onReceivedError(view, request, error)
             if (request.isForMainFrame) {
                 progressBar.visibility = View.GONE
@@ -349,6 +381,7 @@ class BrowserActivity : ComponentActivity() {
 
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
             handler.cancel()
+            if (view !== webView) return
             Toast.makeText(this@BrowserActivity, R.string.website_not_secure, Toast.LENGTH_LONG).show()
         }
     }
@@ -367,9 +400,10 @@ class BrowserActivity : ComponentActivity() {
         WebLink.normalize(url) != null && WebLink.host(url) != "acqua.local"
 
     private fun showStartPage() {
+        val view = webView ?: return
         currentUrl = null
         if (!addressBar.hasFocus()) addressBar.setText("")
-        webView.loadDataWithBaseURL(
+        view.loadDataWithBaseURL(
             "https://acqua.local/",
             """
             <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -384,12 +418,14 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun downloadCurrentPage() {
+        val view = webView ?: return
         if (downloadRequestPending) return
         downloadRequestPending = true
-        webView.evaluateJavascript("window.location.href") { rawValue ->
+        view.evaluateJavascript("window.location.href") { rawValue ->
+            if (view !== webView || !downloadRequestPending || isFinishing) return@evaluateJavascript
             val activeUrl = sequenceOf(
                 decodeJavascriptString(rawValue),
-                webView.url,
+                view.url,
                 currentUrl
             ).mapNotNull { it?.let(WebLink::normalize) }
                 .firstOrNull { isBrowsablePage(it) }
@@ -410,9 +446,10 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun extractCurrentPageMedia(sourceUrl: String) {
+        val view = webView ?: return
         if (!downloadRequestPending || isFinishing) return
-        webView.evaluateJavascript(WebExtractionEngine.script(this)) { rawValue ->
-            if (!downloadRequestPending || isFinishing) return@evaluateJavascript
+        view.evaluateJavascript(WebExtractionEngine.script(this)) { rawValue ->
+            if (view !== webView || !downloadRequestPending || isFinishing) return@evaluateJavascript
             val payload = WebExtractionEngine.decodeResult(rawValue)
             when (val outcome = livePageMediaCollector.consume(payload, sourceUrl)) {
                 LivePageExtractionOutcome.Continue -> continueCurrentPageExtraction(sourceUrl)
@@ -429,7 +466,7 @@ class BrowserActivity : ComponentActivity() {
     }
 
     private fun continueCurrentPageExtraction(sourceUrl: String) {
-        webView.postDelayed({ extractCurrentPageMedia(sourceUrl) }, DOWNLOAD_EXTRACTION_INTERVAL_MS)
+        webView?.postDelayed({ extractCurrentPageMedia(sourceUrl) }, DOWNLOAD_EXTRACTION_INTERVAL_MS)
     }
 
     private fun openDownloadPreview(sourceUrl: String, items: List<ResolvedMedia>) {
@@ -473,20 +510,26 @@ class BrowserActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString(STATE_CURRENT_URL, currentUrl)
-        if (::webView.isInitialized) webView.saveState(outState)
+        webView?.saveState(outState)
     }
 
     override fun onDestroy() {
-        if (::webView.isInitialized) {
-            CookieManager.getInstance().flush()
-            webView.stopLoading()
-            webView.webChromeClient = null
-            webView.webViewClient = WebViewClient()
-            (webView.parent as? ViewGroup)?.removeView(webView)
-            webView.removeAllViews()
-            webView.destroy()
-        }
+        CookieManager.getInstance().flush()
+        webView?.let { destroyWebView(it) }
         super.onDestroy()
+    }
+
+    private fun destroyWebView(view: WebView, rendererGone: Boolean = false) {
+        if (webView === view) {
+            webView = null
+            downloadRequestPending = false
+            livePageMediaCollector.reset()
+        }
+        if (!rendererGone) view.stopLoading()
+        view.webChromeClient = null
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.removeAllViews()
+        view.destroy()
     }
 
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()

@@ -15,7 +15,8 @@ enum class HistoryEmptyReason {
 data class HistoryQuery(
     val filter: HistoryFilter = HistoryFilter.MEDIA,
     val sort: HistorySort = HistorySort.NEWEST,
-    val text: String = ""
+    val text: String = "",
+    val sourceHost: String? = null
 ) {
     val normalizedTerms: List<String>
         get() = text.trim()
@@ -61,6 +62,7 @@ internal fun List<HistoryEntry>.applyHistoryQuery(query: HistoryQuery, unavailab
     val terms = query.normalizedTerms
     val filtered = asSequence()
         .filter { entry -> if (query.filter == HistoryFilter.UNAVAILABLE) entry.id in unavailableIds else entry.matches(query.filter) }
+        .filter { entry -> query.sourceHost == null || (entry.sourceHost ?: dev.qtremors.acqua.domain.WebLink.host(entry.url)) == query.sourceHost }
         .filter { entry -> terms.all(entry::matchesTerm) }
 
     val comparator = when (query.sort) {
@@ -129,6 +131,7 @@ private fun HistoryEntry.matches(filter: HistoryFilter): Boolean = when (filter)
 }
 
 private fun HistoryEntry.matchesTerm(term: String): Boolean {
+    if (listOfNotNull(title, author, sourceIdentity).any { it.contains(term, ignoreCase = true) }) return true
     if (fileName.contains(term, ignoreCase = true)) return true
     if (url.contains(term, ignoreCase = true)) return true
     if (mimeType.contains(term, ignoreCase = true)) return true

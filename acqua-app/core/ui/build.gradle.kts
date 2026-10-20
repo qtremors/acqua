@@ -21,6 +21,13 @@ kotlin {
 dependencies {
     api(project(":core:domain"))
     implementation(project(":core:data"))
+    implementation(libs.markwon.core)
+    implementation(libs.markwon.tables)
+    implementation(libs.markwon.strikethrough)
+    implementation(libs.markwon.tasklist)
+    implementation(libs.markwon.linkify)
+    implementation(libs.markwon.image)
+    implementation(libs.markwon.html)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.lifecycle.runtime.compose)

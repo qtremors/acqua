@@ -8,6 +8,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 
 interface MediaResolutionGateway {
+    suspend fun resolveConfigured(input: String, browserSessionsEnabled: Boolean, engine: DownloadEngine,
+        sessionProfileId: String? = null, browserResolver: suspend (String, Boolean) -> List<ResolvedMedia>): List<ResolvedMedia> {
+        if (sessionProfileId != null) throw MediaResolutionException(MediaResolutionFailure.SESSION_REQUIRED, "The selected saved session cannot inspect this link.")
+        return resolve(input, browserSessionsEnabled, engine = engine, browserResolver = browserResolver)
+    }
     suspend fun resolve(
         input: String,
         browserSessionsEnabled: Boolean,
@@ -21,8 +26,18 @@ interface MediaResolutionGateway {
 class MediaResolutionService(
     private val sourceResolver: MediaResolver,
     private val ytDlpResolver: MediaResolver? = null,
+    private val publicMediaProbe: (String) -> ResolvedMedia? = { null },
+    private val profileResolver: (suspend (String, String, DownloadEngine) -> List<ResolvedMedia>)? = null,
     private val inspectMedia: (ResolvedMedia) -> ResolvedMedia?
 ) : MediaResolutionGateway {
+    override suspend fun resolveConfigured(input: String, browserSessionsEnabled: Boolean, engine: DownloadEngine,
+        sessionProfileId: String?, browserResolver: suspend (String, Boolean) -> List<ResolvedMedia>): List<ResolvedMedia> {
+        if (sessionProfileId == null) return resolve(input, browserSessionsEnabled, engine = engine, browserResolver = browserResolver)
+        requireBrowserSessions(browserSessionsEnabled)
+        val url = WebLink.normalize(input) ?: throw MediaResolutionException(MediaResolutionFailure.INVALID_LINK, "Enter a valid HTTP or HTTPS link.")
+        val resolver = profileResolver ?: throw MediaResolutionException(MediaResolutionFailure.SESSION_REQUIRED, "The selected saved session cannot inspect this link.")
+        return validateAndSelect(url, withContext(Dispatchers.IO) { resolver(url, sessionProfileId, engine) })
+    }
     override suspend fun resolve(
         input: String,
         browserSessionsEnabled: Boolean,
@@ -37,7 +52,21 @@ class MediaResolutionService(
                 "Enter a valid HTTP or HTTPS link."
             )
         if (engine == DownloadEngine.YT_DLP) {
-            return resolveWithYtDlp(url, browserSessionsEnabled || forceBrowserResolution)
+            return try {
+                validateAndSelect(url, resolveWithYtDlp(url, false))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (!browserSessionsEnabled) throw error
+                try {
+                    validateAndSelect(url, resolveWithYtDlp(url, true))
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (sessionFailure: Exception) {
+                    sessionFailure.addSuppressed(error)
+                    throw sessionFailure
+                }
+            }
         }
         if (WebLink.isYouTubeUrl(url)) {
             throw MediaResolutionException(
@@ -45,20 +74,34 @@ class MediaResolutionService(
                 "YouTube links require the yt-dlp engine."
             )
         }
-        if (forceBrowserResolution) return validateAndSelect(url, browserResolver(url, true))
+        if (forceBrowserResolution) {
+            requireBrowserSessions(browserSessionsEnabled)
+            return validateAndSelect(url, browserResolver(url, true))
+        }
         if (!WebLink.isInstagramMediaUrl(url)) {
+            try {
+                withContext(Dispatchers.IO) { publicMediaProbe(url) }?.let { return listOf(it) }
+            } catch (error: MediaResolutionException) {
+                if (!allowBrowserFallback || error.failure == MediaResolutionFailure.NETWORK) throw error
+            }
             if (!allowBrowserFallback) {
                 throw MediaResolutionException(
-                    MediaResolutionFailure.SESSION_REQUIRED,
-                    "This page needs browser extraction. Use the browser option to continue."
+                    MediaResolutionFailure.UNSUPPORTED_MEDIA,
+                    "This link did not return a supported public media file. Use browser extraction for webpages."
                 )
             }
-            return validateAndSelect(url, browserResolver(url, false))
+            requireBrowserSessions(browserSessionsEnabled)
+            return validateAndSelect(url, browserResolver(url, true))
         }
 
         val sourceFailure = try {
             val candidates = withContext(Dispatchers.IO) {
-                sourceResolver.resolve(url).map { it.copy(referer = it.referer ?: url) }
+                val candidates = if (sourceResolver is SessionAwareMediaResolver) {
+                    sourceResolver.resolve(url, browserSessionsEnabled)
+                } else {
+                    sourceResolver.resolve(url)
+                }
+                candidates.map { it.copy(referer = it.referer ?: url) }
             }
             return validateAndSelect(url, candidates)
         } catch (error: CancellationException) {
@@ -68,14 +111,22 @@ class MediaResolutionService(
         }
 
         if (!allowBrowserFallback) throw sourceFailure
+        requireBrowserSessions(browserSessionsEnabled)
         return try {
-            validateAndSelect(url, browserResolver(url, false))
+            validateAndSelect(url, browserResolver(url, true))
         } catch (error: CancellationException) {
             throw error
         } catch (browserFailure: Exception) {
             browserFailure.addSuppressed(sourceFailure)
             throw browserFailure
         }
+    }
+
+    private fun requireBrowserSessions(enabled: Boolean) {
+        if (!enabled) throw MediaResolutionException(
+            MediaResolutionFailure.SESSION_REQUIRED,
+            "Enable browser sessions to use cookies for this page."
+        )
     }
 
     private suspend fun resolveWithYtDlp(
@@ -99,7 +150,9 @@ class MediaResolutionService(
         sourceUrl: String,
         candidates: List<ResolvedMedia>
     ): List<ResolvedMedia> {
-        val uniqueCandidates = deduplicate(candidates).take(MAX_CANDIDATES)
+        val uniqueCandidates = if (candidates.all { it.backend == MediaBackend.YT_DLP }) {
+            deduplicate(candidates)
+        } else deduplicate(candidates).take(MAX_CANDIDATES)
         val validated = uniqueCandidates.chunked(MAX_CONCURRENT_INSPECTIONS).flatMap { batch ->
             coroutineScope {
                 batch.map { item ->
@@ -119,6 +172,7 @@ class MediaResolutionService(
     }
 
     private fun selectBest(sourceUrl: String, items: List<ResolvedMedia>): List<ResolvedMedia> {
+        if (items.any { it.collectionUrl != null }) return deduplicate(items)
         val singleVideo = WebLink.isInstagramMediaUrl(sourceUrl) &&
             Regex("/(?:reel|tv)/", RegexOption.IGNORE_CASE).containsMatchIn(sourceUrl)
         if (!singleVideo) return deduplicate(items)
@@ -131,7 +185,8 @@ class MediaResolutionService(
     private fun deduplicate(items: List<ResolvedMedia>): List<ResolvedMedia> {
         val unique = linkedMapOf<String, ResolvedMedia>()
         items.forEach { candidate ->
-            val identity = WebLink.mediaAssetIdentity(candidate.url)
+            val identity = candidate.collectionUrl?.let { "$it#${candidate.collectionIndex}" }
+                ?: WebLink.mediaAssetIdentity(candidate.url)
             val existing = unique[identity]
             val candidateArea = candidate.width.toLong() * candidate.height.toLong()
             val existingArea = existing?.let { it.width.toLong() * it.height.toLong() } ?: -1L

@@ -18,12 +18,50 @@ enum class AudioOutputFormat(val preferenceValue: String) {
     }
 }
 
+enum class CaptionMode { NONE, EMBED, SEPARATE, BOTH }
+enum class CaptionFormat { ORIGINAL, SRT, VTT, ASS, LRC }
+enum class VideoContainer { AUTO, MP4, MKV, WEBM }
+
 data class YtDlpDownloadOptions(
     val contentType: DownloadContentType = DownloadContentType.VIDEO,
     val maximumVideoHeight: Int = 0,
     val audioFormat: AudioOutputFormat = AudioOutputFormat.ORIGINAL,
     val embedMetadata: Boolean = true,
-    val embedThumbnail: Boolean = true
+    val embedThumbnail: Boolean = true,
+    val cropArtwork: Boolean = true,
+    val preserveOriginalMetadata: Boolean = false,
+    val videoFormatId: String? = null,
+    val videoFormatIncludesAudio: Boolean = true,
+    val audioFormatId: String? = null,
+    val videoContainer: VideoContainer = VideoContainer.AUTO,
+    val audioBitrateKbps: Int = 0,
+    val captionMode: CaptionMode = CaptionMode.NONE,
+    val captionFormat: CaptionFormat = CaptionFormat.ORIGINAL,
+    val captionLanguages: String = "en",
+    val automaticCaptions: Boolean = false,
+    val clipStartSeconds: Double? = null,
+    val clipEndSeconds: Double? = null,
+    val splitChapters: Boolean = false,
+    val skipArchived: Boolean = false,
+    val filenamePatternOverride: String? = null,
+    val audioFilenamePatternOverride: String? = null,
+    val downloadThumbnail: Boolean = false,
+    val recordHistory: Boolean = true,
+    val verboseDiagnostics: Boolean = false,
+    val network: dev.qtremors.acqua.domain.TransferNetworkOptions = dev.qtremors.acqua.domain.TransferNetworkOptions(),
+    val removeSegments: Set<SegmentCategory> = emptySet(),
+    val formatPolicy: DownloadFormatPolicy = DownloadFormatPolicy(),
+    val additionalAudioFormatIds: Set<String> = emptySet(),
+    val silentVideo: Boolean = false,
+    val acceptedStreams: List<dev.qtremors.acqua.domain.MediaFormatOption> = emptyList(),
+    val commandTemplateId: String? = null,
+    val commandTemplateSnapshot: String? = null,
+    val formatSelectorOverride: String? = null,
+    val templateAudioMultistreams: Boolean = false,
+    val clipRanges: List<ClipRange> = emptyList(),
+    val captionTiming: CaptionTiming = CaptionTiming(),
+    val cookieProfileId: String? = null,
+    val cookieProfileFingerprint: String? = null
 )
 
 data class YtDlpProgress(

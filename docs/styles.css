@@ -20,22 +20,6 @@
   --shell: min(1160px, calc(100% - 48px));
 }
 
-@font-face {
-  font-family: "DM Sans";
-  src: url("assets/fonts/dm-sans-latin.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Manrope";
-  src: url("assets/fonts/manrope-latin.woff2") format("woff2");
-  font-style: normal;
-  font-weight: 500 800;
-  font-display: swap;
-}
-
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 100px; overflow-x: clip; }
 
@@ -44,7 +28,7 @@ body {
   overflow-x: clip;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.65 "DM Sans", system-ui, sans-serif;
+  font: 16px/1.65 system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -96,7 +80,7 @@ img { display: block; max-width: 100%; }
   transition: 220ms ease;
 }
 .site-header.scrolled .nav { border-color: var(--line); background: rgba(10, 27, 35, 0.86); box-shadow: 0 14px 44px rgba(0, 0, 0, 0.2); backdrop-filter: blur(18px); }
-.brand { display: inline-flex; align-items: center; gap: 11px; font: 800 19px/1 "Manrope", sans-serif; letter-spacing: -0.04em; }
+.brand { display: inline-flex; align-items: center; gap: 11px; font: 800 19px/1 sans-serif; letter-spacing: -0.04em; }
 .brand-mark { width: 43px; height: 43px; display: grid; place-items: center; border-radius: 15px 15px 22px 15px; background: rgba(117, 232, 239, 0.1); }
 .brand img { width: 34px; height: 34px; object-fit: contain; }
 .nav-links { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 14px; font-weight: 700; }
@@ -117,7 +101,7 @@ img { display: block; max-width: 100%; }
 .eyebrow, .kicker { color: var(--cyan); font-size: 12px; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; }
 .eyebrow { display: inline-flex; align-items: center; gap: 10px; }
 .eyebrow span { width: 9px; height: 9px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 7px rgba(153, 242, 215, 0.08); }
-h1, h2, h3 { margin: 0; font-family: "Manrope", sans-serif; line-height: 1.02; letter-spacing: -0.052em; }
+h1, h2, h3 { margin: 0; font-family: sans-serif; line-height: 1.02; letter-spacing: -0.052em; }
 h1 { max-width: 720px; margin-top: 24px; font-size: clamp(60px, 7.2vw, 104px); }
 h1 em { color: var(--cyan); font-style: normal; }
 .hero-copy > p { max-width: 610px; margin: 28px 0 0; color: var(--muted); font-size: clamp(17px, 1.7vw, 20px); }
@@ -267,8 +251,8 @@ h1 em { color: var(--cyan); font-style: normal; }
 /* Credits Section */
 .credits { padding-top: 15px; }
 .credits-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 36px; }
-.credits-card { background: var(--panel); border: 1px solid var(--line); border-radius: 28px; padding: 32px; box-shadow: var(--shadow); }
-.credits-card h3 { font-family: 'Manrope', sans-serif; font-size: 20px; font-weight: 700; color: var(--text); margin: 0 0 14px; }
+.credits-card { background: var(--surface); border: 1px solid var(--line); border-radius: 28px; padding: 32px; box-shadow: var(--shadow); }
+.credits-card h3 { font-family: sans-serif; font-size: 20px; font-weight: 700; color: var(--text); margin: 0 0 14px; }
 .credits-card p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.7; }
 .credits-card a { color: var(--cyan); text-decoration: none; font-weight: 600; }
 .credits-card a:hover { text-decoration: underline; }
@@ -283,7 +267,7 @@ h1 em { color: var(--cyan); font-style: normal; }
 .footer-social-links { display: flex; gap: 12px; }
 .footer-social-links a { display: flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 999px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); color: var(--muted); transition: all 200ms ease; }
 .footer-social-links a:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); border-color: var(--cyan); transform: translateY(-2px); }
-.footer-links-col h4 { font-family: 'Manrope', sans-serif; font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 16px; }
+.footer-links-col h4 { font-family: sans-serif; font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 16px; }
 .footer-links-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 .footer-links-col a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 200ms ease; }
 .footer-links-col a:hover { color: var(--cyan); }

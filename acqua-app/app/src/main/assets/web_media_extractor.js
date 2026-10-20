@@ -123,7 +123,7 @@
   };
   const collectStructuredInstagramMedia = () => {
     if (!routeCode) return;
-    const scripts = Array.from(document.querySelectorAll('script[type="application/json"]')).slice(0, 48);
+    const scripts = Array.from(document.querySelectorAll('script[type="application/json"]'));
     const stateKey = `${location.origin}${path}`;
     const cached = window.__acquaStructuredMediaState;
     if (cached?.key === stateKey && Array.isArray(cached.items) && cached.items.length > 1) {
@@ -138,7 +138,8 @@
     const candidates = scripts
       .map((script) => script.textContent || '')
       .filter((text) => text.includes(routeCode))
-      .sort((left, right) => left.length - right.length);
+      .sort((left, right) => left.length - right.length)
+      .slice(0, 48);
     let totalVisited = 0;
     for (const text of candidates) {
       let root;
@@ -319,7 +320,11 @@
         : { key: stateKey, lastClickAt: 0, lastClickedMedia: '' };
       const now = Date.now();
       const mediaChanged = !previousState.lastClickedMedia || mediaSignature !== previousState.lastClickedMedia;
-      if (mediaChanged && now - previousState.lastClickAt >= 1000) {
+      const elapsedSinceClick = now - previousState.lastClickAt;
+      const clickDelayElapsed = mediaChanged
+        ? elapsedSinceClick >= 1000
+        : elapsedSinceClick >= 1500;
+      if (clickDelayElapsed) {
         nextButton.click();
         result.clickedNext = true;
         previousState.lastClickAt = now;

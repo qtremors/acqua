@@ -18,6 +18,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -64,6 +65,7 @@ class FeedsViewModel(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : ViewModel() {
     private var previewJob: Job? = null
+    private var installedStatusJob: Job? = null
     val trackedRepos: StateFlow<List<TrackedRepo>> = repository.trackedRepos
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -196,6 +198,7 @@ class FeedsViewModel(
                     downloadApiUrl = asset.url,
                     apkSizeBytes = asset.size,
                     publishedAt = preview.release.published_at,
+                    lastCheckedAt = System.currentTimeMillis(),
                     selectedApkName = preview.selectedApkName,
                     mappedPackageName = installed?.packageName,
                     mappedAppName = installed?.appName,
@@ -229,7 +232,6 @@ class FeedsViewModel(
             message = null
         )
         viewModelScope.launch {
-            val updated = current.toMutableList()
             var firstError: Throwable? = null
             val installedApps = matcher.installedApps()
             for ((index, tracked) in current.withIndex()) {
@@ -241,70 +243,115 @@ class FeedsViewModel(
                         if (error.statusCode == 404) null else throw error
                     }
                     val apks = release?.assets?.filter { it.name.endsWith(".apk", true) }.orEmpty()
-                    val asset = apks.firstOrNull { it.name == tracked.selectedApkName }
-                        ?: AppUpdater.selectBestApkAsset(apks)
-                    val installed = tracked.mappedPackageName?.let(matcher::installedVersion)
-                        ?: tracked.takeIf { it.autoMatchInstalledApp }
-                            ?.let { matcher.findBestMatch(it.name, installedApps) }
-                    updated[index] = tracked.copy(
-                        name = info.name,
-                        fullName = info.full_name,
-                        description = info.description,
-                        stars = info.stargazers_count,
-                        avatarUrl = info.owner.avatar_url,
-                        latestTagName = release?.tag_name ?: tracked.latestTagName,
-                        latestReleaseName = release?.name ?: tracked.latestReleaseName,
-                        latestReleaseBody = release?.body ?: tracked.latestReleaseBody,
-                        latestReleaseUrl = release?.html_url ?: tracked.latestReleaseUrl,
-                        downloadUrl = asset?.browser_download_url,
-                        downloadApiUrl = asset?.url,
-                        apkSizeBytes = asset?.size ?: 0L,
-                        publishedAt = release?.published_at ?: tracked.publishedAt,
-                        mappedPackageName = installed?.packageName ?: tracked.mappedPackageName,
-                        mappedAppName = installed?.appName ?: tracked.mappedAppName,
-                        installedVersionName = installed?.versionName,
-                        isUpdateAvailable = release?.let { latest -> installed?.let {
-                            AppUpdater.compareVersions(latest.tag_name, it.versionName) > 0
-                        } } ?: false
-                    )
+                    repository.updateRepo(tracked.fullName) { current ->
+                        if (current.allowPreReleases != tracked.allowPreReleases) return@updateRepo current
+                        val asset = apks.firstOrNull { it.name == current.selectedApkName }
+                            ?: AppUpdater.selectBestApkAsset(apks)
+                        val installed = current.mappedPackageName?.let(matcher::installedVersion)
+                            ?: current.takeIf { it.autoMatchInstalledApp }
+                                ?.let { matcher.findBestMatch(it.name, installedApps) }
+                        current.copy(
+                            owner = info.owner.login,
+                            name = info.name,
+                            fullName = info.full_name,
+                            description = info.description,
+                            stars = info.stargazers_count,
+                            avatarUrl = info.owner.avatar_url,
+                            latestTagName = release?.tag_name ?: current.latestTagName,
+                            latestReleaseName = release?.name ?: current.latestReleaseName,
+                            latestReleaseBody = release?.body ?: current.latestReleaseBody,
+                            latestReleaseUrl = release?.html_url ?: current.latestReleaseUrl,
+                            downloadUrl = asset?.browser_download_url,
+                            downloadApiUrl = asset?.url,
+                            apkSizeBytes = asset?.size ?: 0L,
+                            publishedAt = release?.published_at ?: current.publishedAt,
+                            lastCheckedAt = System.currentTimeMillis(),
+                            mappedPackageName = installed?.packageName ?: current.mappedPackageName,
+                            mappedAppName = installed?.appName ?: current.mappedAppName,
+                            installedVersionName = installed?.versionName,
+                            isUpdateAvailable = release?.let { latest -> installed?.let {
+                                AppUpdater.compareVersions(latest.tag_name, it.versionName) > 0
+                            } } ?: false
+                        )
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (error: Throwable) {
                     if (firstError == null) firstError = error
                 }
                 _state.value = _state.value.copy(refreshCompleted = index + 1)
             }
-            repository.updateAll(updated)
             _state.value = _state.value.copy(
                 isRefreshing = false,
                 hasRefreshed = true,
                 message = firstError?.let(::noticeFor)
-                    ?: AppUpdateNotice.RefreshComplete(updated.size)
+                    ?: AppUpdateNotice.RefreshComplete(current.size)
             )
         }
     }
 
-    fun download(repo: TrackedRepo) {
-        if (repo.downloadUrl == null && repo.downloadApiUrl == null) {
-            return showMessage(AppUpdateNotice.Failure(AppUpdateFailure.NO_APK))
+    fun refreshInstalledStatus() {
+        installedStatusJob?.cancel()
+        installedStatusJob = viewModelScope.launch {
+            val apps = matcher.installedApps()
+            val fullNames = repository.trackedRepos.first().map { it.fullName }
+            fullNames.forEach { fullName ->
+                withContext(ioDispatcher) {
+                    repository.updateRepo(fullName) { current ->
+                        val app = current.mappedPackageName?.let(matcher::installedVersion)
+                            ?: current.takeIf { it.autoMatchInstalledApp }?.let { matcher.findBestMatch(it.name, apps) }
+                        current.copy(
+                            mappedPackageName = app?.packageName ?: current.mappedPackageName,
+                            mappedAppName = app?.appName ?: current.mappedAppName,
+                            installedVersionName = app?.versionName,
+                            isUpdateAvailable = app?.let { AppUpdater.compareVersions(current.latestTagName, it.versionName) > 0 } ?: false
+                        )
+                    }
+                }
+                if (_state.value.downloadStates[fullName] is UpdateDownloadState.Downloaded) {
+                    val repo = repository.trackedRepos.first().firstOrNull { it.fullName == fullName }
+                    if (repo?.installedVersionName != null && !repo.isUpdateAvailable) {
+                        _state.value = _state.value.withDownload(fullName, UpdateDownloadState.Idle)
+                    }
+                }
+            }
         }
+    }
+
+    fun download(repo: TrackedRepo) {
         when (val download = _state.value.downloadStates[repo.fullName]) {
             is UpdateDownloadState.Downloading -> return
             is UpdateDownloadState.Downloaded -> return install(repo, download.apkFile)
             else -> Unit
         }
+        _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Downloading(0, 0, 0))
         viewModelScope.launch {
+            fun fail(failure: AppUpdateFailure) {
+                _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Error(failure))
+                showMessage(AppUpdateNotice.Failure(failure))
+            }
             val token = withContext(ioDispatcher) { auth.token }
-            val url = (if (!token.isNullOrBlank()) repo.downloadApiUrl ?: repo.downloadUrl else repo.downloadUrl)
-                ?: return@launch showMessage(AppUpdateNotice.Failure(AppUpdateFailure.NO_APK))
-            _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Downloading(0, repo.apkSizeBytes, 0))
+            val asset = try {
+                val release = if (repo.allowPreReleases) api.getReleases(repo.owner, repo.name)
+                    .firstOrNull { !it.draft } else api.getLatestRelease(repo.owner, repo.name)
+                release?.assets?.let { assets ->
+                    if (repo.selectedApkName == TrackedRepo.AUTO_APK) AppUpdater.selectBestApkAsset(assets)
+                    else assets.firstOrNull { it.name == repo.selectedApkName && it.name.endsWith(".apk", true) }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                return@launch fail(AppUpdateFailure.DOWNLOAD)
+            } ?: return@launch fail(AppUpdateFailure.NO_APK)
+            val url = (if (!token.isNullOrBlank()) asset.url ?: asset.browser_download_url else asset.browser_download_url)
+                ?: return@launch fail(AppUpdateFailure.NO_APK)
+            _state.value = _state.value.withDownload(repo.fullName, UpdateDownloadState.Downloading(0, asset.size, 0))
             updater.downloadUpdate(
                 downloadUrl = url,
-                fileName = repo.selectedApkName.takeUnless { it == TrackedRepo.AUTO_APK }
-                    ?: repo.downloadUrl?.substringAfterLast('/')
-                    ?: url.substringAfterLast('/'),
-                expectedSizeBytes = repo.apkSizeBytes,
+                fileName = asset.name,
+                expectedSizeBytes = asset.size,
                 expectedPackageName = repo.mappedPackageName,
                 requireNewerThanInstalled = repo.installedVersionName != null,
-                authorizationToken = token.takeIf { url == repo.downloadApiUrl }
+                authorizationToken = token.takeIf { url == asset.url }
             ) { bytes, total, percent ->
                 _state.value = _state.value.withDownload(
                     repo.fullName,

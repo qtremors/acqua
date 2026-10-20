@@ -112,10 +112,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -132,6 +134,7 @@ import dev.qtremors.acqua.domain.MediaKind
 import dev.qtremors.acqua.domain.MediaResolutionFailure
 import dev.qtremors.acqua.downloader.DownloadFailure
 import dev.qtremors.acqua.domain.ResolvedMedia
+import dev.qtremors.acqua.domain.WebLink
 import dev.qtremors.acqua.downloader.AudioOutputFormat
 import dev.qtremors.acqua.downloader.DownloadContentType
 import dev.qtremors.acqua.downloader.DownloadQueueState
@@ -156,7 +159,9 @@ fun DownloaderScreen(
     showLinkEditor: Boolean = true,
     onOpenAbout: () -> Unit = {},
     showHeaderCard: Boolean = true,
-    onStatusClick: (() -> Unit)? = null
+    onStatusClick: (() -> Unit)? = null,
+    onUseBrowserSessionsChange: ((Boolean) -> Unit)? = null,
+    initialConfigurationKey: String? = null
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -164,7 +169,23 @@ fun DownloaderScreen(
     val currentOnMediaSaved by rememberUpdatedState(onMediaSaved)
     val colors = MaterialTheme.colorScheme
     val previewCache = remember(mediaDownloader) { MediaPreviewCache(context, mediaDownloader) }
-    var showConfigSheet by remember { mutableStateOf(false) }
+    var showConfigSheet by rememberSaveable { mutableStateOf(false) }
+    var consumedConfigurationKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(initialConfigurationKey) {
+        if (initialConfigurationKey != null && consumedConfigurationKey != initialConfigurationKey) {
+            consumedConfigurationKey = initialConfigurationKey
+            showConfigSheet = true
+        }
+    }
+    var retryWithSession by remember { mutableStateOf(false) }
+
+    LaunchedEffect(useBrowserSessions, retryWithSession) {
+        if (useBrowserSessions && retryWithSession) {
+            retryWithSession = false
+            viewModel.resetResolution()
+            viewModel.resolve(true, browserRequestRevision, resolveInBrowser)
+        }
+    }
 
     val pullRefreshState = rememberPullToRefreshState()
     var isRefreshing by rememberSaveable { mutableStateOf(false) }
@@ -200,6 +221,8 @@ fun DownloaderScreen(
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
+                is DownloaderEvent.DownloadsSkipped -> Toast.makeText(context,
+                    resources.getString(R.string.archive_skipped_count, event.count), Toast.LENGTH_SHORT).show()
                 DownloaderEvent.ResolutionComplete -> context.performHaptic(HapticSignal.CLICK)
                 is DownloaderEvent.DownloadComplete -> {
                     context.performHaptic(HapticSignal.COMPLETE)
@@ -236,10 +259,16 @@ fun DownloaderScreen(
             onResolve = { viewModel.resolve(useBrowserSessions, browserRequestRevision, resolveInBrowser) },
             onEngineChange = viewModel::setDownloadEngine,
             onContentTypeChange = viewModel::setDownloadContentType,
-            onVideoHeightChange = viewModel::setMaximumVideoHeight,
-            onAudioFormatChange = viewModel::setAudioFormat,
-            onEmbedMetadataChange = viewModel::setEmbedMetadata,
-            onEmbedThumbnailChange = viewModel::setEmbedThumbnail
+            onConfigurationChange = viewModel::applyDownloadConfiguration,
+            onPlaylistSelection = viewModel::applyPlaylistSelection,
+            onContentSelection = viewModel::applyContentConfiguration,
+            onInspectEntry = { viewModel.inspectCollectionEntry(it, useBrowserSessions, resolveInBrowser) },
+            showSource = initialConfigurationKey != null,
+            onDownload = {
+                requestDownloadAccess(true) {
+                    viewModel.downloadAll(useBrowserSessions, resolveInBrowser)
+                }
+            }
         )
     }
 
@@ -356,46 +385,61 @@ fun DownloaderScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(top = if (showLinkEditor && showHeaderCard) 4.dp else contentPadding.calculateTopPadding())
+                    .testTag("downloader-content")
+                    .padding(top = if (showLinkEditor) 0.dp else contentPadding.calculateTopPadding())
             ) {
                 val boxMaxHeight = maxHeight
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clipToBounds()
                         .heightIn(min = boxMaxHeight)
                         .verticalScroll(contentScrollState),
                     contentAlignment = if (state.media != null) Alignment.TopCenter else Alignment.Center
                 ) {
-                    when {
-                        state.validity == LinkValidity.EMPTY -> EmptyState(
-                            variant = EmptyStateVariant.ReadyToDownload,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(boxMaxHeight)
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                        state.validity == LinkValidity.INVALID -> EmptyState(
-                            variant = EmptyStateVariant.InvalidLink,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(boxMaxHeight)
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                        )
-                        else -> MediaContentSection(
-                            state = state,
-                            previewCache = previewCache,
-                            onMediaDimensions = viewModel::updateMediaDimensions,
-                            onDownloadOne = { item, index, width, height ->
-                                requestDownloadAccess(true) { viewModel.downloadOne(item, index, width, height) }
-                            },
-                            onDismissError = viewModel::dismissError,
-                            onCopyError = { error ->
-                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                                    .setPrimaryClip(ClipData.newPlainText("AcquaError", error))
-                            },
-                            onOpenBrowser = { onOpenBrowser(state.url) },
-                            useBrowserSessions = useBrowserSessions
-                        )
+                    Column(Modifier.fillMaxWidth()) {
+                        when {
+                            WebLink.extractAll(state.url).size > 1 -> Unit
+                            state.validity == LinkValidity.EMPTY -> EmptyState(
+                                variant = EmptyStateVariant.ReadyToDownload,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(boxMaxHeight)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                            state.validity == LinkValidity.INVALID -> EmptyState(
+                                variant = EmptyStateVariant.InvalidLink,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(boxMaxHeight)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                            else -> MediaContentSection(
+                                state = state,
+                                previewCache = previewCache,
+                                onMediaDimensions = viewModel::updateMediaDimensions,
+                                onDownloadOne = { item, index, width, height ->
+                                    requestDownloadAccess(true) { viewModel.downloadOne(item, index, width, height) }
+                                },
+                                onDismissError = viewModel::dismissError,
+                                onCopyError = { error ->
+                                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                        .setPrimaryClip(ClipData.newPlainText("AcquaError", error))
+                                },
+                                onOpenBrowser = { onOpenBrowser(state.url) },
+                                useBrowserSessions = useBrowserSessions,
+                                previewMaxHeight = (boxMaxHeight - 112.dp).coerceAtLeast(128.dp),
+                                onUseBrowserSessionsChange = onUseBrowserSessionsChange?.let { change ->
+                                    { enabled ->
+                                        retryWithSession = enabled
+                                        change(enabled)
+                                    }
+                                },
+                                onRename = viewModel::renameMedia,
+                                onSelectPreviewItem = viewModel::selectPreviewItem,
+                                onRetryDiagnostic = viewModel::retryDiagnostic
+                            )
+                        }
                     }
                 }
             }
@@ -405,7 +449,7 @@ fun DownloaderScreen(
                     state = state,
                     onCancel = viewModel::cancelActiveDownload,
                     onClick = onStatusClick,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("download-status")
                 )
             }
 
@@ -421,7 +465,8 @@ fun DownloaderScreen(
                         viewModel.downloadAll(useBrowserSessions, resolveInBrowser)
                     }
                 },
-                contentPadding = contentPadding
+                contentPadding = contentPadding,
+                onSelectPreviewItems = viewModel::selectPreviewItems
             )
         }
     }
@@ -430,12 +475,12 @@ fun DownloaderScreen(
 internal fun DownloaderProblem.messageResource(): Int = when (this) {
     is DownloaderProblem.Resolution -> when (failure) {
         MediaResolutionFailure.INVALID_LINK -> R.string.invalid_link
-        MediaResolutionFailure.SESSION_REQUIRED,
+        MediaResolutionFailure.SESSION_REQUIRED -> R.string.restricted_media_message
         MediaResolutionFailure.SESSION_EXPIRED -> R.string.browser_session_needed
         MediaResolutionFailure.NETWORK -> R.string.network_error
         MediaResolutionFailure.ENGINE_REQUIRED,
         MediaResolutionFailure.RUNTIME_UNAVAILABLE -> R.string.download_engine_error
-        MediaResolutionFailure.UNSUPPORTED_MEDIA -> R.string.could_not_resolve_media
+        MediaResolutionFailure.UNSUPPORTED_MEDIA -> R.string.unsupported_media_message
         MediaResolutionFailure.UNKNOWN -> R.string.could_not_resolve_media
     }
     is DownloaderProblem.Download -> failure.messageResource()
@@ -448,5 +493,12 @@ internal fun DownloadFailure.messageResource(): Int = when (this) {
     DownloadFailure.STORAGE -> R.string.ytdlp_error_storage
     DownloadFailure.UPDATE_SERVICE -> R.string.ytdlp_error_update_service
     DownloadFailure.PLATFORM_LIMIT -> R.string.download_error_platform_limit
-    DownloadFailure.UNKNOWN -> R.string.ytdlp_error_unknown
+    DownloadFailure.UNKNOWN -> R.string.download_error_unknown
+    DownloadFailure.NO_CHAPTERS -> R.string.download_error_no_chapters
+    DownloadFailure.NO_SEGMENTS -> R.string.download_error_no_segments
+    DownloadFailure.SEGMENT_SERVICE -> R.string.download_error_segment_service
+    DownloadFailure.SOURCE_STREAMS_CHANGED -> R.string.download_error_source_streams_changed
+    DownloadFailure.COMMAND_TEMPLATE -> R.string.download_error_command_template
+    DownloadFailure.MEDIA_TIMELINE -> R.string.download_error_media_timeline
+    DownloadFailure.COOKIE_PROFILE -> R.string.download_error_cookie_profile
 }

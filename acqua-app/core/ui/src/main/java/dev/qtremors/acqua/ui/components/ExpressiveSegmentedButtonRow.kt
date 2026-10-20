@@ -12,9 +12,8 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -37,7 +36,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.qtremors.acqua.platform.HapticSignal
@@ -57,6 +55,7 @@ fun <T> ExpressiveSegmentedButtonRow(
     trailingBadge: (@Composable (item: T, isSelected: Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val labels = items.map { label(it) }
     val reducedMotion = LocalReducedMotionEnabled.current
 
     val weightSpring = remember(reducedMotion) {
@@ -78,13 +77,12 @@ fun <T> ExpressiveSegmentedButtonRow(
         )
     }
 
-    Row(
+    ContentSizedRow(
         modifier = modifier
             .fillMaxWidth()
-            .height(height)
+            .heightIn(min = height)
             .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
+        spacing = 4.dp
     ) {
         items.forEachIndexed { index, item ->
             val isSelected = selectedIndex == index
@@ -168,10 +166,10 @@ fun <T> ExpressiveSegmentedButtonRow(
                     focusedElevation = 0.dp,
                     hoveredElevation = 0.dp
                 ),
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
                 modifier = Modifier
-                    .weight(animatedWeight)
-                    .fillMaxHeight()
+                    .contentSizedWeight(animatedWeight)
+                    .heightIn(min = height)
                     .graphicsLayer {
                         scaleX = contentScale
                         scaleY = contentScale
@@ -182,6 +180,7 @@ fun <T> ExpressiveSegmentedButtonRow(
                     }
             ) {
                 Row(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
                 ) {
@@ -189,11 +188,10 @@ fun <T> ExpressiveSegmentedButtonRow(
                         leadingIcon(item, isSelected)
                     }
                     Text(
-                        text = label(item),
+                        text = labels[index],
+                        modifier = Modifier.weight(1f, fill = false),
                         style = MaterialTheme.typography.labelLarge,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                     )
                     if (trailingBadge != null) {
                         trailingBadge(item, isSelected)

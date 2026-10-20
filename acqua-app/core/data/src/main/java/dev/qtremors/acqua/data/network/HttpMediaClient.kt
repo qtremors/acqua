@@ -1,12 +1,17 @@
 package dev.qtremors.acqua.data.network
 
+import dev.qtremors.acqua.domain.TransferNetworkOptions
+
 import android.graphics.BitmapFactory
 import dev.qtremors.acqua.domain.MediaKind
+import dev.qtremors.acqua.domain.MediaResolutionException
+import dev.qtremors.acqua.domain.MediaResolutionFailure
 import dev.qtremors.acqua.domain.ResolvedMedia
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.CookieJar
 import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlinx.coroutines.CancellationException
@@ -20,10 +25,33 @@ import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+internal class MediaHttpException(val statusCode: Int) : IOException("Media download request failed (HTTP $statusCode).")
+
 class HttpMediaClient(
-    private val client: OkHttpClient = defaultClient()
+    private val client: OkHttpClient = defaultClient(),
+    private val session: dev.qtremors.acqua.data.session.CookieProfile? = null,
+    private val networkOptions: () -> TransferNetworkOptions = { TransferNetworkOptions() }
 ) {
     private data class ScopedRequestCookies(val host: String, val value: String)
+
+    private val transferClient = client.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
+    private val publicProbeClient = client.newBuilder().cookieJar(CookieJar.NO_COOKIES).build()
+
+    fun withNetworkOptions(options: TransferNetworkOptions): HttpMediaClient {
+        options.validated()
+        return HttpMediaClient(client, session) { options }
+    }
+
+    fun withSession(snapshot: String?): HttpMediaClient = HttpMediaClient(client, snapshot?.let(dev.qtremors.acqua.data.session.CookieProfile::parse), networkOptions)
+
+    private fun configured(base: OkHttpClient = client): OkHttpClient {
+        val configured = networkOptions().configure(base)
+        val profile = session ?: return configured
+        return configured.newBuilder().cookieJar(object : CookieJar {
+            override fun saveFromResponse(url: okhttp3.HttpUrl, cookies: List<okhttp3.Cookie>) = Unit
+            override fun loadForRequest(url: okhttp3.HttpUrl): List<okhttp3.Cookie> = profile.matching(url)
+        }).build()
+    }
 
     private val userAgent = "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36"
@@ -32,13 +60,14 @@ class HttpMediaClient(
     private fun buildRequest(
         url: String,
         referer: String? = null,
-        requestCookies: String? = null
+        requestCookies: String? = null,
+        requestUserAgent: String? = null
     ) = Request.Builder()
         .url(url)
-        .header("User-Agent", userAgent)
+        .header("User-Agent", session?.userAgent ?: requestUserAgent?.takeIf { it.isNotBlank() && it.length <= 1024 && it.none(Char::isISOControl) } ?: userAgent)
         .apply {
             referer?.takeIf { it.startsWith("http") }?.let { header("Referer", it) }
-            requestCookies?.takeIf { it.isNotBlank() }?.let { cookies ->
+            requestCookies?.takeIf { session == null && it.isNotBlank() }?.let { cookies ->
                 url.toHttpUrlOrNull()?.host?.let { host ->
                     tag(ScopedRequestCookies::class.java, ScopedRequestCookies(host, cookies))
                 }
@@ -57,7 +86,7 @@ class HttpMediaClient(
             error("A partial browser media segment cannot be saved as a complete file.")
         }
 
-        return client.newCall(buildRequest(item.url, item.referer, requestCookies)).execute().use { response ->
+        return configured(transferClient).newCall(buildRequest(item.url, item.referer, requestCookies, item.requestUserAgent)).execute().use { response ->
             copyResponse(item, response, output, onProgress) { false }
         }
     }
@@ -72,7 +101,7 @@ class HttpMediaClient(
             error("A partial browser media segment cannot be saved as a complete file.")
         }
         return suspendCancellableCoroutine { continuation ->
-            val call = client.newCall(buildRequest(item.url, item.referer, requestCookies))
+            val call = configured(transferClient).newCall(buildRequest(item.url, item.referer, requestCookies, item.requestUserAgent))
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
@@ -106,7 +135,7 @@ class HttpMediaClient(
             if (response.code == 206) {
                 error("The media server returned only part of the file (HTTP 206).")
             }
-            if (!response.isSuccessful) error("Media download request failed (HTTP ${response.code}).")
+            if (!response.isSuccessful) throw MediaHttpException(response.code)
 
             val body = response.body ?: error("The media server returned an empty response body.")
             val expectedLength = body.contentLength()
@@ -141,14 +170,70 @@ class HttpMediaClient(
             return bytesWritten
     }
 
+    fun resolvePublicMedia(url: String): ResolvedMedia? = if (session == null) probeMedia(url) else HttpMediaClient(client, networkOptions = networkOptions).probeMedia(url)
+
+    fun resolveSessionMedia(url: String, snapshot: String): ResolvedMedia? = withSession(snapshot).probeMedia(url)?.copy(
+        authorizedSession = snapshot, requestUserAgent = dev.qtremors.acqua.data.session.CookieProfile.parse(snapshot).userAgent,
+        explicitBrowserSessionAuthorized = true)
+
+    private fun probeMedia(url: String): ResolvedMedia? {
+        if (hasEmbeddedByteRange(url)) throw MediaResolutionException(
+            MediaResolutionFailure.UNSUPPORTED_MEDIA, "A partial media segment cannot be saved as a complete file."
+        )
+        val request = buildRequest(url).newBuilder().header("Range", "bytes=0-65535").build()
+        try {
+            return configured(publicProbeClient).newCall(request).execute().use { response ->
+                if (response.code == 401 || response.code == 403) throw MediaResolutionException(
+                    MediaResolutionFailure.SESSION_REQUIRED,
+                    "This link requires authentication or does not permit public access. Try browser extraction with sessions enabled."
+                )
+                if (response.code >= 500) throw MediaResolutionException(
+                    MediaResolutionFailure.NETWORK, "The media server could not complete the request (HTTP ${response.code})."
+                )
+                if (!response.isSuccessful) return@use null
+                val body = response.body ?: return@use null
+                val bytes = body.byteStream().readPrefix(signatureByteCount)
+                val size = publicProbeSize(response, bytes.size) ?: return@use null
+                val contentType = response.header("Content-Type").orEmpty()
+                if (contentType.startsWith("text/", true) || contentType.contains("json", true)) return@use null
+                if (hasEmbeddedByteRange(response.request.url.toString())) return@use null
+                val format = MediaContentDetector.detect(contentType, bytes, false)
+                    ?: MediaContentDetector.detect(contentType, bytes, true)
+                    ?: return@use null
+                val item = ResolvedMedia(url, format.kind)
+                metadata(item, format, bytes, size.takeIf { it > 0 })
+            }
+        } catch (error: IOException) {
+            throw MediaResolutionException(MediaResolutionFailure.NETWORK, "Could not inspect this media link. Check your connection and try again.", error)
+        }
+    }
+
+    private fun publicProbeSize(response: Response, bytesRead: Int): Long? {
+        val contentLength = response.body?.contentLength() ?: -1L
+        if (response.code == 206) {
+            val range = Regex("bytes 0-(\\d+)/(\\d+)").matchEntire(response.header("Content-Range").orEmpty())
+                ?: return null
+            val end = range.groupValues[1].toLongOrNull() ?: return null
+            val total = range.groupValues[2].toLongOrNull()?.takeIf { it > 0 } ?: return null
+            val expected = minOf(total, signatureByteCount.toLong())
+            if (end != expected - 1 || bytesRead.toLong() != expected) return null
+            if (contentLength >= 0 && contentLength != expected) return null
+            return total
+        }
+        if (response.code != 200 || response.header("Content-Range") != null) return null
+        if (contentLength >= 0 && bytesRead.toLong() != minOf(contentLength, signatureByteCount.toLong())) return null
+        return contentLength
+    }
+
     fun validateAndResolveMetadata(item: ResolvedMedia): ResolvedMedia? {
+        if (item.authorizedSession != null && session == null) return withSession(item.authorizedSession).validateAndResolveMetadata(item)
         if (hasEmbeddedByteRange(item.url)) return null
         return runCatching {
-            val request = buildRequest(item.url, item.referer, item.requestCookies).newBuilder()
+            val request = buildRequest(item.url, item.referer, item.requestCookies, item.requestUserAgent).newBuilder()
                 .header("Range", "bytes=0-65535")
                 .build()
 
-            client.newCall(request).execute().use { response ->
+            configured().newCall(request).execute().use { response ->
                 if (response.code != 206 && !response.isSuccessful) return@use null
                 val totalSize = resolvedContentLength(
                     statusCode = response.code,
@@ -163,43 +248,27 @@ class HttpMediaClient(
                     item.isVideo
                 ) ?: return@use null
 
-                if (format.kind == MediaKind.VIDEO) {
-                    return@use item.copy(
-                        kind = MediaKind.VIDEO,
-                        thumbnailUrl = item.thumbnailUrl?.takeIf { it != item.url },
-                        fileSize = totalSize.takeIf { it > 0L } ?: item.fileSize,
-                        mimeType = format.mimeType,
-                        fileExtension = format.fileExtension
-                    )
-                }
-
-                if (format.kind == MediaKind.AUDIO) {
-                    return@use item.copy(
-                        kind = MediaKind.AUDIO,
-                        thumbnailUrl = item.thumbnailUrl?.takeIf { it != item.url },
-                        fileSize = totalSize.takeIf { it > 0L } ?: item.fileSize,
-                        mimeType = format.mimeType,
-                        fileExtension = format.fileExtension
-                    )
-                }
-
-                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-                item.copy(
-                    kind = MediaKind.IMAGE,
-                    thumbnailUrl = item.url,
-                    width = options.outWidth.takeIf { it > 0 } ?: item.width,
-                    height = options.outHeight.takeIf { it > 0 } ?: item.height,
-                    fileSize = totalSize.takeIf { it > 0L } ?: item.fileSize,
-                    mimeType = format.mimeType,
-                    fileExtension = format.fileExtension
-                )
+                metadata(item, format, bytes, totalSize.takeIf { it > 0L })
             }
         }.getOrNull()
     }
 
+    private fun metadata(item: ResolvedMedia, format: DetectedMediaFormat, bytes: ByteArray, size: Long?): ResolvedMedia {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        if (format.kind == MediaKind.IMAGE) BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        return item.copy(
+            kind = format.kind,
+            thumbnailUrl = if (format.kind == MediaKind.IMAGE) item.url else item.thumbnailUrl?.takeIf { it != item.url },
+            width = options.outWidth.takeIf { it > 0 } ?: item.width,
+            height = options.outHeight.takeIf { it > 0 } ?: item.height,
+            fileSize = size ?: item.fileSize,
+            mimeType = format.mimeType,
+            fileExtension = format.fileExtension
+        )
+    }
+
     fun fetchBytes(item: ResolvedMedia): ByteArray =
-        client.newCall(buildRequest(item.url, item.referer, item.requestCookies)).execute().use { response ->
+        configured().newCall(buildRequest(item.url, item.referer, item.requestCookies, item.requestUserAgent)).execute().use { response ->
             if (!response.isSuccessful) error("Failed to fetch media preview (HTTP ${response.code}).")
             val body = response.body ?: error("The media preview response was empty.")
             if (body.contentLength() > MAX_PREVIEW_BYTES) {
@@ -220,7 +289,7 @@ class HttpMediaClient(
         check(directory.mkdirs() || directory.isDirectory) { "Could not prepare the preview cache." }
         val temporary = File(directory, "${target.name}.${UUID.randomUUID()}.tmp")
         try {
-            client.newCall(buildRequest(item.url, item.referer, item.requestCookies)).execute().use { response ->
+            configured().newCall(buildRequest(item.url, item.referer, item.requestCookies, item.requestUserAgent)).execute().use { response ->
                 if (!response.isSuccessful) error("Failed to fetch media preview (HTTP ${response.code}).")
                 val body = response.body ?: error("The media preview response was empty.")
                 if (body.contentLength() > maxBytes) error("The media preview is too large to cache safely.")

@@ -63,7 +63,7 @@ class OnboardingPreferences(private val context: Context) : OnboardingStateStore
     }
 }
 
-private class ExistingInstallOnboardingMigration(
+internal class ExistingInstallOnboardingMigration(
     private val context: Context
 ) : DataMigration<Preferences> {
     override suspend fun shouldMigrate(currentData: Preferences): Boolean {
@@ -71,10 +71,7 @@ private class ExistingInstallOnboardingMigration(
         val packageInfo = runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0)
         }.getOrNull()
-        val hasLegacyPreferences = context.getSharedPreferences(
-            AppSettingsRepository.PREFS_NAME,
-            Context.MODE_PRIVATE
-        ).all.isNotEmpty()
+        val hasLegacyPreferences = AppSettingsRepository(context).hasLegacyUserPreferences()
         return shouldSkipOnboardingForExistingInstall(
             firstInstallTime = packageInfo?.firstInstallTime ?: 0L,
             lastUpdateTime = packageInfo?.lastUpdateTime ?: 0L,

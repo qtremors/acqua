@@ -27,7 +27,7 @@ class HistoryRepositoryTest {
 
     @Test
     fun downloadedEntryRoundTrips() {
-        val entry = HistoryEntry("one", 123, "https://example.com", "photo.png", "content://photo", false, "image/png", 42, true)
+        val entry = HistoryEntry("one", 123, "https://example.com", "photo.png", "content://photo", false, "image/png", 42, true, sourceHost = "example.com")
         repository.add(entry)
         assertEquals(listOf(entry), repository.load())
     }
@@ -85,6 +85,6 @@ class HistoryRepositoryTest {
     }
 
     private fun link(id: String, timestamp: Long) = HistoryEntry(
-        id, timestamp, "https://example.com/page", "", "", false, "", 0, false
+        id, timestamp, "https://example.com/page", "", "", false, "", 0, false, sourceHost = "example.com"
     )
 }

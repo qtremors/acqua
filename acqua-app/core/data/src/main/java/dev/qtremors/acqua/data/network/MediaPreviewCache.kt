@@ -14,23 +14,24 @@ class MediaPreviewCache(
     private val directory = File(context.applicationContext.cacheDir, CACHE_DIRECTORY)
     private val lock = Any()
 
-    fun loadBitmap(item: ResolvedMedia, maxWidth: Int, maxHeight: Int): MediaPreviewBitmap? = synchronized(lock) {
+    fun loadBitmap(item: ResolvedMedia, maxWidth: Int, maxHeight: Int, fill: Boolean = false): MediaPreviewBitmap? = synchronized(lock) {
         val cacheFile = File(directory, cacheKey(item))
         runCatching {
             prune()
-            downloader.fetchPreviewToFile(item, cacheFile, MAX_FILE_BYTES)
+            val client = item.authorizedSession?.let(downloader::withSession) ?: downloader
+            client.fetchPreviewToFile(item, cacheFile, MAX_FILE_BYTES)
             cacheFile.setLastModified(System.currentTimeMillis())
             prune()
-            decodeSampled(cacheFile, maxWidth.coerceAtLeast(1), maxHeight.coerceAtLeast(1))
+            decodeSampled(cacheFile, maxWidth.coerceAtLeast(1), maxHeight.coerceAtLeast(1), fill)
                 ?: error("The cached preview is not a readable image.")
         }.onFailure {
             cacheFile.delete()
         }.getOrNull()
     }
 
-    private fun decodeSampled(file: File, maxWidth: Int, maxHeight: Int): MediaPreviewBitmap? {
+    private fun decodeSampled(file: File, maxWidth: Int, maxHeight: Int, fill: Boolean): MediaPreviewBitmap? {
         val bounds = BoundedBitmapDecoder.bounds(file) ?: return null
-        val bitmap = BoundedBitmapDecoder.decode(file, maxWidth, maxHeight) ?: return null
+        val bitmap = BoundedBitmapDecoder.decode(file, maxWidth, maxHeight, fill) ?: return null
         return MediaPreviewBitmap(bitmap, bounds.width, bounds.height)
     }
 
@@ -45,7 +46,8 @@ class MediaPreviewCache(
     }
 
     private fun cacheKey(item: ResolvedMedia): String {
-        val identity = listOf(item.url, item.referer.orEmpty(), item.requestCookies.orEmpty()).joinToString("\u0000")
+        val identity = listOf(item.url, item.referer.orEmpty(), item.requestCookies.orEmpty(),
+            item.authorizedSession.orEmpty(), item.requestUserAgent.orEmpty()).joinToString("\u0000")
         return MessageDigest.getInstance("SHA-256")
             .digest(identity.toByteArray(Charsets.UTF_8))
             .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }

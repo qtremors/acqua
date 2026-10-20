@@ -18,6 +18,13 @@ object AcquaOpenSourceComponents {
             "https://www.apache.org/licenses/LICENSE-2.0"
         ),
         OpenSourceComponent(
+            "Markwon and CommonMark Java",
+            "Markdown rendering for release notes, repository descriptions, and notices.",
+            "Apache License 2.0 and BSD 2-Clause License",
+            "https://github.com/noties/Markwon",
+            "https://github.com/atlassian/commonmark-java/blob/master/LICENSE.txt"
+        ),
+        OpenSourceComponent(
             "OkHttp and Okio",
             "HTTP networking and I/O primitives.",
             "Apache License 2.0",

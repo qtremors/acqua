@@ -1,7 +1,7 @@
 package dev.qtremors.acqua.ui.image
 
-import coil.key.Keyer
-import coil.request.Options
+import coil3.key.Keyer
+import coil3.request.Options
 import java.io.File
 
 data class ThumbnailKey(

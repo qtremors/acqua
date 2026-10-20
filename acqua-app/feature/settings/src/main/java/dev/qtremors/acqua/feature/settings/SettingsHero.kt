@@ -53,7 +53,6 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Code
-import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderSpecial
@@ -109,6 +108,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -185,7 +185,7 @@ internal fun SettingsHero(
             Image(
                 painter = painterResource(R.drawable.acqua),
                 contentDescription = stringResource(R.string.app_name),
-                modifier = Modifier
+                modifier = Modifier.testTag("settings-hero-logo")
                     .graphicsLayer {
                         alpha = contentAlpha()
                         translationY = contentOffset().toPx() + logoDownwardTranslation
@@ -438,11 +438,11 @@ internal fun SettingsHero(
                         CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.width(8.dp))
                     } else {
-                        Icon(Icons.Filled.DynamicFeed, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
+                        Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurface)
                         Spacer(Modifier.width(8.dp))
                     }
                     Text(
-                        text = stringResource(if (isCheckingUpdates) R.string.checking_for_updates else R.string.open_feeds),
+                        text = stringResource(if (isCheckingUpdates) R.string.checking_for_updates else R.string.check_for_updates),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,

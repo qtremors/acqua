@@ -33,6 +33,8 @@ import dev.qtremors.acqua.ui.components.AcquaFloatingToolbar
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -58,12 +60,16 @@ import kotlinx.coroutines.withContext
 
 // Notification permission constants are only reached through explicit API 33 runtime guards.
 @SuppressLint("InlinedApi")
-class DownloadActivity : ComponentActivity() {
+open class DownloadActivity : dev.qtremors.acqua.settings.LocalizedActivity() {
+    private var legacyStorageRequired: () -> Boolean = { true }
+    protected open val externalQuickMode = false
+    private val incomingSource = mutableStateOf<String?>(null)
     private val dependencies by lazy { (application as AcquaApp).dependencies }
     private val resolutionCoordinator by viewModels<BrowserResolutionCoordinator>()
     private val downloadPermissionGate by viewModels<DownloadPermissionGate>()
 
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!downloadPermissionGate.hasPendingAction) return@registerForActivityResult
         if (granted) {
             downloadPermissionGate.resumePending()?.let { pending ->
                 runWithDownloadPermissions(pending.needsNotification, pending.action)
@@ -80,6 +86,7 @@ class DownloadActivity : ComponentActivity() {
     }
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!downloadPermissionGate.hasPendingAction) return@registerForActivityResult
             if (granted) downloadPermissionGate.runPendingWithoutNotifications()
             else downloadPermissionGate.show(DownloadPermissionPrompt.NOTIFICATION_DENIED)
         }
@@ -106,15 +113,18 @@ class DownloadActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val sourceUrl = intent.getStringExtra(EXTRA_URL)?.let(WebLink::normalize)
+        val sourceUrl = if (externalQuickMode) savedInstanceState?.getString("quick.source")?.let(ExternalDownloadIntake::canonical)
+            ?: ExternalDownloadIntake.parse(intent) else intent.getStringExtra(EXTRA_URL)?.let(WebLink::normalize)
         if (sourceUrl == null) {
+            if (externalQuickMode) android.widget.Toast.makeText(this, R.string.invalid_link, android.widget.Toast.LENGTH_SHORT).show()
             finish()
             return
         }
-        dependencies.instagramSessions.load()?.let { session ->
+        incomingSource.value = sourceUrl
+        dependencies.instagramSessions.load()?.takeIf { dependencies.settings.useBrowserSessions() }?.let { session ->
             dependencies.instagramResolver.setSessionCookies(session.cookies, session.userAgent)
         }
-        val browserMedia = RenderedPageResolverActivity.parseMediaJson(
+        val browserMedia = if (externalQuickMode) emptyList() else RenderedPageResolverActivity.parseMediaJson(
             intent.getStringExtra(EXTRA_MEDIA_JSON).orEmpty()
         ).map { item ->
             item.copy(
@@ -125,6 +135,22 @@ class DownloadActivity : ComponentActivity() {
         val screenProtectionEnabled = dependencies.settings.screenProtectionEnabled()
 
         setContent {
+            val currentSource = incomingSource.value ?: return@setContent
+            if (externalQuickMode) {
+                val onboarding by dependencies.onboardingPreferences.onboardingState.collectAsStateWithLifecycle(initialValue = null)
+                if (onboarding == null) return@setContent
+                if (onboarding?.isCompleted != true) {
+                    LaunchedEffect(currentSource) {
+                        startActivity(Intent(this@DownloadActivity, dev.qtremors.acqua.MainActivity::class.java).apply {
+                            action = Intent.ACTION_SEND
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, currentSource)
+                        })
+                        finish()
+                    }
+                    return@setContent
+                }
+            }
             val themeState by dependencies.themePreferences.themeState.collectAsStateWithLifecycle(
                 initialValue = dev.qtremors.acqua.ui.theme.ThemeState()
             )
@@ -162,9 +188,11 @@ class DownloadActivity : ComponentActivity() {
                         }
                     }
                 )
-                LaunchedEffect(sourceUrl, browserMedia) {
-                    if (browserMedia.isEmpty()) downloader.updateUrl(sourceUrl)
-                    else downloader.seedResolvedMedia(sourceUrl, browserMedia)
+                legacyStorageRequired = { downloader.state.value.requiresLegacyStorage(dependencies.settings.downloadSettings().destinations) }
+                LaunchedEffect(currentSource, browserMedia) {
+                    if (browserMedia.isEmpty()) {
+                        if (downloader.state.value.url != currentSource) downloader.updateUrl(currentSource)
+                    } else if (downloader.state.value.media == null) downloader.seedResolvedMedia(currentSource, browserMedia)
                 }
                 val downloaderState by downloader.state.collectAsStateWithLifecycle()
                 val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -189,7 +217,7 @@ class DownloadActivity : ComponentActivity() {
                             contentDescriptionRes = R.string.download,
                             onClick = {
                                 runWithDownloadPermissions(true) {
-                                    downloader.downloadAll(browserSessionsEnabled = true, browserResolver = ::resolveInBrowser)
+                                    downloader.downloadAll(browserSessionsEnabled = dependencies.settings.useBrowserSessions(), browserResolver = ::resolveInBrowser)
                                 }
                             }
                         )
@@ -201,25 +229,39 @@ class DownloadActivity : ComponentActivity() {
                     topBar = {}
                 ) { padding ->
                     Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+                        var useSessions by remember { mutableStateOf(dependencies.settings.useBrowserSessions()) }
                         DownloaderScreen(
                             viewModel = downloader,
                             mediaDownloader = dependencies.mediaDownloader,
-                            useBrowserSessions = true,
+                            useBrowserSessions = useSessions,
+                            onUseBrowserSessionsChange = { enabled ->
+                                dependencies.settings.setUseBrowserSessions(enabled)
+                                useSessions = enabled
+                                if (!enabled) dependencies.instagramResolver.clearSessionCookies()
+                                else dependencies.instagramSessions.load()?.let { session ->
+                                    dependencies.instagramResolver.setSessionCookies(session.cookies, session.userAgent)
+                                }
+                            },
                             sessionsInitialized = true,
-                            browserRequestRevision = EXPLICIT_BROWSER_REQUEST_REVISION,
+                            browserRequestRevision = if (externalQuickMode) 0 else EXPLICIT_BROWSER_REQUEST_REVISION,
                             resolveInBrowser = ::resolveInBrowser,
                             requestDownloadAccess = ::runWithDownloadPermissions,
-                            onOpenBrowser = { finish() },
+                            onOpenBrowser = { url ->
+                                if (externalQuickMode) startActivity(Intent(this@DownloadActivity, dev.qtremors.acqua.auth.BrowserActivity::class.java)
+                                    .putExtra(dev.qtremors.acqua.auth.BrowserActivity.EXTRA_INITIAL_URL, url))
+                                else finish()
+                            },
                             contentPadding = screenPadding,
                             modifier = Modifier.fillMaxSize(),
-                            showLinkEditor = false
+                            showLinkEditor = externalQuickMode,
+                            initialConfigurationKey = currentSource.takeIf { externalQuickMode }
                         )
 
                         AcquaFloatingToolbar(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
                                 .zIndex(1f),
-                            title = stringResource(R.string.download),
+                            title = stringResource(if (externalQuickMode) R.string.quick_download else R.string.download),
                             onBackClick = ::finish,
                             fabAction = downloadFabAction
                         )
@@ -227,6 +269,21 @@ class DownloadActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (!externalQuickMode) return
+        val source = ExternalDownloadIntake.parse(intent) ?: return
+        if (source == incomingSource.value) return
+        downloadPermissionGate.dismiss()
+        setIntent(intent)
+        incomingSource.value = source
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        if (externalQuickMode) outState.putString("quick.source", incomingSource.value)
+        super.onSaveInstanceState(outState)
     }
 
     private suspend fun resolveInBrowser(
@@ -267,7 +324,7 @@ class DownloadActivity : ComponentActivity() {
 
     private fun runWithDownloadPermissions(needsNotification: Boolean, action: () -> Unit) {
         downloadPermissionGate.hold(needsNotification, action)
-        val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+        val needsPermission = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q && legacyStorageRequired() &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
         if (needsPermission) {

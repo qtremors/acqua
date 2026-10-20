@@ -1,5 +1,9 @@
 package dev.qtremors.acqua.feature.browser
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
+import dev.qtremors.acqua.ui.components.EmptyState
+import dev.qtremors.acqua.ui.components.EmptyStateVariant
+
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -91,8 +95,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -172,7 +174,7 @@ internal fun WebsiteDialog(
         title = { Text(stringResource(title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(
+                ExpressiveTextField(
                     name, { name = it.take(40); error = null },
                     label = { Text(stringResource(R.string.name)) },
                     placeholder = { Text(stringResource(R.string.website_name_hint)) },
@@ -180,7 +182,7 @@ internal fun WebsiteDialog(
                     isError = error == R.string.enter_name,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
+                ExpressiveTextField(
                     url, { url = it; error = null },
                     label = { Text(stringResource(R.string.website_url)) },
                     placeholder = { Text(stringResource(R.string.website_url_hint)) },
@@ -211,7 +213,8 @@ internal fun ManageWebsiteDataDialog(
     onDismiss: () -> Unit,
     onOpenWebsite: ((String) -> Unit)? = null,
     onClearSelected: (Set<String>) -> Unit,
-    onClearAll: () -> Unit
+    onClearAll: () -> Unit,
+    supportsSiteRemoval: Boolean = false
 ) {
     var selected by remember(websites) { mutableStateOf(emptySet<String>()) }
     val allOrigins = websites.mapTo(mutableSetOf(), SavedWebsite::origin)
@@ -219,8 +222,11 @@ internal fun ManageWebsiteDataDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.saved_websites)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (websites.isEmpty()) Text(stringResource(R.string.no_saved_websites)) else {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (websites.isEmpty()) EmptyState(
+                    variant = EmptyStateVariant.Websites, compact = true,
+                    description = stringResource(R.string.no_saved_websites)
+                ) else {
                     Row(Modifier.fillMaxWidth(), Arrangement.SpaceBetween, Alignment.CenterVertically) {
                         Text(stringResource(R.string.select_websites), style = MaterialTheme.typography.labelLarge)
                         TextButton(onClick = { selected = if (selected == allOrigins) emptySet() else allOrigins }) {
@@ -267,7 +273,7 @@ internal fun ManageWebsiteDataDialog(
                     }
                 }
                 Text(
-                    stringResource(R.string.website_data_explanation),
+                    stringResource(if (supportsSiteRemoval) R.string.website_data_explanation else R.string.website_data_fallback_explanation),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

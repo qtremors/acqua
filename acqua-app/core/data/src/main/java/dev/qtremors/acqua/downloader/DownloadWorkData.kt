@@ -15,6 +15,18 @@ import dev.qtremors.acqua.domain.ResolvedMedia
  * download options evolve.
  */
 object DownloadWorkData {
+    const val KEY_REQUEST_REF = "request_ref"
+    const val KEY_PUBLICATION_ID = "publication_id"
+    const val KEY_OPTIONS = "advanced_options"
+    const val KEY_STORAGE = "storage_settings"
+    const val KEY_COLLECTION_URL = "collection_url"
+    const val KEY_COLLECTION_TITLE = "collection_title"
+    const val KEY_COLLECTION_SIZE = "collection_size"
+    const val KEY_COLLECTION_INDEX = "collection_index"
+    const val KEY_DURATION = "duration_seconds"
+    const val KEY_SOURCE_IDENTITY = "source_identity"
+    const val KEY_OUTCOME = "outcome"
+    const val KEY_ARTIFACT_COUNT = "artifact_count"
     const val KEY_MEDIA_URL = "media_url"
     const val KEY_BACKEND = "backend"
     const val KEY_SOURCE_URL = "source_url"
@@ -22,6 +34,8 @@ object DownloadWorkData {
     const val KEY_AUDIO_FORMAT = "audio_format"
     const val KEY_MAXIMUM_VIDEO_QUALITY = "maximum_video_quality"
     const val KEY_EMBED_METADATA = "embed_metadata"
+    const val KEY_CROP_ARTWORK = "crop_artwork"
+    const val KEY_ORIGINAL_METADATA = "original_metadata"
     const val KEY_EMBED_THUMBNAIL = "embed_thumbnail"
     const val KEY_BROWSER_SESSION_AUTHORIZED = "browser_session_authorized"
     const val KEY_IS_VIDEO = "is_video"
@@ -35,6 +49,7 @@ object DownloadWorkData {
     const val KEY_OUTPUT_HEIGHT = "output_height"
     const val KEY_THUMBNAIL_URL = "thumbnail_url"
     const val KEY_USERNAME = "username"
+    const val KEY_DOWNLOAD_NAME = "download_name"
     const val KEY_TITLE = "title"
     const val KEY_ARTIST = "artist"
     const val KEY_ALBUM = "album"
@@ -55,11 +70,16 @@ object DownloadWorkData {
         options: YtDlpDownloadOptions,
         sourceUrl: String
     ): Data = commonRequest(media, sourceUrl)
+        .putInt(KEY_ITEM_INDEX, (media.collectionIndex - 1).coerceAtLeast(0))
+        .putInt(KEY_ITEM_COUNT, media.collectionSize.coerceAtLeast(1))
+        .putString(KEY_OPTIONS, DownloadOptionsCodec.encode(options))
         .putString(KEY_CONTENT_TYPE, options.contentType.name)
         .putString(KEY_AUDIO_FORMAT, options.audioFormat.name)
         .putInt(KEY_MAXIMUM_VIDEO_QUALITY, options.maximumVideoHeight)
         .putBoolean(KEY_EMBED_METADATA, options.embedMetadata)
         .putBoolean(KEY_EMBED_THUMBNAIL, options.embedThumbnail)
+        .putBoolean(KEY_CROP_ARTWORK, options.cropArtwork)
+        .putBoolean(KEY_ORIGINAL_METADATA, options.preserveOriginalMetadata)
         .putInt(KEY_OUTPUT_WIDTH, outputMedia.width)
         .putInt(KEY_OUTPUT_HEIGHT, outputMedia.height)
         .build()
@@ -82,7 +102,11 @@ object DownloadWorkData {
         }
         .build()
 
-    fun decode(data: Data): DownloadWorkRequest? {
+    fun decode(data: Data): DownloadWorkRequest? = runCatching { decodeRequest(data) }.getOrNull()
+
+    private fun decodeRequest(data: Data): DownloadWorkRequest? {
+        // Removed artwork requests must not turn into full audio downloads after an upgrade.
+        if (data.getString("artwork_mode") in setOf("ONLY", "ALONGSIDE")) return null
         val mediaUrl = data.getString(KEY_MEDIA_URL)?.takeIf(String::isNotBlank) ?: return null
         val sourceUrl = data.getString(KEY_SOURCE_URL)?.takeIf(String::isNotBlank) ?: return null
         val backend = enumValueOrDefault(
@@ -114,9 +138,17 @@ object DownloadWorkData {
             fileSize = data.positiveLong(KEY_FILE_SIZE),
             backend = backend,
             title = data.nonBlankString(KEY_TITLE),
+            downloadName = data.nonBlankString(KEY_DOWNLOAD_NAME),
             artist = data.nonBlankString(KEY_ARTIST),
             album = data.nonBlankString(KEY_ALBUM),
-            sourceTimestampMillis = data.positiveLong(KEY_SOURCE_TIMESTAMP_MILLIS)
+            sourceTimestampMillis = data.positiveLong(KEY_SOURCE_TIMESTAMP_MILLIS),
+            collectionUrl = data.nonBlankString(KEY_COLLECTION_URL),
+            collectionTitle = data.nonBlankString(KEY_COLLECTION_TITLE),
+            collectionIndex = data.nonNegativeInt(KEY_COLLECTION_INDEX),
+            collectionSize = data.nonNegativeInt(KEY_COLLECTION_SIZE).takeIf { it > 0 }
+                ?: if (data.nonBlankString(KEY_COLLECTION_URL) != null) data.getInt(KEY_ITEM_COUNT, 0) else 0,
+            durationSeconds = data.nonNegativeInt(KEY_DURATION),
+            sourceIdentity = data.nonBlankString(KEY_SOURCE_IDENTITY)
         )
         val outputWidth = data.getInt(KEY_OUTPUT_WIDTH, media.width).coerceAtLeast(0)
         val outputHeight = data.getInt(KEY_OUTPUT_HEIGHT, media.height).coerceAtLeast(0)
@@ -126,13 +158,17 @@ object DownloadWorkData {
             sourceUrl = sourceUrl,
             itemIndex = data.getInt(KEY_ITEM_INDEX, 0).coerceAtLeast(0),
             itemCount = data.getInt(KEY_ITEM_COUNT, 1).coerceAtLeast(1),
-            options = YtDlpDownloadOptions(
+            storageSettings = DownloadOptionsCodec.decodeStorage(data.getString(KEY_STORAGE)),
+            publicationId = data.getString(KEY_PUBLICATION_ID),
+            options = DownloadOptionsCodec.decode(data.getString(KEY_OPTIONS), YtDlpDownloadOptions(
                 contentType = contentType,
                 maximumVideoHeight = data.getInt(KEY_MAXIMUM_VIDEO_QUALITY, 0).coerceAtLeast(0),
                 audioFormat = audioFormat,
                 embedMetadata = data.getBoolean(KEY_EMBED_METADATA, true),
-                embedThumbnail = data.getBoolean(KEY_EMBED_THUMBNAIL, true)
-            )
+                embedThumbnail = data.getBoolean(KEY_EMBED_THUMBNAIL, true),
+                cropArtwork = data.getBoolean(KEY_CROP_ARTWORK, true),
+                preserveOriginalMetadata = data.getBoolean(KEY_ORIGINAL_METADATA, false)
+            ))
         )
     }
 
@@ -193,7 +229,13 @@ object DownloadWorkData {
             .putBoolean(KEY_BROWSER_SESSION_AUTHORIZED, media.explicitBrowserSessionAuthorized)
             .putInt(KEY_MEDIA_WIDTH, media.width.coerceAtLeast(0))
             .putInt(KEY_MEDIA_HEIGHT, media.height.coerceAtLeast(0))
+            .putInt(KEY_COLLECTION_INDEX, media.collectionIndex)
+            .putInt(KEY_COLLECTION_SIZE, media.collectionSize.coerceAtLeast(0))
+            .putInt(KEY_DURATION, media.durationSeconds)
             .apply {
+                media.collectionUrl?.let { putString(KEY_COLLECTION_URL, it) }
+                media.collectionTitle?.let { putString(KEY_COLLECTION_TITLE, it) }
+                media.sourceIdentity?.let { putString(KEY_SOURCE_IDENTITY, it) }
                 media.sourceTimestampMillis?.takeIf { it > 0L }?.let {
                     putLong(KEY_SOURCE_TIMESTAMP_MILLIS, it)
                 }
@@ -201,6 +243,7 @@ object DownloadWorkData {
                     putString(KEY_THUMBNAIL_URL, it)
                 }
                 media.username?.takeIf(String::isNotBlank)?.let { putString(KEY_USERNAME, it) }
+                media.downloadName?.takeIf(String::isNotBlank)?.let { putString(KEY_DOWNLOAD_NAME, it) }
                 media.title?.takeIf(String::isNotBlank)?.let { putString(KEY_TITLE, it) }
                 media.artist?.takeIf(String::isNotBlank)?.let { putString(KEY_ARTIST, it) }
                 media.album?.takeIf(String::isNotBlank)?.let { putString(KEY_ALBUM, it) }
@@ -217,6 +260,7 @@ object DownloadWorkData {
         value?.let { candidate -> enumValues<T>().firstOrNull { it.name == candidate } } ?: default
 
     private val STRING_KEYS = setOf(
+        KEY_REQUEST_REF, KEY_PUBLICATION_ID, KEY_OPTIONS, KEY_STORAGE, KEY_COLLECTION_URL, KEY_COLLECTION_TITLE, KEY_SOURCE_IDENTITY,
         KEY_MEDIA_URL,
         KEY_BACKEND,
         KEY_SOURCE_URL,
@@ -225,6 +269,7 @@ object DownloadWorkData {
         KEY_MEDIA_KIND,
         KEY_THUMBNAIL_URL,
         KEY_USERNAME,
+        KEY_DOWNLOAD_NAME,
         KEY_TITLE,
         KEY_ARTIST,
         KEY_ALBUM,
@@ -235,6 +280,7 @@ object DownloadWorkData {
         KEY_PHASE
     )
     private val INT_KEYS = setOf(
+        KEY_COLLECTION_INDEX, KEY_COLLECTION_SIZE, KEY_DURATION,
         KEY_MAXIMUM_VIDEO_QUALITY,
         KEY_ITEM_INDEX,
         KEY_ITEM_COUNT,
@@ -253,6 +299,8 @@ object DownloadWorkData {
     private val BOOLEAN_KEYS = setOf(
         KEY_EMBED_METADATA,
         KEY_EMBED_THUMBNAIL,
+        KEY_CROP_ARTWORK,
+        KEY_ORIGINAL_METADATA,
         KEY_BROWSER_SESSION_AUTHORIZED,
         KEY_IS_VIDEO
     )
@@ -266,5 +314,7 @@ data class DownloadWorkRequest(
     val sourceUrl: String,
     val itemIndex: Int,
     val options: YtDlpDownloadOptions,
-    val itemCount: Int = 1
+    val itemCount: Int = 1,
+    val storageSettings: dev.qtremors.acqua.data.settings.DownloadSettings? = null,
+    val publicationId: String? = null
 )

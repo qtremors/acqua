@@ -172,7 +172,7 @@ internal fun BrowserWebViewContainer(
     onPageStateChanged: (url: String?, title: String?, canBack: Boolean, canForward: Boolean, isSecure: Boolean) -> Unit,
     onProgressChanged: (progress: Int, isLoading: Boolean) -> Unit,
     onIconReceived: (url: String, icon: Bitmap) -> Unit,
-    onPageVisited: (url: String) -> Unit,
+    onPageVisited: (url: String, userAgent: String) -> Unit,
     onSessionCaptured: (SavedInstagramSession) -> Unit,
     onWebViewReady: (WebView?) -> Unit
 ) {
@@ -291,7 +291,7 @@ internal fun BrowserWebViewContainer(
                             currentLoadedUrl = it
                             val isSecure = it.startsWith("https://")
                             onPageStateChanged(it, view.title, view.canGoBack(), view.canGoForward(), isSecure)
-                            onPageVisited(it)
+                            onPageVisited(it, view.settings.userAgentString.orEmpty())
                             if (currentUseSessions && WebLink.isInstagramHost(it)) {
                                 val cookies = CookieManager.getInstance().getCookie("https://www.instagram.com").orEmpty()
                                 if (cookies.contains("sessionid=")) {

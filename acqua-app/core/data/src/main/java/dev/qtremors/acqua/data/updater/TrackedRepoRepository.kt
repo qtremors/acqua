@@ -1,6 +1,8 @@
 package dev.qtremors.acqua.data.updater
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -17,7 +19,10 @@ import java.io.IOException
 
 private val Context.trackedReposDataStore by preferencesDataStore(name = "acqua_tracked_repos_prefs")
 
-class TrackedRepoRepository(private val context: Context) : TrackedRepoStore {
+class TrackedRepoRepository(
+    context: Context,
+    private val store: DataStore<Preferences> = context.trackedReposDataStore
+) : TrackedRepoStore {
     companion object {
         private val REPOS = stringPreferencesKey("tracked_repositories")
         private val DEFAULTS_SEEDED = booleanPreferencesKey("default_repositories_seeded")
@@ -29,7 +34,7 @@ class TrackedRepoRepository(private val context: Context) : TrackedRepoStore {
     }
     private val serializer = ListSerializer(TrackedRepo.serializer())
 
-    override val trackedRepos: Flow<List<TrackedRepo>> = context.trackedReposDataStore.data
+    override val trackedRepos: Flow<List<TrackedRepo>> = store.data
         .catch { error ->
             if (error is IOException) emit(androidx.datastore.preferences.core.emptyPreferences())
             else throw error
@@ -37,7 +42,7 @@ class TrackedRepoRepository(private val context: Context) : TrackedRepoStore {
         .map { preferences -> decode(preferences[REPOS]).getOrDefault(emptyList()) }
 
     override suspend fun addOrUpdateRepo(repo: TrackedRepo) {
-        context.trackedReposDataStore.edit { preferences ->
+        store.edit { preferences ->
             val repos = decode(preferences[REPOS]).getOrDefault(emptyList()).toMutableList()
             val index = repos.indexOfFirst { it.fullName.equals(repo.fullName, ignoreCase = true) }
             if (index >= 0) repos[index] = repo.copy(addedAt = repos[index].addedAt)
@@ -48,7 +53,7 @@ class TrackedRepoRepository(private val context: Context) : TrackedRepoStore {
 
     override suspend fun ensureDefaultRepos(): Boolean {
         var seeded = false
-        context.trackedReposDataStore.edit { preferences ->
+        store.edit { preferences ->
             if (preferences[DEFAULTS_SEEDED] == true) return@edit
             val repos = decode(preferences[REPOS]).getOrDefault(emptyList()).toMutableList()
             val existing = repos.mapTo(hashSetOf()) { it.fullName.lowercase() }
@@ -61,7 +66,7 @@ class TrackedRepoRepository(private val context: Context) : TrackedRepoStore {
     }
 
     override suspend fun removeRepo(fullName: String) {
-        context.trackedReposDataStore.edit { preferences ->
+        store.edit { preferences ->
             val repos = decode(preferences[REPOS]).getOrDefault(emptyList())
                 .filterNot { it.fullName.equals(fullName, ignoreCase = true) }
             preferences[REPOS] = json.encodeToString(serializer, repos)
@@ -69,7 +74,16 @@ class TrackedRepoRepository(private val context: Context) : TrackedRepoStore {
     }
 
     override suspend fun updateAll(repos: List<TrackedRepo>) {
-        context.trackedReposDataStore.edit { it[REPOS] = json.encodeToString(serializer, repos) }
+        store.edit { it[REPOS] = json.encodeToString(serializer, repos) }
+    }
+
+    override suspend fun updateRepo(fullName: String, transform: (TrackedRepo) -> TrackedRepo) {
+        store.edit { preferences ->
+            val repos = decode(preferences[REPOS]).getOrDefault(emptyList()).map { repo ->
+                if (repo.fullName.equals(fullName, ignoreCase = true)) transform(repo) else repo
+            }
+            preferences[REPOS] = json.encodeToString(serializer, repos)
+        }
     }
 
     override suspend fun exportBackup(): String = json.encodeToString(
@@ -86,9 +100,11 @@ class TrackedRepoRepository(private val context: Context) : TrackedRepoStore {
         require(imported.all { it.owner.isNotBlank() && it.name.isNotBlank() && it.fullName == "${it.owner}/${it.name}" }) {
             "Backup contains an invalid repository"
         }
-        val merged = trackedReposSnapshot().associateBy { it.fullName.lowercase() }.toMutableMap()
-        imported.forEach { merged[it.fullName.lowercase()] = it }
-        updateAll(merged.values.sortedBy(TrackedRepo::addedAt))
+        store.edit { preferences ->
+            val merged = decode(preferences[REPOS]).getOrDefault(emptyList()).associateBy { it.fullName.lowercase() }.toMutableMap()
+            imported.forEach { merged[it.fullName.lowercase()] = it.copy(downloadUrl = null, downloadApiUrl = null, apkSizeBytes = 0L) }
+            preferences[REPOS] = json.encodeToString(serializer, merged.values.sortedBy(TrackedRepo::addedAt))
+        }
         imported.size
     }
 

@@ -12,28 +12,43 @@ class BrowserDataManager(
     context: Context,
     private val savedWebsites: SavedWebsiteRepository,
     private val instagramSessions: InstagramSessionStore,
-    private val settings: AppSettingsRepository
+    private val settings: AppSettingsRepository,
+    private val siteDataRemoval: SiteDataRemoval = WebViewSiteDataRemoval(),
+    private val cookieProfiles: CookieProfileStore = CookieProfileStore(context)
 ) {
     private val appContext = context.applicationContext
+    val supportsSiteRemoval: Boolean get() = siteDataRemoval.supportsSiteRemoval
 
     fun clearWebsites(origins: Collection<String>, onComplete: () -> Unit) {
         val normalized = origins.mapNotNull(WebLink::origin).distinct()
         if (normalized.isEmpty()) return onComplete()
 
-        savedWebsites.remove(normalized)
-        val cookieManager = CookieManager.getInstance()
-        normalized.forEach { origin ->
-            clearOriginCookies(cookieManager, origin)
-            originVariants(origin).forEach(WebStorage.getInstance()::deleteOrigin)
+        val scoped = supportsSiteRemoval
+        val finish = {
+            cookieProfiles.removeSites(normalized)
+            BrowserIdentityStore(appContext).remove(normalized)
+            savedWebsites.remove(normalized)
+            if (!scoped || normalized.any(WebLink::isInstagramHost)) instagramSessions.clear()
+            siteDataRemoval.flushCookies()
+            onComplete()
         }
-        if (normalized.any(WebLink::isInstagramHost)) instagramSessions.clear()
-        cookieManager.flush()
-        onComplete()
+        if (scoped) {
+            // The extra count prevents an inline callback from finishing before every operation is submitted.
+            val remaining = java.util.concurrent.atomic.AtomicInteger(normalized.size + 1)
+            val completeOne = { if (remaining.decrementAndGet() == 0) finish() }
+            normalized.forEach { origin -> siteDataRemoval.clearSite(origin, completeOne) }
+            completeOne()
+        } else {
+            normalized.forEach { origin -> originVariants(origin).forEach(WebStorage.getInstance()::deleteOrigin) }
+            siteDataRemoval.clearAllCookies(finish)
+        }
     }
 
     @Suppress("DEPRECATION")
     fun clearAll(onComplete: () -> Unit) {
         savedWebsites.clear()
+        cookieProfiles.clear()
+        BrowserIdentityStore(appContext).clear()
         settings.setUseBrowserSessions(false)
         instagramSessions.clear()
         WebStorage.getInstance().deleteAllData()
@@ -50,18 +65,6 @@ class BrowserDataManager(
         CookieManager.getInstance().removeAllCookies {
             CookieManager.getInstance().flush()
             onComplete()
-        }
-    }
-
-    private fun clearOriginCookies(manager: CookieManager, origin: String) {
-        val cookieNames = manager.getCookie(origin).orEmpty().split(';')
-            .map { it.substringBefore('=').trim() }.filter(String::isNotEmpty).distinct()
-        originVariants(origin).forEach { candidate ->
-            val host = WebLink.host(candidate) ?: return@forEach
-            cookieNames.forEach { name ->
-                manager.setCookie(candidate, "$name=; Max-Age=0; Path=/")
-                manager.setCookie(candidate, "$name=; Max-Age=0; Domain=.$host; Path=/")
-            }
         }
     }
 

@@ -1,15 +1,99 @@
 # Acqua - Releases
 
 > **Project:** Acqua
-> **Version:** 0.3.0
-> **Last Updated:** 2026-09-17
+> **Version:** 0.4.0
+> **Last Updated:** 2026-10-20
 
 | Version | Release Date | Key Focus |
 | :--- | :--- | :--- |
+| [v0.4.0](#v040) | 2026-10-19 | Stream and format controls, playlists and clips, SponsorBlock filtering, history search and diagnostics, saved sessions and templates, and faster Settings |
 | [v0.3.0](#v030) | 2026-09-15 | Multi-source Feeds foundation, GitHub APK release tracking, resilient downloads, adaptive layouts, Instagram carousel and session reliability, and modular architecture |
 | [v0.2.0](#v020) | 2026-09-10 | Integrated dashboard browser, swipeable tabs and floating toolbar, adaptive media carousel, audio tagging and filename templates, and history restoration |
 | [v0.1.5](#v015) | 2026-08-30 | Minimal onboarding, atomic backup and restore, dynamic M3 theming, fast scrollbar, security protections, Coil thumbnail pipeline, and in-app self-updater |
 | [v0.1.0](#v010) | 2026-08-01 | Initial release with smart media extraction, yt-dlp integration, private browser, and history management |
+
+---
+
+# v0.4.0
+
+**Release Date:** October 19, 2026
+
+**Previous public release:** v0.3.0
+
+**Development range included:** v0.3.1 through v0.4.0
+
+Acqua v0.4.0 brings stream, audio, and container selection, playlist and clip downloads, SponsorBlock filtering, and full history search with failure diagnostics. It also adds reusable command templates, saved browser sessions, direct app updates, and a faster Settings screen with expressive controls.
+
+## Highlights
+
+- **Stream & Format Controls**: Choose exact video streams, containers (MP4 or MKV), and audio quality. Save multi-track audio, download video without audio, save captions in multiple formats, or export artwork and thumbnails as separate images.
+- **Playlists, Chapters & Clips**: Preview playlists in the carousel and download whole lists or specific ranges. Save chapters as named files, cut custom clips with precise boundaries, and fix caption sync.
+- **SponsorBlock Segment Removal**: Automatically skip sponsor segments, intros, outros, and previews on YouTube downloads, either by default or per link.
+- **History Search & Diagnostics**: Search history by title, creator, or link, and filter by website. Review and retry failed downloads with detailed error reports, or delete downloaded files from storage while keeping their history.
+- **Saved Sessions & Command Templates**: Save browser logins with custom user agents for member-only content, and create, import, or export reusable yt-dlp command templates.
+- **Faster Settings & In-App Updates**: Open Settings without delays, pair related options together, organize downloads into photo, video, and audio folders, and check for Acqua updates directly from the app.
+
+## What's New Since v0.3.0
+
+### Formats, Streams & Captions
+
+- Pick exact video and audio streams, choose between MP4 and MKV containers, and set default audio conversion bitrates.
+- Set video codec and device compatibility preferences, lowest-quality options, or custom format sorting rules.
+- Save multiple audio tracks into an MKV file, or download video without audio.
+- Save captions with audio or video downloads. Export subtitles as ASS, LRC, SRT, or VTT files, embed compatible subtitles directly, and spot auto-translated languages in the picker.
+- Skip SponsorBlock categories like sponsors, intros, outros, and previews on YouTube video and audio downloads.
+- Save video thumbnails and album cover art as separate image files using the Thumbnail/Artwork button.
+- Download public images, audio, and video directly without needing a browser session, with automatic retries for server limits and connection drops.
+- Clean up punctuation-only or missing titles with automatic fallback names, and keep long filenames within safe storage limits.
+- Preserve upload dates, descriptions, artist tags, and embedded artwork across all supported downloads.
+
+### Playlists, Chapters & Clips
+
+- Browse playlists and collections in one place, preview them in the carousel, and select single items or number ranges (such as 1-5).
+- Cut custom clips by setting start and end times, or save each chapter as a separate named file.
+- Adjust subtitle timing forward or backward to fix out-of-sync captions on clips.
+- Automatically skip files you already downloaded with Acqua to save time and storage.
+- Paste or share multiple links at once to queue them together, or open shared links with Quick download.
+
+### Downloader & Carousel
+
+- Select items in the preview carousel with a long press and corner checkboxes, or use the menu to select all, invert, or clear selections.
+- View media previews in a full-width looping carousel that keeps original shapes and heights without awkward cropping.
+- See engine choices and the download button side by side, with the number of selected items shown right on the button (Download · N).
+- Tap the metadata card to rename a download at any time, even while it is downloading.
+- Open playlist, caption, clip, chapter, and stream settings from chips below the preview, and save changes with Done.
+- Use saved browser sessions for downloads that require login, and retry failed links with that session automatically.
+
+### History & Diagnostics
+
+- Search history by title, creator, or link ID, and filter items by website or missing files.
+- See why a download failed with detailed error reports, copy the details to report issues, and retry with one tap.
+- Delete files from your device directly from History while keeping your download records intact.
+- Export and import your history as a JSON file or plain link list, check for duplicates, and relink entries to local files.
+- Choose whether new downloads are added to History, either for all downloads or for an individual link.
+- Automatically detect when downloaded files are moved or deleted outside Acqua, and restore file actions if they are put back.
+
+### Settings & App Updates
+
+- Open Settings faster thanks to on-demand loading, reading saved sessions and command templates only when you tap them.
+- Find related options paired together: video quality with container, audio format with quality, and engine update channel with check interval.
+- Choose separate folders for photos, videos, and music, group files by website or collection, and optionally hide them from gallery apps with `.nomedia`.
+- Customize filename patterns for videos and audio in a bottom sheet with live previews, reset buttons, and one-tap variables like `{source}`, `{collection}`, `{chapter}`, and `{upload_date}`.
+- Check for new Acqua versions, track download progress, and launch the installer directly from Settings.
+- Save and edit custom command templates, and import or export them via files or your clipboard.
+- Manage saved browser accounts with clean cards showing account and site names first, keeping credentials secure.
+- Turn on high contrast mode for stronger colors and borders, or switch the app language to Spanish, Hindi, or Arabic.
+- Use expressive switches, rounded text boxes, and animated empty screens that respect system motion settings.
+
+### Network & Reliability
+
+- Set download speed limits, configure HTTP or SOCKS5 proxies, force IPv4 connections, and adjust download fragment counts.
+- Open onboarding reliably on fresh installs, and hold off automatic engine updates until setup is complete.
+- Protect the app from crashes when a website exhausts memory or a browser view closes unexpectedly.
+- Update core networking and image libraries for faster thumbnail loading and smoother downloads.
+- Use long-press actions in Feeds, view release dates and file sizes, and keep selected versions when refreshing feeds.
+- Keep other downloads in the queue running smoothly if one item fails or is cancelled.
+- Read updated privacy details explaining how GitHub tokens, feed backups, and app updates are handled safely.
 
 ---
 

@@ -6,6 +6,7 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 
 internal class DownloadWorker(
     appContext: Context,
@@ -16,38 +17,37 @@ internal class DownloadWorker(
     private val progressThrottle = ProgressUpdateThrottle()
 
     override suspend fun doWork(): Result {
-        val request = DownloadWorkData.decode(inputData)
-            ?: return Result.failure(DownloadWorkData.error(DownloadFailure.INVALID_REQUEST.code))
-        notifications.ensureChannel()
-        setForeground(notifications.foregroundInfo(request.media.title, 0f, 0L, 0L, 0L))
+        val request = DownloadRequestStore(applicationContext).resolve(inputData) ?: run {
+            runCatching { DownloadDiagnosticsStore(applicationContext).record(id.toString(),
+                IllegalArgumentException("Missing or invalid download snapshot"), DownloadFailure.INVALID_REQUEST, DownloadPhase.QUEUED, "worker") }
+            return Result.failure(DownloadWorkData.error(DownloadFailure.INVALID_REQUEST.code))
+        }
+        val transcript = DiagnosticTranscript(request.options.verboseDiagnostics)
+        var failurePhase = DownloadPhase.QUEUED
 
         return try {
-            var latestProgress = YtDlpProgress()
-            var latestPhase = DownloadPhase.TRANSFER
-            val completed = executor.execute(
-                request = request,
-                taskKey = id.toString(),
-                onProgress = { progress ->
-                    latestProgress = progress
-                    if (progressThrottle.shouldEmit(progress)) {
-                        publishProgress(request, progress, force = true)
-                    }
-                },
-                onPhase = { phase ->
-                    latestPhase = phase
-                    setProgressAsync(
-                        DownloadWorkData.progress(
-                            latestProgress.percent,
-                            latestProgress.etaSeconds,
-                            latestProgress.downloadedBytes,
-                            latestProgress.totalBytes,
-                            phase
-                        )
-                    )
-                    if (phase == DownloadPhase.PROCESSING) {
-                        setForegroundAsync(
-                            notifications.foregroundInfo(
-                                request.media.title,
+            notifications.ensureChannel()
+            setForeground(notifications.foregroundInfo(request.media.title, 0f, 0L, 0L, 0L))
+            setProgress(DownloadWorkData.progress(0f, phase = DownloadPhase.QUEUED))
+            DownloadExecutionGate.run(maximum = { dev.qtremors.acqua.data.settings.AppSettingsRepository(applicationContext).maximumConcurrentDownloads }) {
+                var latestProgress = YtDlpProgress()
+                var latestPhase = DownloadPhase.TRANSFER
+                val completed = executor.execute(
+                    request = request,
+                    taskKey = id.toString(),
+                    onProgress = { progress ->
+                        latestProgress = progress
+                        if (progressThrottle.shouldEmit(progress)) {
+                            transcript.append(progress.statusLine)
+                            publishProgress(request, progress, force = true)
+                        }
+                    },
+                    onPhase = { phase ->
+                        latestPhase = phase
+                        failurePhase = phase
+                        transcript.append(phase.name)
+                        setProgressAsync(
+                            DownloadWorkData.progress(
                                 latestProgress.percent,
                                 latestProgress.etaSeconds,
                                 latestProgress.downloadedBytes,
@@ -55,17 +55,34 @@ internal class DownloadWorker(
                                 phase
                             )
                         )
+                        if (phase == DownloadPhase.PROCESSING) {
+                            setForegroundAsync(
+                                notifications.foregroundInfo(
+                                    request.media.title,
+                                    latestProgress.percent,
+                                    latestProgress.etaSeconds,
+                                    latestProgress.downloadedBytes,
+                                    latestProgress.totalBytes,
+                                    phase
+                                )
+                            )
+                        }
                     }
-                }
-            )
-            publishProgress(request, latestProgress, latestPhase, force = true)
-            notifications.complete(
-                title = completed.title,
-                uri = completed.uri,
-                mimeType = completed.mimeType,
-                mediaKind = completed.mediaKind
-            )
-            Result.success()
+                )
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                publishProgress(request, latestProgress, latestPhase, force = true)
+                checkpointDownloadTask(applicationContext, DownloadQueueItem(id.toString(),
+                    if (completed.skipped) DownloadQueueState.SKIPPED else DownloadQueueState.SUCCEEDED,
+                    progress = 100f, artifactCount = completed.artifactUris.size))
+                if (completed.skipped) notifications.cancel() else notifications.complete(
+                    title = completed.title,
+                    uri = completed.uri,
+                    mimeType = completed.mimeType,
+                    mediaKind = completed.mediaKind
+                )
+                Result.success(androidx.work.Data.Builder().putBoolean(DownloadWorkData.KEY_OUTCOME, completed.skipped)
+                    .putInt(DownloadWorkData.KEY_ARTIFACT_COUNT, completed.artifactUris.size).build())
+            }
         } catch (cancelled: CancellationException) {
             notifications.cancel()
             throw cancelled
@@ -73,10 +90,14 @@ internal class DownloadWorker(
             notifications.cancel()
             if (error is VirtualMachineError || error is ThreadDeath) throw error
             val failure = error.toDownloadFailure()
+            runCatching { DownloadDiagnosticsStore(applicationContext).record(id.toString(), error, failure, failurePhase, "worker:${request.media.backend.name}", transcript) }
             Log.e(TAG, "Background download failed (${failure.code})", SafeDiagnostics.redact(error))
             if (failure.retryable && runAttemptCount < MAX_RETRIES) {
                 Result.retry()
             } else {
+                DownloadNameOverrides.finish(applicationContext, id.toString())
+                checkpointDownloadTask(applicationContext, DownloadQueueItem(id.toString(), DownloadQueueState.FAILED, error = failure.code))
+                notifications.failed(failure)
                 Result.failure(DownloadWorkData.error(failure.code))
             }
         }

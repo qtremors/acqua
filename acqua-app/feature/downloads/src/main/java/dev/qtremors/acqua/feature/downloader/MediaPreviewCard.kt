@@ -1,5 +1,7 @@
 package dev.qtremors.acqua.feature.downloader
 
+import dev.qtremors.acqua.ui.components.ExpressiveTextField
+import androidx.compose.foundation.clickable
 import android.webkit.CookieManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -62,6 +64,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -239,37 +242,51 @@ fun MediaPreviewCard(
     useBrowserSessions: Boolean,
     previewCache: MediaPreviewCache,
     contentType: DownloadContentType,
+    cropArtwork: Boolean,
     cardWidth: Dp,
     cardHeight: Dp,
     modifier: Modifier = Modifier,
-    onBitmapDimensions: (width: Int, height: Int) -> Unit = { _, _ -> }
+    onBitmapDimensions: (width: Int, height: Int) -> Unit = { _, _ -> },
+    selection: Boolean? = null
 ) {
     val audioPreview = item.isAudioPreview(contentType)
+    val cropPreview = audioPreview && cropArtwork
     val previewUrl = item.previewUrl
     val density = LocalDensity.current
     val previewWidthPixels = with(density) { cardWidth.roundToPx() }
     val previewHeightPixels = with(density) { cardHeight.roundToPx() }
     var failed by remember(previewUrl) { mutableStateOf(false) }
+    val namedSession = item.authorizedSession
+    val previewSession = namedSession.takeIf { useBrowserSessions && item.explicitBrowserSessionAuthorized }
     val cookies = remember(
         previewUrl,
         item.requestCookies,
+        namedSession,
         item.explicitBrowserSessionAuthorized,
         useBrowserSessions
     ) {
-        val sessionAccessAllowed = useBrowserSessions || item.explicitBrowserSessionAuthorized
+        val sessionAccessAllowed = useBrowserSessions && item.explicitBrowserSessionAuthorized
         when {
-            !sessionAccessAllowed || previewUrl == null -> null
+            namedSession != null || !sessionAccessAllowed || previewUrl == null -> null
             WebLink.host(previewUrl) == WebLink.host(item.url) -> item.requestCookies
+                ?: CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
             else -> CookieManager.getInstance().getCookie(previewUrl)?.takeIf(String::isNotBlank)
         }
     }
-    val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies, previewWidthPixels, previewHeightPixels) {
-        val loaded = if (previewUrl == null) null else withContext(Dispatchers.IO) {
+    val bitmap by produceState<ImageBitmap?>(null, previewUrl, cookies, previewSession, item.requestUserAgent,
+        previewWidthPixels, previewHeightPixels, cropPreview) {
+        val loaded = if (previewUrl == null || namedSession != null && previewSession == null) null else withContext(Dispatchers.IO) {
             previewCache.loadBitmap(
+                item.copy(url = previewUrl, requestCookies = null, authorizedSession = previewSession),
+                previewWidthPixels,
+                previewHeightPixels,
+                fill = cropPreview
+            ) ?: if (cookies != null) previewCache.loadBitmap(
                 item.copy(url = previewUrl, requestCookies = cookies),
                 previewWidthPixels,
-                previewHeightPixels
-            )
+                previewHeightPixels,
+                fill = cropPreview
+            ) else null
         }
         failed = previewUrl != null && loaded == null
         value = loaded?.bitmap?.asImageBitmap()
@@ -280,7 +297,7 @@ fun MediaPreviewCard(
     val isVideo = item.isVideo && !audioPreview
 
     Card(
-        modifier = modifier.size(cardWidth, cardHeight),
+        modifier = modifier.size(cardWidth, cardHeight).testTag("media-preview-$index"),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f)
@@ -298,8 +315,8 @@ fun MediaPreviewCard(
                         contentDescription = stringResource(
                             if (audioPreview) R.string.audio else if (item.isVideo) R.string.video_preview else R.string.image_preview
                         ),
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
+                        modifier = Modifier.fillMaxSize().testTag("loaded-media-preview-$index"),
+                        contentScale = if (cropPreview) ContentScale.Crop else ContentScale.Fit
                     )
                 }
                 previewUrl == null || failed -> {
@@ -335,6 +352,8 @@ fun MediaPreviewCard(
                     }
                 }
             }
+            if (selection != null) PreviewSelectionIndicator(selection, index,
+                Modifier.align(Alignment.TopEnd).padding(10.dp))
         }
     }
 }
@@ -368,7 +387,8 @@ fun MediaMetadataContainer(
     status: MediaMetadataStatus,
     onDownload: () -> Unit,
     modifier: Modifier = Modifier,
-    fallback: MediaMetadataFallback = MediaMetadataFallback()
+    fallback: MediaMetadataFallback = MediaMetadataFallback(),
+    onRename: ((String) -> Unit)? = null
 ) {
     val (item, index, totalCount, contentType, audioFormat, filenamePattern, audioFilenamePattern) = content
     val (isSaving, isSaved, downloadsEnabled) = status
@@ -415,7 +435,7 @@ fun MediaMetadataContainer(
             ?: "jpg"
     }
 
-    val activePattern = if (audioPreview) audioFilenamePattern else filenamePattern
+    val activePattern = if (item.downloadName != null) "{title}" else if (audioPreview) audioFilenamePattern else filenamePattern
     val actualFileName = FilenameFormatter.format(
         pattern = activePattern,
         username = item.username ?: fallbackAuthor,
@@ -424,15 +444,38 @@ fun MediaMetadataContainer(
         index = index,
         itemCount = totalCount,
         fileExtension = extension,
-        title = item.title ?: fallbackTitle,
+        title = item.downloadName ?: item.title ?: fallbackTitle,
         artist = item.artist,
         album = item.album
     )
 
+    var showRename by remember(item.url) { mutableStateOf(false) }
+    var editedName by remember(item.url, item.downloadName) { mutableStateOf(item.downloadName ?: actualFileName.substringBeforeLast('.')) }
+    if (showRename && onRename != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRename = false },
+            title = { Text(stringResource(R.string.rename_download)) },
+            text = {
+                ExpressiveTextField(
+                    value = editedName,
+                    onValueChange = { editedName = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.filename)) },
+                    supportingText = { Text(stringResource(R.string.filename_extension_automatic)) }
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { onRename(editedName); showRename = false }, enabled = editedName.isNotBlank()) {
+                    Text(stringResource(R.string.save))
+                }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { showRename = false }) { Text(stringResource(R.string.cancel)) } }
+        )
+    }
     val author = item.username ?: fallbackAuthor
 
     ElevatedCard(
-        modifier = modifier,
+        modifier = modifier.clickable(enabled = !isSaved && onRename != null, onClickLabel = stringResource(R.string.rename_download)) { showRename = true },
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = colors.surfaceContainerLow),
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp)

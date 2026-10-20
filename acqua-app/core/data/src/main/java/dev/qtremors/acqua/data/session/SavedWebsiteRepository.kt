@@ -19,9 +19,10 @@ class SavedWebsiteRepository(context: Context) {
     private val appContext = context.applicationContext
     private val preferences = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun record(url: String) {
+    fun record(url: String, userAgent: String? = null) {
         val host = WebLink.host(url) ?: return
         if (host == "acqua.local") return
+        userAgent?.let { BrowserIdentityStore(appContext).record(url, it) }
         WebLink.origin(url)?.let { origin -> preferences.edit { putString(KEY_LAST_ORIGIN, origin) } }
     }
 

@@ -10,7 +10,7 @@ class SafeDiagnosticsTest {
         val token = "abcDEF0123456789abcDEF0123456789"
         val error = IllegalStateException(
             "GET https://example.com/private?token=$token " +
-                "Cookie: sessionid=$token Authorization Bearer-$token " +
+                "Cookie: sessionid=$token\nAuthorization Bearer-$token " +
                 "user@example.com @private.account C:\\Users\\name\\secret.txt " +
                 "/data/user/0/dev.qtremors.acqua/cache/file " + "x".repeat(1_000)
         )

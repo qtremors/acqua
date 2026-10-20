@@ -37,6 +37,8 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -255,7 +257,7 @@ fun AcquaFloatingToolbar(
                             },
                             modifier = Modifier
                                 .width(itemWidth + labelWidth)
-                                .height(48.dp),
+                                .height(48.dp).semantics { selected = isSelected },
                             colors = if (isSelected) {
                                 IconButtonDefaults.filledIconButtonColors(
                                     contentColor = MaterialTheme.colorScheme.primary,

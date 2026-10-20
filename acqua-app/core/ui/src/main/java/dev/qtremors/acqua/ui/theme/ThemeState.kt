@@ -59,5 +59,6 @@ data class ThemeState(
     val vibrationsEnabled: Boolean = true,
     val themePreset: ThemePreset = ThemePreset.NONE,
     val customPrimaryColorHex: String = "#BD93F9",
-    val customBackgroundColorHex: String = "#282A36"
+    val customBackgroundColorHex: String = "#282A36",
+    val highContrast: Boolean = false
 )

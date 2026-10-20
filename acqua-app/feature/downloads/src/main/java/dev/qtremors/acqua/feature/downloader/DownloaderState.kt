@@ -60,10 +60,13 @@ data class DownloaderUiState(
     val savingItemIndex: Int? = null,
     val savedItemIndex: Int? = null,
     val downloadContentType: DownloadContentType = DownloadContentType.VIDEO,
+    val selectedMediaKind: MediaKind? = null,
     val maximumVideoHeight: Int = 0,
     val audioFormat: AudioOutputFormat = AudioOutputFormat.ORIGINAL,
     val embedMetadata: Boolean = true,
     val embedThumbnail: Boolean = true,
+    val cropArtwork: Boolean = true,
+    val preserveOriginalMetadata: Boolean = false,
     val downloadProgress: Float = 0f,
     val downloadEtaSeconds: Long = 0L,
     val downloadedBytes: Long = 0L,
@@ -73,12 +76,22 @@ data class DownloaderUiState(
     val downloadQueue: DownloadQueueSnapshot = DownloadQueueSnapshot(),
     val resolutionFailure: MediaResolutionFailure? = null,
     val filenamePattern: String = FilenameFormatter.DEFAULT_PATTERN,
-    val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN
+    val audioFilenamePattern: String = FilenameFormatter.DEFAULT_AUDIO_PATTERN,
+    val advancedOptions: YtDlpDownloadOptions = YtDlpDownloadOptions(),
+    val selectedCollectionItems: Set<Int>? = null,
+    val downloadPlaylist: Boolean = true,
+    val inspectedCollectionItems: Set<Int> = emptySet(),
+    val inspectingCollectionIndex: Int? = null,
+    val collectionInspectionFailed: Boolean = false,
+    val acceptedMediaTasks: Map<String, String> = emptyMap(),
+    val hasRejectedItems: Boolean = false,
+    val pendingLinks: List<dev.qtremors.acqua.downloader.PendingLink> = emptyList(),
+    val isBatchRunning: Boolean = false
 )
 
 sealed interface DownloaderProblem {
     data class Resolution(val failure: MediaResolutionFailure) : DownloaderProblem
-    data class Download(val failure: DownloadFailure) : DownloaderProblem
+    data class Download(val failure: DownloadFailure, val diagnostic: dev.qtremors.acqua.downloader.DownloadDiagnostic? = null) : DownloaderProblem
 }
 
 internal data class AutomaticRequest(
@@ -89,6 +102,7 @@ internal data class AutomaticRequest(
 )
 
 sealed interface DownloaderEvent {
+    data class DownloadsSkipped(val count: Int) : DownloaderEvent
     data object ResolutionComplete : DownloaderEvent
     data class DownloadComplete(val mediaKind: MediaKind?) : DownloaderEvent
     data class ItemSaved(val mediaKind: MediaKind) : DownloaderEvent

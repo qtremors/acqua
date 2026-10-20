@@ -35,7 +35,7 @@ data class OnboardingUiState(
 class OnboardingViewModel(
     private val onboardingPreferences: OnboardingStateStore,
     private val backupManager: PreferencesBackupGateway,
-    private val appVersionCode: Int = 15
+    private val appVersionCode: Int = dev.qtremors.acqua.core.data.BuildConfig.VERSION_CODE
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(OnboardingUiState())

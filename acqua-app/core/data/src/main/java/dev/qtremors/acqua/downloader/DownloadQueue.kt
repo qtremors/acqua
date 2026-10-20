@@ -5,6 +5,7 @@ enum class DownloadQueueState {
     RUNNING,
     RETRYING,
     SUCCEEDED,
+    SKIPPED,
     FAILED,
     CANCELLED
 }
@@ -25,7 +26,15 @@ data class DownloadQueueItem(
     val downloadedBytes: Long = 0L,
     val totalBytes: Long = 0L,
     val error: String? = null,
-    val phase: DownloadPhase = DownloadPhase.QUEUED
+    val phase: DownloadPhase = DownloadPhase.QUEUED,
+    val title: String? = null,
+    val sourceUrl: String? = null,
+    val createdAt: Long = 0L,
+    val canRetry: Boolean = false,
+    val artifactCount: Int = 0,
+    val acceptedOptions: YtDlpDownloadOptions? = null,
+    val acceptedFolder: String? = null,
+    val acceptedKind: dev.qtremors.acqua.domain.MediaKind? = null
 ) {
     val isActive: Boolean
         get() = state == DownloadQueueState.QUEUED ||

@@ -2,6 +2,9 @@
 -keep class com.yausername.** { *; }
 -dontwarn com.yausername.**
 
+# Markwon's GIF decoder is optional; ImagesPlugin uses the platform decoder here.
+-dontwarn pl.droidsonroids.gif.GifDrawable
+
 # Commons Compress registers ZIP extra-field implementations with Class.newInstance().
 # R8 must not merge these classes or remove their public no-argument constructors.
 -keep class org.apache.commons.compress.archivers.zip.** implements org.apache.commons.compress.archivers.zip.ZipExtraField {

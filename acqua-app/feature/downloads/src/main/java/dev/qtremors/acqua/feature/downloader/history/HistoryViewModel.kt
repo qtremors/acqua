@@ -7,10 +7,12 @@ import dev.qtremors.acqua.data.history.HistoryEntry
 import dev.qtremors.acqua.data.history.HistoryCategory
 import dev.qtremors.acqua.data.history.HistoryDatabaseSummary
 import dev.qtremors.acqua.data.history.HistoryFileStatus
+import dev.qtremors.acqua.data.history.HistoryFileStatusCursor
 import dev.qtremors.acqua.data.history.HistoryOrder
 import dev.qtremors.acqua.data.history.HistoryPageRequest
 import dev.qtremors.acqua.data.history.HistoryRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +25,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 
 data class HistoryUiState(
     val entries: List<HistoryEntry> = emptyList(),
@@ -36,9 +39,11 @@ data class HistoryUiState(
     val hasMore: Boolean = false,
     val loadFailed: Boolean = false,
     val queryAppliedByRepository: Boolean = false,
-    val databaseSummary: HistorySummary? = null
+    val databaseSummary: HistorySummary? = null,
+    val sourceHost: String? = null,
+    val sources: List<String> = emptyList()
 ) {
-    val activeQuery get() = HistoryQuery(filter = filter, sort = sort, text = query)
+    val activeQuery get() = HistoryQuery(filter = filter, sort = sort, text = query, sourceHost = sourceHost)
     val filteredEntries by lazy {
         if (queryAppliedByRepository) entries else entries.applyHistoryQuery(activeQuery, missingEntryIds)
     }
@@ -57,7 +62,9 @@ sealed interface HistoryEvent {
 
 class HistoryViewModel(
     private val repository: HistoryRepository,
-    private val savedStateHandle: SavedStateHandle
+    private val savedStateHandle: SavedStateHandle,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    deletionGateway: dev.qtremors.acqua.data.history.HistoryFileDeletionGateway = repository.fileDeletionGateway()
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(
         HistoryUiState(
@@ -67,15 +74,29 @@ class HistoryViewModel(
             sort = savedStateHandle.get<String>(KEY_SORT)
                 ?.let { runCatching { HistorySort.valueOf(it) }.getOrNull() }
                 ?: HistorySort.NEWEST,
-            query = savedStateHandle[KEY_QUERY] ?: ""
+            query = savedStateHandle[KEY_QUERY] ?: "",
+            sourceHost = savedStateHandle[KEY_SOURCE]
         )
     )
     val state = mutableState.asStateFlow()
     private val messages = Channel<HistoryEvent>(Channel.UNLIMITED)
     val events = messages.receiveAsFlow()
+    val transfer = repository.transfer()
     private val operations = Mutex()
     private var loadedRevision = -1L
     private var queryJob: Job? = null
+    private var fileStatusRefreshGeneration = 0L
+    private var checkedFileStatusGeneration = -1L
+    private var checkedFileStatusRevision = -1L
+    val fileDeletion = HistoryDeletionController(repository, deletionGateway, savedStateHandle, viewModelScope, ioDispatcher) { refresh() }
+
+    fun deleteFiles(ids: Set<String>) = viewModelScope.launch {
+        try {
+            val entries = withContext(ioDispatcher) { ids.take(HistoryDeletionController.MAX_FILES).mapNotNull(repository::find) }
+            fileDeletion.start(entries)
+        } catch (error: CancellationException) { throw error }
+          catch (_: RuntimeException) { messages.send(HistoryEvent.Failed) }
+    }
 
     init {
         viewModelScope.launch {
@@ -85,15 +106,27 @@ class HistoryViewModel(
         }
     }
 
-    fun refresh() = viewModelScope.launch { operations.withLock { reload() } }
+    fun refresh() = viewModelScope.launch {
+        operations.withLock {
+            fileStatusRefreshGeneration++
+            reload()
+        }
+    }
 
     private suspend fun reload() {
         val revision = repository.changes.value
+        val generation = fileStatusRefreshGeneration
+        val recheckFiles = mutableState.value.filter == HistoryFilter.UNAVAILABLE &&
+            (checkedFileStatusGeneration != generation || checkedFileStatusRevision != revision)
         mutableState.value = mutableState.value.copy(isLoading = true, loadFailed = false)
         try {
-            val result = withContext(Dispatchers.IO) {
-                if (mutableState.value.filter == HistoryFilter.UNAVAILABLE) refreshUnknownStatuses()
+            val result = withContext(ioDispatcher) {
+                if (recheckFiles) refreshFileStatuses()
                 loadPage(offset = 0)
+            }
+            if (recheckFiles) {
+                checkedFileStatusGeneration = generation
+                checkedFileStatusRevision = revision
             }
             mutableState.value = mutableState.value.copy(
                 entries = result.entries,
@@ -103,7 +136,8 @@ class HistoryViewModel(
                 isLoadingMore = false,
                 hasMore = result.hasMore,
                 queryAppliedByRepository = true,
-                databaseSummary = result.summary
+                databaseSummary = result.summary,
+                sources = result.sources
             )
             loadedRevision = revision
         } catch (error: CancellationException) {
@@ -114,6 +148,7 @@ class HistoryViewModel(
     }
 
     fun selectFilter(filter: HistoryFilter) {
+        if (filter == HistoryFilter.UNAVAILABLE && mutableState.value.filter != filter) fileStatusRefreshGeneration++
         savedStateHandle[KEY_FILTER] = filter.name
         mutableState.value = mutableState.value.copy(filter = filter)
         reloadForQuery()
@@ -132,9 +167,16 @@ class HistoryViewModel(
     }
 
     fun resetFilters() {
+        savedStateHandle.set<String?>(KEY_SOURCE, null)
         savedStateHandle[KEY_QUERY] = ""
         savedStateHandle[KEY_FILTER] = HistoryFilter.MEDIA.name
-        mutableState.value = mutableState.value.copy(query = "", filter = HistoryFilter.MEDIA)
+        mutableState.value = mutableState.value.copy(query = "", filter = HistoryFilter.MEDIA, sourceHost = null)
+        reloadForQuery()
+    }
+
+    fun selectSource(sourceHost: String?) {
+        savedStateHandle[KEY_SOURCE] = sourceHost
+        mutableState.value = mutableState.value.copy(sourceHost = sourceHost)
         reloadForQuery()
     }
 
@@ -145,8 +187,7 @@ class HistoryViewModel(
             operations.withLock {
                 mutableState.value = mutableState.value.copy(isLoadingMore = true)
                 try {
-                    val result = withContext(Dispatchers.IO) {
-                        if (mutableState.value.filter == HistoryFilter.UNAVAILABLE) refreshUnknownStatuses()
+                    val result = withContext(ioDispatcher) {
                         loadPage(offset = mutableState.value.entries.size)
                     }
                     mutableState.value = mutableState.value.copy(
@@ -172,7 +213,7 @@ class HistoryViewModel(
     fun remove(ids: Set<String>?) = viewModelScope.launch {
         operations.withLock {
             try {
-                val removed = withContext(Dispatchers.IO) { repository.remove(ids) }
+                val removed = withContext(ioDispatcher) { repository.remove(ids) }
                 reload()
                 if (removed.isNotEmpty()) messages.send(HistoryEvent.Removed(removed))
             } catch (error: CancellationException) {
@@ -186,7 +227,7 @@ class HistoryViewModel(
     fun restore(entries: List<HistoryEntry>) = viewModelScope.launch {
         operations.withLock {
             try {
-                withContext(Dispatchers.IO) { repository.restore(entries) }
+                withContext(ioDispatcher) { repository.restore(entries) }
                 reload()
             } catch (error: CancellationException) {
                 throw error
@@ -204,9 +245,16 @@ class HistoryViewModel(
         }
     }
 
-    private fun refreshUnknownStatuses() {
-        val unknown = repository.loadUnknownFileStatusEntries()
-        repository.updateFileStatuses(unknown.associate { it.id to repository.fileStatus(it) })
+    private suspend fun refreshFileStatuses() {
+        var cursor: HistoryFileStatusCursor? = null
+        while (true) {
+            yield()
+            val entries = repository.loadFileStatusEntries(cursor)
+            if (entries.isEmpty()) return
+            repository.updateFileStatuses(entries.associate { it.id to repository.fileStatus(it) })
+            val last = entries.last()
+            cursor = HistoryFileStatusCursor(last.timestamp, last.id)
+        }
     }
 
     private fun loadPage(offset: Int): LoadedHistoryPage {
@@ -217,7 +265,8 @@ class HistoryViewModel(
                 order = snapshot.sort.toOrder(),
                 terms = snapshot.activeQuery.normalizedTerms,
                 limit = PAGE_SIZE,
-                offset = offset
+                offset = offset,
+                sourceHost = snapshot.sourceHost
             )
         )
         val statuses = page.entries.filter(HistoryEntry::isDownloaded)
@@ -229,9 +278,9 @@ class HistoryViewModel(
         return LoadedHistoryPage(
             entries = entries,
             statuses = statuses,
-            hasMore = page.hasMore ||
-                (snapshot.filter == HistoryFilter.UNAVAILABLE && repository.hasUnknownFileStatuses()),
-            summary = repository.summary().toUiSummary()
+            hasMore = page.hasMore,
+            summary = repository.summary().toUiSummary(),
+            sources = repository.sources()
         )
     }
 
@@ -239,13 +288,15 @@ class HistoryViewModel(
         val entries: List<HistoryEntry>,
         val statuses: Map<String, HistoryFileStatus>,
         val hasMore: Boolean,
-        val summary: HistorySummary
+        val summary: HistorySummary,
+        val sources: List<String>
     )
 
     private companion object {
         const val KEY_FILTER = "history.filter"
         const val KEY_SORT = "history.sort"
         const val KEY_QUERY = "history.query"
+        const val KEY_SOURCE = "history.source"
         const val PAGE_SIZE = 100
     }
 }
